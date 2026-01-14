@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "191248941616",
+    "project_id": "midnightcuriosity",
+    "storage_bucket": "midnightcuriosity.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:191248941616:android:b80f9750c2512d80d8a3f5",
+        "android_client_info": {
+          "package_name": "com.midnightcuriosity"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDNj2bw0iJCifqatHqb4qrrafl-wxrmjuA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -1,0 +1,72 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Safely get user data if they exist
+    function getUserData() {
+      let path = /databases/$(database)/documents/users/$(request.auth.uid);
+      return (request.auth != null && exists(path)) ? get(path).data : null;
+    }
+
+    function isAdmin() {
+      let data = getUserData();
+      return data != null && data.role == 'admin';
+    }
+
+    function isTenantUser(tid) {
+      let data = getUserData();
+      return data != null && data.tenantId == tid;
+    }
+
+    // --- TENANTS ---
+    match /tenants/{tenantId} {
+      allow read: if true; // Public for validation
+      allow create: if request.auth != null; // Admin signup
+      allow update: if request.auth != null && isAdmin() && getUserData().tenantId == tenantId;
+      
+      match /metadata/{any=**} {
+        allow read: if true; 
+        allow write: if request.auth != null && isAdmin() && getUserData().tenantId == tenantId;
+      }
+    }
+
+    // --- USERS ---
+    match /users/{userId} {
+      // Relaxed rules to support Custom OTP Auth flow (where Auth UID != User Doc ID)
+      allow read: if request.auth != null;
+      allow create: if request.auth != null;
+      allow update: if request.auth != null;
+      allow delete: if isAdmin();
+    }
+
+    // --- CONTENT (Lectures, Polls, Exams) ---
+    match /lectures/{id} {
+      allow read: if request.auth != null && (resource.data.tenantId == 'default' || isTenantUser(resource.data.tenantId));
+      allow write: if isAdmin() && request.resource.data.tenantId == getUserData().tenantId;
+      allow delete: if isAdmin();
+    }
+    match /polls/{id} {
+      allow read: if request.auth != null && (resource.data.tenantId == 'default' || isTenantUser(resource.data.tenantId));
+      allow create: if isAdmin() && request.resource.data.tenantId == getUserData().tenantId;
+      allow update: if request.auth != null && (resource.data.tenantId == 'default' || isTenantUser(resource.data.tenantId));
+      allow delete: if isAdmin();
+    }
+    match /exams/{id} {
+      allow read: if request.auth != null && (resource.data.tenantId == 'default' || isTenantUser(resource.data.tenantId));
+      allow write: if isAdmin() && request.resource.data.tenantId == getUserData().tenantId;
+      allow delete: if isAdmin();
+    }
+
+    // --- DOUBTS ---
+    match /doubts/{id} {
+      allow read, update: if request.auth != null && isTenantUser(resource.data.tenantId);
+      allow create: if request.auth != null && request.resource.data.tenantId == getUserData().tenantId;
+      allow delete: if isAdmin();
+    }
+
+    // --- LEGACY ---
+    match /metadata/{id} {
+      allow read: if request.auth != null;
+    }
+  }
+}
