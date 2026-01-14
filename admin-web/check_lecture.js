@@ -2,13 +2,14 @@
 import { initializeApp } from "firebase/app";
 import { getFirestore, collection, getDocs, query, orderBy, limit } from "firebase/firestore";
 
+// Use environment variables or fallback
 const firebaseConfig = {
-    apiKey: "AIzaSyDNj2bw0iJCifqatHqb4qrrafl-wxrmjuA",
-    authDomain: "midnightcuriosity.firebaseapp.com",
-    projectId: "midnightcuriosity",
-    storageBucket: "midnightcuriosity.firebasestorage.app",
-    messagingSenderId: "191248941616",
-    appId: "1:191248941616:web:placeholder"
+    apiKey: process.env.VITE_FIREBASE_API_KEY || "AIzaSyDNj2bw0iJCifqatHqb4qrrafl-wxrmjuA",
+    authDomain: process.env.VITE_FIREBASE_AUTH_DOMAIN || "midnightcuriosity.firebaseapp.com",
+    projectId: process.env.VITE_FIREBASE_PROJECT_ID || "midnightcuriosity",
+    storageBucket: process.env.VITE_FIREBASE_STORAGE_BUCKET || "midnightcuriosity.firebasestorage.app",
+    messagingSenderId: process.env.VITE_FIREBASE_MESSAGING_SENDER_ID || "191248941616",
+    appId: process.env.VITE_FIREBASE_APP_ID || "1:191248941616:web:placeholder"
 };
 
 const app = initializeApp(firebaseConfig);

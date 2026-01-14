@@ -2,7 +2,7 @@
 // ⚠️ SECURITY WARNING: In a production app, never store API keys in the client code.
 // Use a backend proxy (Firebase Functions) to hide this.
 // For this DATA DEMO only, we use it directly.
-const API_KEY = "AIzaSyDNj2bw0iJCifqatHqb4qrrafl-wxrmjuA";
+const API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY;
 
 // Helper to use XHR instead of fetch for reliability
 const makeXhrRequest = (url: string, method: string, data: any): Promise<string> => {
