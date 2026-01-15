@@ -132,7 +132,7 @@ function App() {
   const [editingStudentId, setEditingStudentId] = useState(null);
   const [studentFormData, setStudentFormData] = useState({ name: "", grade: "" });
   const [showAddStudentModal, setShowAddStudentModal] = useState(false);
-  const [newStudentForm, setNewStudentForm] = useState({ name: "", phoneNumber: "", grade: "" });
+  const [newStudentForm, setNewStudentForm] = useState({ name: "", phoneNumber: "", grade: "", password: "" });
 
   // AI State
   const [aiLoading, setAiLoading] = useState(false);
@@ -600,32 +600,64 @@ function App() {
 
   const handleAddStudent = async (e) => {
     e.preventDefault();
-    if (!newStudentForm.name || !newStudentForm.phoneNumber || !newStudentForm.grade) {
-      customAlert("Please fill all fields");
+    if (!newStudentForm.name || !newStudentForm.phoneNumber || !newStudentForm.grade || !newStudentForm.password) {
+      customAlert("Please fill all fields including Password");
       return;
     }
 
+    setLoading(true);
+    let secondaryApp = null;
+
     try {
-      setLoading(true);
-      await addDoc(collection(db, "users"), {
+      // Dynamically import needed modules
+      const { initializeApp } = await import("firebase/app");
+      const { getAuth, createUserWithEmailAndPassword, signOut } = await import("firebase/auth");
+      const { deleteApp } = await import("firebase/app");
+
+      const firebaseConfig = auth.app.options;
+
+      // Initialize a secondary app instance
+      const appName = "SecondaryApp-" + Date.now(); // Using Date.now() in JS, but here it's string literal
+      secondaryApp = initializeApp(firebaseConfig, appName);
+      const secondaryAuth = getAuth(secondaryApp);
+
+      // Create the user in Auth
+      const virtualEmail = `${newStudentForm.phoneNumber.replace(/[^0-9]/g, '')}@midnightcuriosity.com`;
+      const userCredential = await createUserWithEmailAndPassword(secondaryAuth, virtualEmail, newStudentForm.password);
+      const newUid = userCredential.user.uid;
+
+      // Use the MAIN app's Firestore (db) to save the profile
+      await setDoc(doc(db, "users", newUid), {
         name: newStudentForm.name,
-        phoneNumber: newStudentForm.phoneNumber,
+        phoneNumber: newStudentForm.phoneNumber.replace(/[^0-9]/g, ''),
         grade: newStudentForm.grade,
         tenantId: adminTenantId,
         instituteCode: tenantData.code || adminTenantId,
         role: 'STUDENT',
-        status: 'ACTIVE', // Auto-activate
+        status: 'ACTIVE',
         createdAt: new Date().toISOString(),
         createdBy: 'ADMIN'
       });
 
-      setNewStudentForm({ name: "", phoneNumber: "", grade: "" });
+      await signOut(secondaryAuth);
+      try { await deleteApp(secondaryApp); secondaryApp = null; } catch (e) { }
+
+      setNewStudentForm({ name: "", phoneNumber: "", grade: "", password: "" });
       setShowAddStudentModal(false);
-      customAlert("Student added successfully! They are now ACTIVE.");
+      customAlert(`Student '${newStudentForm.name}' added successfully! 
+Phone: ${newStudentForm.phoneNumber}
+Password: [Hidden]`);
+
     } catch (error) {
       console.error("Error adding student:", error);
-      customAlert("Failed to add student: " + error.message);
+      let msg = error.message;
+      if (error.code === 'auth/email-already-in-use') msg = "A student with this phone number already exists.";
+      customAlert("Failed to add student: " + msg);
     } finally {
+      if (secondaryApp) {
+        const { deleteApp } = await import("firebase/app");
+        try { await deleteApp(secondaryApp); } catch (e) { }
+      }
       setLoading(false);
     }
   };
@@ -638,10 +670,20 @@ function App() {
     }
 
     try {
-      await updateDoc(doc(db, "users", editingStudentId), {
+      const updateData = {
         name: studentFormData.name,
         grade: studentFormData.grade
-      });
+      };
+
+      // Note: Updating password in Auth requires Admin SDK or re-auth.
+      // For this prototype, we'll store it in Firestore strictly for reference if provided,
+      // or we can implement a Cloud Function later.
+      if (studentFormData.password && studentFormData.password.trim() !== "") {
+        updateData.password = studentFormData.password; // INSECURE: Demo purpuse only
+        customAlert("Note: Password saved to profile but Auth credential not updated in this demo.");
+      }
+
+      await updateDoc(doc(db, "users", editingStudentId), updateData);
       customAlert("Student updated successfully!");
       cancelEditStudent();
     } catch (e) {
@@ -1419,6 +1461,18 @@ function App() {
                     </div>
 
                     <div>
+                      <label className="label">Password</label>
+                      <input
+                        type="password"
+                        placeholder="e.g. secret123"
+                        value={newStudentForm.password}
+                        onChange={e => setNewStudentForm({ ...newStudentForm, password: e.target.value })}
+                        style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #475569', background: '#0f172a', color: 'white' }}
+                      />
+                      <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Required for student login.</span>
+                    </div>
+
+                    <div>
                       <label className="label">Grade</label>
                       <select value={newStudentForm.grade} onChange={e => setNewStudentForm({ ...newStudentForm, grade: e.target.value })} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #475569', background: '#0f172a', color: 'white' }}>
                         <option value="">Select Grade</option>
@@ -1462,6 +1516,15 @@ function App() {
                         <option value={studentFormData.grade}>{studentFormData.grade}</option>
                       )}
                     </select>
+                  </div>
+                  <div style={{ flex: 1, minWidth: '200px' }}>
+                    <label className="label">New Password (Opt)</label>
+                    <input
+                      type="text"
+                      placeholder="Reset Password"
+                      value={studentFormData.password || ''}
+                      onChange={(e) => setStudentFormData({ ...studentFormData, password: e.target.value })}
+                    />
                   </div>
                   <div style={{ display: 'flex', gap: '10px' }}>
                     <button type="submit" className="btn-primary">Save Changes</button>
@@ -1593,7 +1656,7 @@ function App() {
 
         {/* Attendance Tab */}
         {activeTab === 'attendance' && (
-          <AttendanceManager students={students} tenantId={adminTenantId} onAlert={customAlert} />
+          <AttendanceManager students={students.filter(s => s.role === 'STUDENT')} tenantId={adminTenantId} onAlert={customAlert} />
         )}
 
         {activeTab === 'homework' && (

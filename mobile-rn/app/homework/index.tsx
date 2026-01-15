@@ -14,7 +14,7 @@ export default function HomeworkListScreen() {
 
     const [homework, setHomework] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
-    const [studentData, setStudentData] = useState(null);
+    const [studentData, setStudentData] = useState<any>(null);
 
     useEffect(() => {
         let unsubHomework: any;
@@ -23,11 +23,11 @@ export default function HomeworkListScreen() {
             try {
                 let uid = auth.currentUser?.uid;
                 if (!uid) {
-                    uid = await AsyncStorage.getItem('user_uid');
+                    const storedUid = await AsyncStorage.getItem('user_uid');
+                    if (storedUid) uid = storedUid;
                 }
 
                 if (!uid) {
-                    console.log("No user ID found");
                     setLoading(false);
                     return;
                 }

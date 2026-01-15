@@ -60,8 +60,9 @@ service cloud.firestore {
     // --- ATTENDANCE ---
     match /attendance/{id} {
       allow read: if request.auth != null && (resource.data.tenantId == 'default' || isTenantUser(resource.data.tenantId));
-      // Allow write if Admin and their tenantId matches the document's tenantId
-      allow write: if isAdmin() && (request.resource.data.tenantId == getUserData().tenantId || resource.data.tenantId == getUserData().tenantId);
+      allow create: if isAdmin() && request.resource.data.tenantId == getUserData().tenantId;
+      allow update: if isAdmin() && (request.resource.data.tenantId == getUserData().tenantId || resource.data.tenantId == getUserData().tenantId);
+      allow delete: if isAdmin() && resource.data.tenantId == getUserData().tenantId;
     }
 
     // --- DOUBTS ---
@@ -74,7 +75,8 @@ service cloud.firestore {
     // --- HOMEWORK ---
     match /homework/{id} {
         allow read: if request.auth != null && isTenantUser(resource.data.tenantId);
-        allow create, update, delete: if isAdmin() && (request.resource.data.tenantId == getUserData().tenantId || resource.data.tenantId == getUserData().tenantId);
+        allow create, update: if isAdmin() && request.resource.data.tenantId == getUserData().tenantId;
+        allow delete: if isAdmin() && resource.data.tenantId == getUserData().tenantId;
     }
 
     // --- SUBMISSIONS ---
@@ -96,6 +98,9 @@ service cloud.firestore {
           resource.data.studentId == request.auth.uid || 
           isAdmin()
         );
+
+        // Delete: Admin only
+        allow delete: if isAdmin();
     }
 
     // --- LEGACY ---

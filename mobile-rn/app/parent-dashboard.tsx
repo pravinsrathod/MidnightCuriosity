@@ -2,7 +2,7 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { View, Text, StyleSheet, ScrollView, ActivityIndicator, TouchableOpacity, RefreshControl } from 'react-native';
 import { useRouter } from 'expo-router';
 import { auth, db } from '../services/firebaseConfig';
-import { collection, query, where, getDocs, doc, getDoc, orderBy, limit } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc, getDoc, orderBy, limit, onSnapshot } from 'firebase/firestore';
 import { useTheme } from '../context/ThemeContext';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -15,17 +15,23 @@ export default function ParentDashboard() {
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
     const [studentName, setStudentName] = useState('');
+
+    // Data States
     const [attendanceHistory, setAttendanceHistory] = useState<any[]>([]);
     const [stats, setStats] = useState({ present: 0, absent: 0, late: 0, total: 0 });
     const [homeworkList, setHomeworkList] = useState<any[]>([]);
 
-    const fetchData = async () => {
+    // Context for Real-time Listeners
+    const [studentContext, setStudentContext] = useState<any>(null); // { tenantId, grade, allStudentIds, studentUid }
+    const [rawHomeworks, setRawHomeworks] = useState<any[]>([]);
+    const [rawSubmissions, setRawSubmissions] = useState<any>({});
+
+    const fetchIdentity = async () => {
         try {
             const user = auth.currentUser;
             let uid = user?.uid;
 
             if (!uid) {
-                // Check storage
                 uid = await AsyncStorage.getItem('user_uid') || undefined;
             }
 
@@ -36,138 +42,198 @@ export default function ParentDashboard() {
 
             // 1. Get Parent Profile
             const userDoc = await getDoc(doc(db, "users", uid));
-            if (userDoc.exists()) {
-                const userData = userDoc.data();
+            if (!userDoc.exists()) return;
 
-                // If it is a parent, find the linked student
-                let studentUid = uid;
-                let studentNameDisplay = userData.name || 'Student';
+            const userData = userDoc.data();
+            let studentUid = uid;
+            let studentNameDisplay = userData.name || 'Student';
+            let allStudentIds: string[] = [];
+            let primaryStudent: any = null;
 
-                if (userData.role === 'PARENT' && userData.linkedStudentPhone) {
-                    const studentQ = query(collection(db, "users"), where("phoneNumber", "==", userData.linkedStudentPhone));
-                    const studentSnap = await getDocs(studentQ);
+            if (userData.role === 'PARENT' && userData.linkedStudentPhone) {
+                const studentQ = query(collection(db, "users"), where("phoneNumber", "==", userData.linkedStudentPhone));
+                const studentSnap = await getDocs(studentQ);
 
-                    let foundStudent = null;
-                    if (!studentSnap.empty) {
-                        // Filter results: Must not be self, must not be another parent
-                        const candidates = studentSnap.docs.map(d => ({ id: d.id, ...d.data() } as any));
-                        foundStudent = candidates.find(c => c.id !== uid && c.role !== 'PARENT');
-                    }
-
-                    if (foundStudent) {
-                        studentUid = foundStudent.id;
-                        studentNameDisplay = foundStudent.name || 'Your Child';
-
-                        // Check for legacy ID (from admin creation)
-                        if (foundStudent.legacyUid) {
-                            console.log("Found legacy UID for student:", foundStudent.legacyUid);
-                        }
-                    } else {
-                        // Student not found by phone
-                        setStudentName("Student Not Found");
-                        setLoading(false);
-                        return;
-                    }
+                const foundStudents = [];
+                if (!studentSnap.empty) {
+                    const snapshotDocs = studentSnap.docs.map(d => ({ id: d.id, ...d.data() } as any));
+                    const candidates = snapshotDocs.filter(c => c.id !== uid && c.role !== 'PARENT');
+                    foundStudents.push(...candidates);
                 }
 
-                const studentDataFull = (await getDoc(doc(db, "users", studentUid))).data();
-                const studentLegacyUid = studentDataFull?.legacyUid;
+                if (foundStudents.length > 0) {
+                    primaryStudent = foundStudents[0];
+                    studentUid = primaryStudent.id;
+                    studentNameDisplay = primaryStudent.name || 'Your Child';
 
-                setStudentName(studentNameDisplay);
-                const tenantId = userData.tenantId;
-
-                if (tenantId) {
-                    // 2. Fetch Attendance
-                    // Note: In MVP, attendance is stored in 'attendance' collection with docId = {tenantId}_{date}
-                    // We need to query docs with this tenantId.
-                    // Ideally, we'd have a better index or subcollection. 
-                    // For now, we query all attendance docs for this tenant (limit 30 most recent).
-                    // Actually, since doc IDs are predictable strings, we can't easily query by date unless we have a field.
-                    // The admin panel saves: { tenantId: ..., date: ..., records: { uid: status } }
-                    // So we can query collection("attendance").where("tenantId", "==", tenantId)
-
-                    const q = query(
-                        collection(db, "attendance"),
-                        where("tenantId", "==", tenantId),
-                        orderBy("date", "desc"),
-                        limit(30) // Last 30 days
-                    );
-
-                    const snapshot = await getDocs(q);
-                    const history: any[] = [];
-                    let p = 0, a = 0, l = 0;
-
-                    snapshot.forEach(doc => {
-                        const data = doc.data();
-                        // Check CURRENT UID or LEGACY UID
-                        const status = data.records?.[studentUid] || (studentLegacyUid ? data.records?.[studentLegacyUid] : undefined) || 'UNMARKED';
-
-                        // Only add if relevant (or maybe show all days?)
-                        // Let's show all days that exist in the system
-                        if (data.date) {
-                            history.push({
-                                id: doc.id,
-                                date: data.date,
-                                status: status
-                            });
-
-                            if (status === 'PRESENT') p++;
-                            else if (status === 'ABSENT') a++;
-                            else if (status === 'LATE') l++;
-                        }
+                    allStudentIds = foundStudents.map(s => s.id);
+                    foundStudents.forEach(s => {
+                        if (s.legacyUid) allStudentIds.push(s.legacyUid);
                     });
-
-                    setAttendanceHistory(history);
-                    setStats({ present: p, absent: a, late: l, total: history.length });
-
-                    // 3. Fetch Homework Status
-                    if (studentDataFull?.grade) {
-                        try {
-                            const hwQ = query(
-                                collection(db, "homework"),
-                                where("tenantId", "==", tenantId),
-                                where("grade", "==", studentDataFull?.grade),
-                                orderBy("dueDate", "desc"),
-                                limit(5)
-                            );
-                            const hwSnap = await getDocs(hwQ);
-                            const hws = hwSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-
-                            if (hws.length > 0) {
-                                const subQ = query(collection(db, "submissions"), where("studentId", "==", studentUid));
-                                const subSnap = await getDocs(subQ);
-                                const subs: any = {};
-                                subSnap.forEach(d => {
-                                    subs[d.data().homeworkId] = d.data();
-                                });
-
-                                const merged = hws.map(hw => ({
-                                    ...hw,
-                                    submission: subs[hw.id]
-                                }));
-                                setHomeworkList(merged);
-                            }
-                        } catch (e) { console.error("HW Fetch error", e); }
-                    }
+                } else {
+                    setStudentName("Student Not Found");
+                    setLoading(false);
+                    return;
                 }
+            } else {
+                // Determine IDs for non-parent view (if used implicitly)
+                const studentDataFull = (await getDoc(doc(db, "users", studentUid))).data();
+                primaryStudent = { id: uid, ...studentDataFull };
+                allStudentIds = [uid, studentDataFull?.legacyUid].filter(Boolean);
+            }
+
+            setStudentName(studentNameDisplay);
+            const tenantId = userData.tenantId;
+            const grade = primaryStudent?.grade;
+
+            if (tenantId && grade) {
+                setStudentContext({ tenantId, grade, allStudentIds, studentUid });
+            } else {
+                setLoading(false);
             }
 
         } catch (e) {
-            console.error("Error fetching parent data", e);
-        } finally {
+            console.error("Error fetching identity", e);
             setLoading(false);
-            setRefreshing(false);
         }
     };
 
+    // Initial Load
     useEffect(() => {
-        fetchData();
+        fetchIdentity();
     }, []);
 
     const onRefresh = () => {
         setRefreshing(true);
-        fetchData();
+        fetchIdentity().then(() => setRefreshing(false));
     };
+
+
+    // Real-time Listeners
+    useEffect(() => {
+        if (!studentContext) return;
+
+        const { tenantId, grade, allStudentIds, studentUid } = studentContext;
+        setLoading(true);
+
+        // 1. Attendance Listener
+        const qAtt = query(collection(db, "attendance"), where("tenantId", "==", tenantId));
+        const unsubAtt = onSnapshot(qAtt, (snapshot) => {
+            let history: any[] = [];
+            let p = 0, a = 0, l = 0;
+
+            snapshot.forEach(doc => {
+                const data = doc.data();
+                let status = 'UNMARKED';
+
+                // Check ALL IDs
+                for (const id of allStudentIds) {
+                    if (data.records?.[id]) {
+                        status = data.records[id];
+                        break;
+                    }
+                }
+
+                if (data.date) {
+                    history.push({ id: doc.id, date: data.date, status });
+                }
+            });
+
+            // Sort & Calc Stats
+            history.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+            history.forEach(item => {
+                if (item.status === 'PRESENT') p++;
+                else if (item.status === 'ABSENT') a++;
+                else if (item.status === 'LATE') l++;
+            });
+
+            setStats({ present: p, absent: a, late: l, total: history.length });
+            setAttendanceHistory(history.slice(0, 30));
+        });
+
+
+        // 2. Homework Listener
+        const qHw = query(collection(db, "homework"), where("tenantId", "==", tenantId), where("grade", "==", grade));
+        const unsubHw = onSnapshot(qHw, (snapshot) => {
+            const list = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+            setRawHomeworks(list);
+        });
+
+        // 3. Submissions Listener
+        const searchIds = allStudentIds.slice(0, 10); // Limit 10 for 'in' query
+        const qSub = query(
+            collection(db, "submissions"),
+            where("tenantId", "==", tenantId),
+            where("studentId", "in", searchIds)
+        );
+        const unsubSub = onSnapshot(qSub, (snapshot) => {
+            const map: any = {};
+
+            snapshot.forEach(d => {
+                const data = d.data();
+                const hwId = data.homeworkId;
+                const newSub = { id: d.id, ...data };
+
+                if (!map[hwId]) {
+                    map[hwId] = newSub;
+                } else {
+                    // Conflict Resolution: Prioritize Verified/Incomplete > Submitted
+                    const existing = map[hwId];
+
+                    const getPriority = (s: any) => {
+                        if (s.status === 'CHECKED') return 3;
+                        if (s.status === 'INCOMPLETE') return 2;
+                        return 1;
+                    };
+
+                    const pNew = getPriority(newSub);
+                    const pExist = getPriority(existing);
+
+                    if (pNew > pExist) {
+                        map[hwId] = newSub;
+                    } else if (pNew === pExist) {
+                        // Tie-break with timestamps
+                        const tNew = (newSub as any).checkedAt?.seconds || (newSub as any).submittedAt?.seconds || 0;
+                        const tExist = (existing as any).checkedAt?.seconds || (existing as any).submittedAt?.seconds || 0;
+                        if (tNew > tExist) {
+                            map[hwId] = newSub;
+                        }
+                    }
+                }
+            });
+            console.log("Processed Submissions Map:", Object.keys(map).length);
+            setRawSubmissions(map);
+        });
+
+        setLoading(false);
+
+        return () => {
+            unsubAtt();
+            unsubHw();
+            unsubSub();
+        };
+    }, [studentContext]);
+
+    // Merge Homework & Submissions
+    useEffect(() => {
+        if (rawHomeworks.length === 0) {
+            setHomeworkList([]);
+            return;
+        }
+
+        let merged = rawHomeworks.map(hw => ({
+            ...hw,
+            submission: rawSubmissions[hw.id]
+        }));
+
+        // Client-side Sort
+        merged.sort((a, b) => new Date(b.dueDate).getTime() - new Date(a.dueDate).getTime());
+
+        setHomeworkList(merged.slice(0, 5));
+
+    }, [rawHomeworks, rawSubmissions]);
+
 
     const handleLogout = async () => {
         try {
@@ -188,7 +254,7 @@ export default function ParentDashboard() {
         }
     };
 
-    if (loading) {
+    if (loading && !studentName) { // Only show full loader if we don't even have a name yet
         return (
             <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
                 <ActivityIndicator size="large" color={colors.primary} />
@@ -248,12 +314,12 @@ export default function ParentDashboard() {
                                     <Text style={{ fontSize: 12, color: colors.textSecondary }}>Due: {item.dueDate}</Text>
                                 </View>
                                 <View style={[styles.statusBadge, {
-                                    backgroundColor: (item.submission ? (item.submission.status === 'CHECKED' ? colors.success : colors.primary) : colors.warning) + '20'
+                                    backgroundColor: (item.submission ? (item.submission.status === 'CHECKED' ? colors.success : (item.submission.status === 'INCOMPLETE' ? colors.danger : colors.primary)) : colors.warning) + '20'
                                 }]}>
                                     <Text style={[styles.statusText, {
-                                        color: (item.submission ? (item.submission.status === 'CHECKED' ? colors.success : colors.primary) : colors.warning)
+                                        color: (item.submission ? (item.submission.status === 'CHECKED' ? colors.success : (item.submission.status === 'INCOMPLETE' ? colors.danger : colors.primary)) : colors.warning)
                                     }]}>
-                                        {item.submission ? (item.submission.status === 'CHECKED' ? 'Verified' : 'Submitted') : 'Pending'}
+                                        {item.submission ? (item.submission.status === 'CHECKED' ? 'Verified' : (item.submission.status === 'INCOMPLETE' ? 'Redo / Incomplete' : 'Submitted')) : 'Pending'}
                                     </Text>
                                 </View>
                             </View>
@@ -290,12 +356,7 @@ export default function ParentDashboard() {
                     </View>
                 )}
 
-                <View style={{ height: 40 }} />
 
-                <TouchableOpacity style={styles.switchModeButton} onPress={() => router.replace('/grade')}>
-                    <Text style={styles.switchModeText}>Go to Student View</Text>
-                    <Ionicons name="arrow-forward" size={16} color={colors.textSecondary} />
-                </TouchableOpacity>
 
             </ScrollView>
         </View>

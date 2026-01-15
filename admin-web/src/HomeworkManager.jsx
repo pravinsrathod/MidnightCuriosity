@@ -15,6 +15,7 @@ const HomeworkManager = ({ students, tenantId, onAlert }) => {
 
     // Review State
     const [reviewingSubmission, setReviewingSubmission] = useState(null); // { homeworkId, studentId, ...data }
+    const [reviewStatus, setReviewStatus] = useState("CHECKED");
     const [teacherComment, setTeacherComment] = useState("");
     const [teacherFile, setTeacherFile] = useState(null);
 
@@ -26,17 +27,31 @@ const HomeworkManager = ({ students, tenantId, onAlert }) => {
         if (!tenantId) return;
 
         // Listen for Homework assignments for this tenant
+        // Listen for Homework assignments for this tenant
+        // REMOVED orderBy to avoid "Missing Index" error. Sorting client-side.
         const q = query(
             collection(db, "homework"),
-            where("tenantId", "==", tenantId),
-            orderBy("dueDate", "desc") // Show latest first
+            where("tenantId", "==", tenantId)
         );
 
         const unsub = onSnapshot(q, (snapshot) => {
             const list = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-            // Filter locally by date if needed, or just show all recent
-            // For now, let's show all, but we can highlight based on selectedDate
+
+            // Client-side Sort: Latest First
+            list.sort((a, b) => {
+                const dateA = new Date(a.dueDate).getTime();
+                const dateB = new Date(b.dueDate).getTime();
+                // If dates are same, sort by created time if avail
+                if (dateB === dateA) {
+                    return (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0);
+                }
+                return dateB - dateA;
+            });
+
             setHomeworkList(list);
+        }, (error) => {
+            console.error("Homework subscription error:", error);
+            onAlert("Error loading homework list. Please refresh.", "Error");
         });
 
         return () => unsub();
@@ -108,7 +123,7 @@ const HomeworkManager = ({ students, tenantId, onAlert }) => {
                 await updateDoc(doc(db, "submissions", submissionId), {
                     teacherComment: teacherComment,
                     teacherFileUrl: fileUrl || reviewingSubmission.teacherFileUrl || null,
-                    status: 'CHECKED',
+                    status: reviewStatus,
                     checkedAt: serverTimestamp()
                 });
             } else {
@@ -118,7 +133,7 @@ const HomeworkManager = ({ students, tenantId, onAlert }) => {
                     studentId: reviewingSubmission.studentId,
                     tenantId,
                     studentName: reviewingSubmission.studentName, // Need to ensure we pass this
-                    status: 'CHECKED', // Or 'COMPLETED_BY_TEACHER'
+                    status: reviewStatus, // 'CHECKED' or 'INCOMPLETE'
                     teacherComment,
                     teacherFileUrl: fileUrl,
                     checkedAt: serverTimestamp(),
@@ -126,7 +141,7 @@ const HomeworkManager = ({ students, tenantId, onAlert }) => {
                 });
             }
 
-            onAlert("Homework Verified & Saved! ✅", "Success");
+            onAlert(`Homework Marked as ${reviewStatus}! ✅`, "Success");
             setReviewingSubmission(null);
             setTeacherComment("");
             setTeacherFile(null);
@@ -227,11 +242,15 @@ const HomeworkManager = ({ students, tenantId, onAlert }) => {
                                     {students.filter(s => s.grade === hw.grade && s.status === 'ACTIVE').map(student => {
                                         const sub = submissions[hw.id]?.[student.id];
                                         const isChecked = sub?.status === 'CHECKED';
+                                        const isIncomplete = sub?.status === 'INCOMPLETE';
 
                                         return (
                                             <div key={student.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                                    <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: sub ? (isChecked ? 'var(--success)' : 'var(--warning)') : 'var(--text-tertiary)' }}></span>
+                                                    <span style={{
+                                                        width: '8px', height: '8px', borderRadius: '50%',
+                                                        background: sub ? (isChecked ? 'var(--success)' : (isIncomplete ? 'var(--danger)' : 'var(--warning)')) : 'var(--text-tertiary)'
+                                                    }}></span>
                                                     <span>{student.name}</span>
                                                     {sub && sub.fileUrl && (
                                                         <a href={sub.fileUrl} target="_blank" rel="noreferrer" style={{ fontSize: '0.8rem', color: 'var(--accent)' }}>
@@ -241,7 +260,11 @@ const HomeworkManager = ({ students, tenantId, onAlert }) => {
                                                 </div>
                                                 <button
                                                     className="btn-ghost"
-                                                    style={{ fontSize: '0.8rem', padding: '2px 8px', border: isChecked ? '1px solid var(--success)' : '1px solid var(--border)' }}
+                                                    style={{
+                                                        fontSize: '0.8rem', padding: '2px 8px',
+                                                        border: isChecked ? '1px solid var(--success)' : (isIncomplete ? '1px solid var(--danger)' : '1px solid var(--border)'),
+                                                        color: isChecked ? 'var(--success)' : (isIncomplete ? 'var(--danger)' : 'var(--text)')
+                                                    }}
                                                     onClick={() => {
                                                         setReviewingSubmission({
                                                             homeworkId: hw.id,
@@ -249,10 +272,11 @@ const HomeworkManager = ({ students, tenantId, onAlert }) => {
                                                             studentName: student.name,
                                                             ...sub // Spread existing submission data if any
                                                         });
+                                                        setReviewStatus(sub?.status || 'CHECKED');
                                                         setTeacherComment(sub?.teacherComment || "");
                                                     }}
                                                 >
-                                                    {isChecked ? "✅ Verified" : (sub ? "Review" : "Mark manually")}
+                                                    {isChecked ? "✅ Verified" : (isIncomplete ? "❌ Incomplete" : (sub ? "Review" : "Mark manually"))}
                                                 </button>
                                             </div>
                                         )
@@ -290,6 +314,32 @@ const HomeworkManager = ({ students, tenantId, onAlert }) => {
                         )}
 
                         <div className="form-group">
+                            <label className="label">Status</label>
+                            <div style={{ display: 'flex', gap: '10px' }}>
+                                <label style={{ display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer', padding: '8px', border: '1px solid var(--border)', borderRadius: '4px', background: reviewStatus === 'CHECKED' ? 'var(--success)' : 'transparent' }}>
+                                    <input
+                                        type="radio"
+                                        name="status"
+                                        value="CHECKED"
+                                        checked={reviewStatus === 'CHECKED'}
+                                        onChange={() => setReviewStatus('CHECKED')}
+                                    />
+                                    Verified (Complete)
+                                </label>
+                                <label style={{ display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer', padding: '8px', border: '1px solid var(--border)', borderRadius: '4px', background: reviewStatus === 'INCOMPLETE' ? 'var(--danger)' : 'transparent' }}>
+                                    <input
+                                        type="radio"
+                                        name="status"
+                                        value="INCOMPLETE"
+                                        checked={reviewStatus === 'INCOMPLETE'}
+                                        onChange={() => setReviewStatus('INCOMPLETE')}
+                                    />
+                                    Incomplete / Redo
+                                </label>
+                            </div>
+                        </div>
+
+                        <div className="form-group">
                             <label className="label">Teacher's Remark / Feedback</label>
                             <textarea
                                 rows={3}
@@ -308,7 +358,7 @@ const HomeworkManager = ({ students, tenantId, onAlert }) => {
                         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '20px' }}>
                             <button className="btn-ghost" onClick={() => setReviewingSubmission(null)}>Cancel</button>
                             <button className="btn-primary" onClick={handleReviewSave} disabled={loading}>
-                                {loading ? "Saving..." : "Mark as Verified"}
+                                {loading ? "Saving..." : "Save Status"}
                             </button>
                         </div>
                     </div>

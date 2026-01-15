@@ -26,10 +26,14 @@ export default function SplashScreen() {
                 const uid = currentUser?.uid || storedUid;
 
                 if (uid) {
+                    let userRole = 'STUDENT';
+
                     try {
                         const userDoc = await getDoc(doc(db, "users", uid));
                         if (userDoc.exists()) {
                             const userData = userDoc.data();
+                            userRole = userData.role || 'STUDENT';
+
                             if (userData.status === 'PENDING') {
                                 router.replace('/approval-pending');
                                 return;
@@ -46,7 +50,11 @@ export default function SplashScreen() {
                         }
                     }
 
-                    router.replace('/grade');
+                    if (userRole === 'PARENT') {
+                        router.replace('/parent-dashboard');
+                    } else {
+                        router.replace('/grade');
+                    }
                     return;
                 }
             }

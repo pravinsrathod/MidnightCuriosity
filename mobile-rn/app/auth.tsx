@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Keyboard, ScrollView } from 'react-native';
 import { useRouter } from 'expo-router';
 import { auth, db } from '../services/firebaseConfig';
-import { signInAnonymously, updateProfile } from "firebase/auth";
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile } from "firebase/auth";
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '../context/ThemeContext';
 import { useTenant } from '../context/TenantContext';
@@ -30,6 +30,7 @@ export default function AuthScreen() {
     const [selectedGrade, setSelectedGrade] = useState("");
     const [otpCode, setOtpCode] = useState('');
     const [loading, setLoading] = useState(false);
+    const [isAdminMode, setIsAdminMode] = useState(false); // NEW: Admin Mode
 
     const validateTenant = async () => {
         if (!inputTenantId) { console.warn('Please enter an Institute Code'); return; }
@@ -63,203 +64,173 @@ export default function AuthScreen() {
         }
     };
 
-    const handleSendOtp = async () => {
-        if (!phoneNumber) {
-            console.warn('Error', 'Please enter a valid phone number');
-            return;
-        }
+    const [password, setPassword] = useState('');
 
-        if (isSignUp && !isParent && (!name || !selectedGrade)) {
-            console.warn('Error', 'Please fill all fields');
-            return;
-        } else if (isSignUp && isParent && (!name || !linkedStudentPhone)) {
-            console.warn('Error', 'Please fill all fields');
-            return;
-        }
-
-        setLoading(true);
-        try {
-            console.log(`Sending OTP to ${phoneNumber}`);
-            setTimeout(() => {
-                setAuthStage('OTP');
-                setLoading(false);
-                console.warn('OTP Sent', 'Code is 123456 (Mock)');
-            }, 1000);
-
-        } catch (error: any) {
-            setLoading(false);
-            console.warn('Error', error.message);
-        }
-    };
-
-    const handleVerifyOtp = async () => {
-        if (otpCode.length !== 6) {
-            console.warn('Error', 'Please enter a 6-digit code');
-            return;
-        }
-        setLoading(true);
-        try {
-            if (otpCode === '123456') {
-                console.log("OTP Valid. Signing in anonymously...");
-                let userUid;
-                let deviceId = "unknown";
-                if (Platform.OS === 'ios') {
-                    deviceId = await Application.getIosIdForVendorAsync() || "ios-unknown";
-                } else if (Platform.OS === 'android') {
-                    deviceId = await Application.getAndroidId() || "android-unknown";
-                }
-
-                try {
-                    const userCredential = await signInAnonymously(auth);
-                    userUid = userCredential.user.uid;
-                } catch (signInError: any) {
-                    const mockId = "mock_user_" + Math.floor(Math.random() * 1000000);
-                    await AsyncStorage.setItem('user_uid', mockId);
-                    userUid = mockId;
-                }
-
-
-                if (isSignUp && !isParent) {
-                    // Check if Admin already created a user with this phone number (Pre-Added)
-                    const existingPhoneQ = query(collection(db, "users"), where("phoneNumber", "==", phoneNumber));
-                    const existingPhoneSnap = await getDocs(existingPhoneQ);
-
-                    let preExistsData: any = {};
-                    if (!existingPhoneSnap.empty) {
-                        // POTENTIAL CONFLICT: Check if this phone number belongs to a PARENT or another user
-                        // We only want to migrate "Pre-added Students" (created by Admin)
-                        // If it's a PARENT, we should probably ERROR or handle differently.
-                        // For now, valid Admin-added students usually have role='STUDENT' or undefined.
-                        const oldDoc = existingPhoneSnap.docs[0];
-                        const oldData = oldDoc.data();
-
-                        if (oldDoc.id !== userUid && oldData.role !== 'PARENT') {
-                            console.log("Migrating Admin-created user to Auth UID...");
-                            preExistsData = oldData;
-                            // Migrate data to new Auth UID
-                            await setDoc(doc(db, "users", userUid), {
-                                ...preExistsData,
-                                isActive: true, // Mark as definitely active
-                                legacyUid: oldDoc.id, // SAVE OLD ID for Attendance linking
-                                deviceId: deviceId
-                            }, { merge: true });
-
-                            // Delete old placeholder doc (so they don't appear twice in lists)
-                            try {
-                                await deleteDoc(doc(db, "users", oldDoc.id));
-                            } catch (delErr) {
-                                console.warn("Could not delete old user doc (permissions?):", oldDoc.id);
-                                // Continue logging in anyway
-                            }
-                        } else if (oldData.role === 'PARENT') {
-                            console.warn("Phone number already in use by a PARENT account.");
-                            // Do NOT migrate. This might mean the student cannot claim this number if a parent has it.
-                            // Ideal fix: Alert user. For now, we simply proceed as a new user, 
-                            // but we might fail uniqueness checks if we had them.
-                            // We will just NOT delete the parent account.
-                        }
-                    }
-
-                    if (auth.currentUser) {
-                        try { await updateProfile(auth.currentUser, { displayName: name }); } catch (e) { }
-                    }
-
-                    await setTenantId(resolvedTenantId);
-                    await setDoc(doc(db, "users", userUid), {
-                        name: name || preExistsData.name, // Prefer new name, fallback to pre-existing
-                        phoneNumber: phoneNumber,
-                        tenantId: resolvedTenantId,
-                        instituteCode: inputTenantId,
-                        grade: selectedGrade || preExistsData.grade,
-                        status: preExistsData.status === 'ACTIVE' ? 'ACTIVE' : 'PENDING', // Respect Pre-Active
-                        deviceId: deviceId,
-                        completedTopics: preExistsData.completedTopics || [],
-                        createdAt: preExistsData.createdAt || new Date().toISOString()
-                    }, { merge: true });
-
-                    await AsyncStorage.setItem('user_uid', userUid);
-
-                    // If they were pre-active, go to grade directly
-                    if (preExistsData.status === 'ACTIVE') {
-                        router.replace('/grade');
-                    } else {
-                        router.replace('/approval-pending');
-                    }
-                } else if (isSignUp && isParent) {
-                    // PARENT SIGN UP
-                    if (auth.currentUser) {
-                        try { await updateProfile(auth.currentUser, { displayName: name }); } catch (e) { }
-                    }
-
-                    await setTenantId(resolvedTenantId);
-                    await setDoc(doc(db, "users", userUid), {
-                        name: name,
-                        phoneNumber: phoneNumber,
-                        tenantId: resolvedTenantId,
-                        instituteCode: inputTenantId,
-                        role: 'PARENT', // IMPORTANT
-                        linkedStudentPhone: linkedStudentPhone, // Link to student
-                        status: 'PENDING',
-                        createdAt: new Date().toISOString()
-                    }, { merge: true });
-
-                    await AsyncStorage.setItem('user_uid', userUid);
-                    router.replace('/approval-pending');
-
-                } else {
-                    const userQ = query(collection(db, "users"), where("phoneNumber", "==", phoneNumber));
-                    const snapshot = await getDocs(userQ);
-
-                    if (!snapshot.empty) {
-                        const existingUser = snapshot.docs[0];
-                        const userData = existingUser.data();
-
-                        // DEVICE BINDING LOGIC - Skip for Parents
-                        if (!isParent && userData.deviceId && userData.deviceId !== deviceId) {
-                            console.warn("Login Blocked", "You are logged in on another device. Contact Admin.");
-                            setLoading(false);
-                            return;
-                        }
-
-                        if (!isParent && !userData.deviceId) {
-                            await setDoc(doc(db, "users", existingUser.id), { deviceId: deviceId }, { merge: true });
-                        }
-
-                        await AsyncStorage.setItem('user_uid', existingUser.id);
-                        await setTenantId(userData.tenantId || 'default');
-
-                        // Role Check for Parent Login
-                        if (isParent) {
-                            if (userData.role !== 'PARENT') {
-                                console.warn("Access Denied", "This account is not a parent account.");
-                                await auth.signOut();
-                                return;
-                            }
-                            if (userData.status === 'PENDING') {
-                                router.replace('/approval-pending');
-                                return;
-                            }
-                            router.replace('/parent-dashboard');
-                            return;
-                        }
-
-                        if (userData.status === 'PENDING') {
-                            router.replace('/approval-pending');
-                        } else if (userData.status === 'REJECTED' || userData.status === 'BLOCKED') {
-                            console.warn("Account Disabled", `Your account has been ${userData.status.toLowerCase()}.`);
-                        } else {
-                            router.replace('/grade');
-                        }
-                    } else {
-                        console.warn("Access Denied", "No user found with this number.");
-                        await auth.signOut();
-                    }
-                }
-            } else {
-                throw new Error('Invalid OTP');
+    const handleAuthAction = async () => {
+        // ADMIN LOGIN FLOW
+        if (isAdminMode) {
+            if (!phoneNumber || !password) {
+                Alert.alert("Error", "Please enter Email and Password.");
+                return;
             }
+            setLoading(true);
+            try {
+                const userCredential = await signInWithEmailAndPassword(auth, phoneNumber, password); // phoneNumber holds Email here
+
+                // Verify Role
+                const uid = userCredential.user.uid;
+                const userDoc = await getDoc(doc(db, "users", uid));
+                if (userDoc.exists() && (userDoc.data().role === 'admin' || userDoc.data().role === 'ADMIN')) {
+                    await setTenantId(userDoc.data().tenantId);
+                    await AsyncStorage.setItem('user_uid', uid);
+                    router.replace('/admin-dashboard');
+                } else {
+                    Alert.alert("Access Denied", "You do not have Admin privileges.");
+                    await auth.signOut();
+                }
+            } catch (e: any) {
+                Alert.alert("Login Failed", e.message);
+            } finally {
+                setLoading(false);
+            }
+            return;
+        }
+
+        // ... EXISTING FLOW ...
+        if (!phoneNumber || !password) {
+            Alert.alert("Error", "Please fill in all fields (Mobile & Password).");
+            return;
+        }
+
+        // Standardize "Username" to Email for Firebase Auth
+        // Ensure phone number is just digits or standard format for the email prefix
+        const cleanPhone = phoneNumber.replace(/[^0-9]/g, '');
+        if (cleanPhone.length < 8) {
+            Alert.alert("Error", "Please enter a valid mobile number.");
+            return;
+        }
+        const virtualEmail = `${cleanPhone}@midnightcuriosity.com`;
+
+        setLoading(true);
+        try {
+            if (isSignUp) {
+                // --- SIGN UP FLOW ---
+                if (!isParent && (!name || !selectedGrade)) {
+                    Alert.alert('Error', 'Please fill all student details');
+                    setLoading(false);
+                    return;
+                } else if (isParent && (!name || !linkedStudentPhone)) {
+                    Alert.alert('Error', 'Please fill all parent details');
+                    setLoading(false);
+                    return;
+                }
+
+                // 1. Create Auth User
+                const userCredential = await createUserWithEmailAndPassword(auth, virtualEmail, password);
+                const user = userCredential.user;
+                const userUid = user.uid;
+
+                // 2. Prepare Device ID
+                let deviceId = "unknown";
+                if (Platform.OS === 'ios') deviceId = await Application.getIosIdForVendorAsync() || "ios-unknown";
+                else if (Platform.OS === 'android') deviceId = await Application.getAndroidId() || "android-unknown";
+
+                // 3. Create Firestore Profile
+                const profileData: any = {
+                    name: name,
+                    phoneNumber: cleanPhone, // Store raw phone for display/logic
+                    tenantId: resolvedTenantId,
+                    instituteCode: inputTenantId,
+                    deviceId: deviceId,
+                    createdAt: new Date().toISOString(),
+                    status: 'PENDING'
+                };
+
+                if (isParent) {
+                    profileData.role = 'PARENT';
+                    profileData.linkedStudentPhone = linkedStudentPhone;
+                } else {
+                    profileData.role = 'STUDENT';
+                    profileData.grade = selectedGrade;
+                }
+
+                // Save User Doc
+                await setDoc(doc(db, "users", userUid), profileData);
+                await setTenantId(resolvedTenantId);
+                await AsyncStorage.setItem('user_uid', userUid);
+
+                // Update Display Name
+                try { await updateProfile(user, { displayName: name }); } catch (e) { }
+
+                router.replace('/approval-pending');
+
+            } else {
+                // --- LOGIN FLOW ---
+                const userCredential = await signInWithEmailAndPassword(auth, virtualEmail, password);
+                const user = userCredential.user;
+                const userUid = user.uid;
+
+                // Fetch Profile
+                const userDoc = await getDoc(doc(db, "users", userUid));
+                if (!userDoc.exists()) {
+                    Alert.alert("Error", "User profile not found. Contact Admin.");
+                    await auth.signOut();
+                    return;
+                }
+
+                const userData = userDoc.data();
+
+                // Allow Admin to login via Standard Form too if they try? 
+                // Redirect if Admin
+                if (userData.role === 'admin' || userData.role === 'ADMIN') {
+                    await setTenantId(userData.tenantId);
+                    await AsyncStorage.setItem('user_uid', userUid);
+                    router.replace('/admin-dashboard');
+                    return;
+                }
+
+                // Device Binding Check
+                let deviceId = "unknown";
+                if (Platform.OS === 'ios') deviceId = await Application.getIosIdForVendorAsync() || "ios-unknown";
+                else if (Platform.OS === 'android') deviceId = await Application.getAndroidId() || "android-unknown";
+
+                if (!userData.deviceId) {
+                    // Start binding on first login if missing
+                    await setDoc(doc(db, "users", userUid), { deviceId: deviceId }, { merge: true });
+                } else if (userData.deviceId !== deviceId) {
+                    Alert.alert("Login Blocked", "You are logged in on another device. Contact Admin to reset.");
+                    await auth.signOut();
+                    return;
+                }
+
+                // Check Status
+                if (userData.status === 'BLOCKED' || userData.status === 'REJECTED') {
+                    Alert.alert("Access Denied", "Your account is disabled.");
+                    await auth.signOut();
+                    return;
+                }
+
+                await AsyncStorage.setItem('user_uid', userUid);
+                await setTenantId(userData.tenantId);
+
+                // Routing
+                if (userData.role === 'PARENT') {
+                    if (userData.status === 'PENDING') router.replace('/approval-pending');
+                    else router.replace('/parent-dashboard');
+                } else {
+                    if (userData.status === 'PENDING') router.replace('/approval-pending');
+                    else router.replace('/grade');
+                }
+            }
+
         } catch (error: any) {
-            console.warn('Error', error.message);
+            console.error(error);
+            let msg = error.message;
+            if (error.code === 'auth/invalid-email') msg = "Invalid Phone Number.";
+            if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password' || error.code === 'auth/invalid-credential') msg = "Invalid Mobile or Password.";
+            if (error.code === 'auth/email-already-in-use') msg = "This mobile number is already registered. Please Login.";
+            if (error.code === 'auth/weak-password') msg = "Password must be at least 6 characters.";
+            Alert.alert("Authentication Failed", msg);
         } finally {
             setLoading(false);
         }
@@ -271,6 +242,27 @@ export default function AuthScreen() {
             style={styles.container}
         >
             <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
+                {/* Admin Toggle */}
+                <TouchableOpacity
+                    style={[styles.themeToggle, { right: undefined, left: 20, flexDirection: 'row', gap: 5, width: 'auto' }]}
+                    onPress={() => {
+                        setIsAdminMode(!isAdminMode);
+                        if (!isAdminMode) {
+                            setAuthStage('FORM');
+                            setIsSignUp(false);
+                            setIsParent(false);
+                            setPhoneNumber("");
+                            setPassword("");
+                        } else {
+                            setAuthStage('TENANT');
+                            setPhoneNumber("");
+                        }
+                    }}
+                >
+                    <Ionicons name={isAdminMode ? "business" : "settings-outline"} size={20} color={colors.text} />
+                    <Text style={{ color: colors.text, fontWeight: '600' }}>Admin</Text>
+                </TouchableOpacity>
+
                 <TouchableOpacity style={styles.themeToggle} onPress={toggleTheme}>
                     <Ionicons name={isDark ? "sunny" : "moon"} size={24} color={colors.text} />
                 </TouchableOpacity>
@@ -283,38 +275,40 @@ export default function AuthScreen() {
                 </View>
 
                 <View style={styles.card}>
-                    <View style={styles.toggleContainer}>
-                        <TouchableOpacity
-                            style={[styles.toggleButton, isSignUp && !isParent && styles.toggleButtonActive]}
-                            onPress={() => { setIsSignUp(true); setIsParent(false); setAuthStage('TENANT'); }}
-                        >
-                            <Text style={[styles.toggleText, isSignUp && !isParent && styles.toggleTextActive]}>Student Join</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                            style={[styles.toggleButton, !isSignUp && !isParent && styles.toggleButtonActive]}
-                            onPress={() => { setIsSignUp(false); setIsParent(false); setAuthStage('FORM'); }}
-                        >
-                            <Text style={[styles.toggleText, !isSignUp && !isParent && styles.toggleTextActive]}>Login</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                            style={[styles.toggleButton, isSignUp && isParent && styles.toggleButtonActive]}
-                            onPress={() => { setIsSignUp(true); setIsParent(true); setAuthStage('TENANT'); }}
-                        >
-                            <Text style={[styles.toggleText, isSignUp && isParent && styles.toggleTextActive]}>Parent Join</Text>
-                        </TouchableOpacity>
-                    </View>
+                    {!isAdminMode && (
+                        <View style={styles.toggleContainer}>
+                            <TouchableOpacity
+                                style={[styles.toggleButton, isSignUp && !isParent && styles.toggleButtonActive]}
+                                onPress={() => { setIsSignUp(true); setIsParent(false); setAuthStage('TENANT'); }}
+                            >
+                                <Text style={[styles.toggleText, isSignUp && !isParent && styles.toggleTextActive]}>Student Join</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                style={[styles.toggleButton, !isSignUp && !isParent && styles.toggleButtonActive]}
+                                onPress={() => { setIsSignUp(false); setIsParent(false); setAuthStage('FORM'); }}
+                            >
+                                <Text style={[styles.toggleText, !isSignUp && !isParent && styles.toggleTextActive]}>Login</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                style={[styles.toggleButton, isSignUp && isParent && styles.toggleButtonActive]}
+                                onPress={() => { setIsSignUp(true); setIsParent(true); setAuthStage('TENANT'); }}
+                            >
+                                <Text style={[styles.toggleText, isSignUp && isParent && styles.toggleTextActive]}>Parent Join</Text>
+                            </TouchableOpacity>
+                        </View>
+                    )}
 
                     <Text style={styles.headerTitle}>
-                        {isParent ? 'Parent Portal' : (isSignUp ? 'Create Account' : 'Welcome Back')}
+                        {isAdminMode ? 'Admin Console' : (isParent ? 'Parent Portal' : (isSignUp ? 'Create Account' : 'Welcome Back'))}
                     </Text>
                     <Text style={styles.headerSubtitle}>
-                        {authStage === 'TENANT' ? 'Validate your Institute' :
-                            isParent ? 'Track your child\'s progress' : 'Enter your details to start learning'}
+                        {isAdminMode ? 'Login to manage institute' : (authStage === 'TENANT' ? 'Validate your Institute' :
+                            isParent ? 'Track your child\'s progress' : 'Enter your details to start learning')}
                     </Text>
 
                     <View style={styles.inputContainer}>
-                        {/* STAGE 1: TENANT CHECK */}
-                        {authStage === 'TENANT' && (
+                        {/* STAGE 1: TENANT CHECK (Skipped if Admin) */}
+                        {authStage === 'TENANT' && !isAdminMode && (
                             <View style={styles.inputWrapper}>
                                 <Text style={styles.label}>Institute Code</Text>
                                 <TextInput
@@ -331,13 +325,13 @@ export default function AuthScreen() {
                         {/* STAGE 2: FORM */}
                         {authStage === 'FORM' && (
                             <>
-                                {instituteName ? (
+                                {!isAdminMode && instituteName ? (
                                     <View style={[styles.infoBox, { backgroundColor: colors.primary + '10', marginBottom: 20, padding: 12, borderRadius: 12 }]}>
                                         <Text style={{ color: colors.primary, fontWeight: 'bold', textAlign: 'center' }}>🏫 {instituteName}</Text>
                                     </View>
                                 ) : null}
 
-                                {isSignUp && (
+                                {isSignUp && !isAdminMode && (
                                     <View style={styles.inputWrapper}>
                                         <Text style={styles.label}>Full Name</Text>
                                         <TextInput
@@ -351,18 +345,19 @@ export default function AuthScreen() {
                                 )}
 
                                 <View style={styles.inputWrapper}>
-                                    <Text style={styles.label}>Mobile Number</Text>
+                                    <Text style={styles.label}>{isAdminMode ? "Admin Email" : "Mobile Number"}</Text>
                                     <TextInput
                                         style={styles.input}
-                                        placeholder="+1 555 123 4567"
+                                        placeholder={isAdminMode ? "admin@example.com" : "+1 555 123 4567"}
                                         placeholderTextColor={colors.textSecondary}
-                                        keyboardType="phone-pad"
+                                        keyboardType={isAdminMode ? "email-address" : "phone-pad"}
+                                        autoCapitalize="none"
                                         value={phoneNumber}
                                         onChangeText={setPhoneNumber}
                                     />
                                 </View>
 
-                                {isSignUp && isParent && (
+                                {isSignUp && isParent && !isAdminMode && (
                                     <View style={styles.inputWrapper}>
                                         <Text style={styles.label}>Student's Mobile Number (to link)</Text>
                                         <TextInput
@@ -376,7 +371,7 @@ export default function AuthScreen() {
                                     </View>
                                 )}
 
-                                {isSignUp && !isParent && availableGrades.length > 0 && (
+                                {isSignUp && !isParent && !isAdminMode && availableGrades.length > 0 && (
                                     <View style={styles.inputWrapper}>
                                         <Text style={styles.label}>Select Grade</Text>
                                         <View style={styles.gradeContainer}>
@@ -397,18 +392,17 @@ export default function AuthScreen() {
                             </>
                         )}
 
-                        {/* STAGE 3: OTP */}
-                        {authStage === 'OTP' && (
+                        {/* STAGE 3: PASSWORD (Merged into FORM) */}
+                        {authStage === 'FORM' && (
                             <View style={styles.inputWrapper}>
-                                <Text style={styles.label}>Verification Code</Text>
+                                <Text style={styles.label}>Password</Text>
                                 <TextInput
                                     style={styles.input}
-                                    placeholder="123456"
+                                    placeholder="Enter Password"
                                     placeholderTextColor={colors.textSecondary}
-                                    keyboardType="number-pad"
-                                    value={otpCode}
-                                    onChangeText={setOtpCode}
-                                    maxLength={6}
+                                    secureTextEntry
+                                    value={password}
+                                    onChangeText={setPassword}
                                 />
                             </View>
                         )}
@@ -417,9 +411,8 @@ export default function AuthScreen() {
                     <TouchableOpacity
                         style={styles.mainButton}
                         onPress={() => {
-                            if (authStage === 'TENANT') validateTenant();
-                            else if (authStage === 'FORM') handleSendOtp();
-                            else handleVerifyOtp();
+                            if (authStage === 'TENANT' && !isAdminMode) validateTenant();
+                            else handleAuthAction();
                         }}
                         disabled={loading}
                     >
@@ -427,15 +420,15 @@ export default function AuthScreen() {
                             <ActivityIndicator color="#FFFFFF" />
                         ) : (
                             <Text style={styles.mainButtonText}>
-                                {authStage === 'TENANT' ? 'Validate Institute' :
-                                    authStage === 'FORM' ? 'Get OTP' : 'Verify & Login'}
+                                {isAdminMode ? 'Login as Admin' : (authStage === 'TENANT' ? 'Validate Institute' :
+                                    isSignUp ? 'Sign Up' : 'Login')}
                             </Text>
                         )}
                     </TouchableOpacity>
 
-                    {authStage !== 'TENANT' && (
-                        <TouchableOpacity onPress={() => { setAuthStage(isSignUp ? 'TENANT' : 'FORM'); setOtpCode(''); }}>
-                            <Text style={styles.changeNumberText}>Go Back</Text>
+                    {authStage !== 'TENANT' && !isAdminMode && (
+                        <TouchableOpacity onPress={() => { setAuthStage('TENANT'); setPassword(''); }}>
+                            <Text style={styles.changeNumberText}>Change Institute / Back</Text>
                         </TouchableOpacity>
                     )}
                 </View>

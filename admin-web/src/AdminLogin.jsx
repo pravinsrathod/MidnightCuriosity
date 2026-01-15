@@ -5,7 +5,7 @@ import { db } from './firebase';
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 
 export default function AdminLogin() {
-    const [email, setEmail] = useState('');
+    const [identifier, setIdentifier] = useState(''); // Email or Phone
     const [password, setPassword] = useState('');
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
@@ -16,21 +16,38 @@ export default function AdminLogin() {
         setLoading(true);
         setError('');
 
+        // Determine if input is Phone or Email
+        const isPhone = /^\+?[0-9\s]+$/.test(identifier) && !identifier.includes('@');
+        let emailToUse = identifier;
+
+        if (isPhone) {
+            const cleanPhone = identifier.replace(/[^0-9]/g, '');
+            if (cleanPhone.length < 8) {
+                setError("Invalid phone number length.");
+                setLoading(false);
+                return;
+            }
+            emailToUse = `${cleanPhone}@midnightcuriosity.com`;
+        }
+
         try {
             if (isSignUp) {
-                const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+                const userCredential = await createUserWithEmailAndPassword(auth, identifier.includes('@') ? identifier : emailToUse, password);
                 const user = userCredential.user;
 
                 // For new Admin, we auto-generate a tenantId based on a shorter version of UID or a random string
                 const generatedTenantId = `inst_${Math.random().toString(36).substring(2, 7)}`;
 
                 // 1. Create User Document for Admin
-                await setDoc(doc(db, "users", user.uid), {
-                    email: email,
+                const userData = {
+                    email: identifier.includes('@') ? identifier : emailToUse,
                     role: 'admin',
                     tenantId: generatedTenantId,
                     createdAt: serverTimestamp()
-                });
+                };
+                if (isPhone) userData.phoneNumber = identifier.replace(/[^0-9]/g, '');
+
+                await setDoc(doc(db, "users", user.uid), userData);
 
                 // 2. Create Tenant Document
                 await setDoc(doc(db, "tenants", generatedTenantId), {
@@ -41,17 +58,16 @@ export default function AdminLogin() {
                     isActive: true
                 });
             } else {
-                await signInWithEmailAndPassword(auth, email, password);
+                await signInWithEmailAndPassword(auth, identifier.includes('@') ? identifier : emailToUse, password);
             }
         } catch (err) {
             console.error(err);
             let msg = "Authentication failed.";
             if (err.code === 'auth/weak-password') msg = "Password should be at least 6 characters.";
-            if (err.code === 'auth/email-already-in-use') msg = "Email already in use.";
-            if (err.code === 'auth/invalid-email') msg = "Invalid email address.";
-            if (err.code === 'auth/user-not-found') msg = "No admin found with this email.";
+            if (err.code === 'auth/email-already-in-use') msg = "User already exists.";
+            if (err.code === 'auth/invalid-email') msg = "Invalid format.";
+            if (err.code === 'auth/user-not-found') msg = "No user found.";
             if (err.code === 'auth/wrong-password') msg = "Incorrect password.";
-            if (err.code === 'auth/operation-not-allowed') msg = "Email/Password sign-in is disabled in Firebase Console.";
             setError(msg);
         } finally {
             setLoading(false);
@@ -69,13 +85,13 @@ export default function AdminLogin() {
 
                 <form onSubmit={handleAuth} style={styles.form}>
                     <div style={styles.inputGroup}>
-                        <label style={styles.label}>Email</label>
+                        <label style={styles.label}>Mobile Number OR Email</label>
                         <input
-                            type="email"
-                            value={email}
-                            onChange={(e) => setEmail(e.target.value)}
+                            type="text"
+                            value={identifier}
+                            onChange={(e) => setIdentifier(e.target.value)}
                             style={styles.input}
-                            placeholder="admin@edupro.com"
+                            placeholder="e.g. 9876543210 or admin@abc.com"
                             required
                         />
                     </div>
