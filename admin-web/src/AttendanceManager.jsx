@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { db } from './firebase';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 
-const AttendanceManager = ({ students, tenantId }) => {
+const AttendanceManager = ({ students, tenantId, onAlert }) => {
     const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]); // YYYY-MM-DD
     const [attendanceMap, setAttendanceMap] = useState({});
     const [loading, setLoading] = useState(false);
@@ -73,10 +73,10 @@ const AttendanceManager = ({ students, tenantId }) => {
                 absentCount: Object.values(attendanceMap).filter(v => v === 'ABSENT').length,
                 updatedAt: serverTimestamp()
             });
-            alert("Attendance Saved Successfully! ✅");
+            onAlert("Attendance Saved Successfully! ✅", "Success");
         } catch (e) {
             console.error("Error saving attendance:", e);
-            alert("Failed to save attendance.");
+            onAlert("Failed to save attendance: " + e.message, "Error");
         } finally {
             setSaving(false);
         }

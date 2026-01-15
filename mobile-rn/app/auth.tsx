@@ -145,7 +145,12 @@ export default function AuthScreen() {
                             }, { merge: true });
 
                             // Delete old placeholder doc (so they don't appear twice in lists)
-                            await deleteDoc(doc(db, "users", oldDoc.id));
+                            try {
+                                await deleteDoc(doc(db, "users", oldDoc.id));
+                            } catch (delErr) {
+                                console.warn("Could not delete old user doc (permissions?):", oldDoc.id);
+                                // Continue logging in anyway
+                            }
                         } else if (oldData.role === 'PARENT') {
                             console.warn("Phone number already in use by a PARENT account.");
                             // Do NOT migrate. This might mean the student cannot claim this number if a parent has it.

@@ -6,6 +6,7 @@ import { onAuthStateChanged, signOut } from "firebase/auth";
 import AdminLogin from "./AdminLogin";
 import ConfirmModal from "./ConfirmModal";
 import AttendanceManager from "./AttendanceManager"; // Import Attendance Component
+import HomeworkManager from "./HomeworkManager"; // Import Homework Component
 
 import { generateLessonContent, getApiKey, setApiKey, generateDoubtAnswer, generateExamFromPdf } from "./aiService";
 import { seedDemoData } from "./demoSeeder";
@@ -600,7 +601,7 @@ function App() {
   const handleAddStudent = async (e) => {
     e.preventDefault();
     if (!newStudentForm.name || !newStudentForm.phoneNumber || !newStudentForm.grade) {
-      alert("Please fill all fields");
+      customAlert("Please fill all fields");
       return;
     }
 
@@ -618,12 +619,12 @@ function App() {
         createdBy: 'ADMIN'
       });
 
-      alert("Student added successfully! They are now ACTIVE.");
       setNewStudentForm({ name: "", phoneNumber: "", grade: "" });
       setShowAddStudentModal(false);
+      customAlert("Student added successfully! They are now ACTIVE.");
     } catch (error) {
       console.error("Error adding student:", error);
-      alert("Failed to add student: " + error.message);
+      customAlert("Failed to add student: " + error.message);
     } finally {
       setLoading(false);
     }
@@ -632,7 +633,7 @@ function App() {
   const handleUpdateStudent = async (e) => {
     e.preventDefault();
     if (!studentFormData.name || !studentFormData.grade) {
-      alert("Please fill in Name and Grade.");
+      customAlert("Please fill in Name and Grade.");
       return;
     }
 
@@ -641,11 +642,11 @@ function App() {
         name: studentFormData.name,
         grade: studentFormData.grade
       });
-      alert("Student updated successfully!");
+      customAlert("Student updated successfully!");
       cancelEditStudent();
     } catch (e) {
       console.error("Error updating student:", e);
-      alert("Failed to update student.");
+      customAlert("Failed to update student.");
     }
   };
 
@@ -762,7 +763,7 @@ function App() {
 
   const handleUpdateTenantInfo = async (e) => {
     e.preventDefault();
-    if (!tenantEditForm.name || !tenantEditForm.code) return alert("Name and Code are required.");
+    if (!tenantEditForm.name || !tenantEditForm.code) return customAlert("Name and Code are required.");
 
     setLoading(true);
     try {
@@ -774,7 +775,7 @@ function App() {
         const checkSnap = await getDocs(q);
 
         if (!checkSnap.empty) {
-          alert(`The code '${tenantEditForm.code}' is already taken. Please choose another.`);
+          customAlert(`The code '${tenantEditForm.code}' is already taken. Please choose another.`);
           setLoading(false);
           return;
         }
@@ -799,7 +800,7 @@ function App() {
   const handleUpload = async (e) => {
     e.preventDefault();
     if (!formData.title || !formData.grade || !formData.subject || !formData.topic) {
-      alert("Please filling all fields.");
+      customAlert("Please filling all fields.");
       return;
     }
 
@@ -925,6 +926,9 @@ function App() {
         <button className={`nav-item ${activeTab === 'attendance' ? 'active' : ''}`} onClick={() => { setActiveTab('attendance'); cancelEdit(); }}>
           <span>📅</span> Attendance
         </button>
+        <button className={`nav-item ${activeTab === 'homework' ? 'active' : ''}`} onClick={() => { setActiveTab('homework'); cancelEdit(); }}>
+          <span>🏠</span> Homework
+        </button>
 
         <button className={`nav-item ${activeTab === 'students' ? 'active' : ''}`} onClick={() => { setActiveTab('students'); cancelEdit(); }}>
           <span>🎓</span> Students {stats.pendingStudents > 0 && <span className="badge" style={{ background: 'var(--accent)' }}>{stats.pendingStudents}</span>}
@@ -985,6 +989,7 @@ function App() {
             {activeTab === 'polls' && 'Live Classroom Polls'}
             {activeTab === 'exams' && 'Scheduled Exams'}
             {activeTab === 'attendance' && 'Daily Attendance'}
+            {activeTab === 'homework' && 'Manage Homework'}
             {activeTab === 'students' && 'Manage Students'}
             {activeTab === 'settings' && 'System Configuration'}
           </h1>
@@ -1069,8 +1074,8 @@ function App() {
                 <button
                   className="btn-primary"
                   onClick={async () => {
-                    const confirm = window.confirm("This will add sample students, lectures, and doubts. Continue?");
-                    if (!confirm) return;
+                    const isConfirmed = await customConfirm("This will add sample students, lectures, and doubts. Continue?", "Confirm Seeding", true);
+                    if (!isConfirmed) return;
 
                     setLoading(true);
                     try {
@@ -1078,7 +1083,7 @@ function App() {
                       // seedDemoData handles the success alert and reload itself mostly, but let's be safe
                     } catch (e) {
                       console.error("Seeding failed:", e);
-                      alert("Failed to seed data: " + e.message);
+                      customAlert("Failed to seed data: " + e.message);
                     } finally {
                       setLoading(false);
                     }
@@ -1130,7 +1135,7 @@ function App() {
                   onClick={async () => {
                     const name = document.getElementById('newTenantName').value;
                     const code = document.getElementById('newTenantCode').value;
-                    if (!name || !code) return alert("Enter Name and Code");
+                    if (!name || !code) return customAlert("Enter Name and Code");
 
                     try {
                       await setDoc(doc(db, "tenants", code), {
@@ -1139,12 +1144,12 @@ function App() {
                         createdAt: new Date().toISOString(),
                         isActive: true
                       });
-                      alert(`Tenant '${name}' created! Code: ${code}`);
+                      customAlert(`Tenant '${name}' created! Code: ${code}`);
                       document.getElementById('newTenantName').value = '';
                       document.getElementById('newTenantCode').value = '';
                     } catch (e) {
                       console.error(e);
-                      alert("Error creating tenant: " + e.message);
+                      customAlert("Error creating tenant: " + e.message);
                     }
                   }}
                 >
@@ -1330,7 +1335,7 @@ function App() {
                         { question: "Value of g on Earth?", options: ["9.8 m/s^2", "10 m/s", "8.9 m/s^2", "0"], correctAnswer: 0 }
                       ];
                       setExamForm(prev => ({ ...prev, questions: mockQuestions }));
-                      alert("Loaded Mock Questions for Testing!");
+                      customAlert("Loaded Mock Questions for Testing!");
                     }} style={{ fontSize: '0.8rem' }}>
                       🛠️ Load Mock Data
                     </button>
@@ -1588,7 +1593,11 @@ function App() {
 
         {/* Attendance Tab */}
         {activeTab === 'attendance' && (
-          <AttendanceManager students={students} tenantId={adminTenantId} />
+          <AttendanceManager students={students} tenantId={adminTenantId} onAlert={customAlert} />
+        )}
+
+        {activeTab === 'homework' && (
+          <HomeworkManager students={students} tenantId={adminTenantId} onAlert={customAlert} />
         )}
 
         {activeTab === 'lectures' && (

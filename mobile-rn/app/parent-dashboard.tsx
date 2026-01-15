@@ -17,6 +17,7 @@ export default function ParentDashboard() {
     const [studentName, setStudentName] = useState('');
     const [attendanceHistory, setAttendanceHistory] = useState<any[]>([]);
     const [stats, setStats] = useState({ present: 0, absent: 0, late: 0, total: 0 });
+    const [homeworkList, setHomeworkList] = useState<any[]>([]);
 
     const fetchData = async () => {
         try {
@@ -118,6 +119,36 @@ export default function ParentDashboard() {
 
                     setAttendanceHistory(history);
                     setStats({ present: p, absent: a, late: l, total: history.length });
+
+                    // 3. Fetch Homework Status
+                    if (studentDataFull?.grade) {
+                        try {
+                            const hwQ = query(
+                                collection(db, "homework"),
+                                where("tenantId", "==", tenantId),
+                                where("grade", "==", studentDataFull?.grade),
+                                orderBy("dueDate", "desc"),
+                                limit(5)
+                            );
+                            const hwSnap = await getDocs(hwQ);
+                            const hws = hwSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+                            if (hws.length > 0) {
+                                const subQ = query(collection(db, "submissions"), where("studentId", "==", studentUid));
+                                const subSnap = await getDocs(subQ);
+                                const subs: any = {};
+                                subSnap.forEach(d => {
+                                    subs[d.data().homeworkId] = d.data();
+                                });
+
+                                const merged = hws.map(hw => ({
+                                    ...hw,
+                                    submission: subs[hw.id]
+                                }));
+                                setHomeworkList(merged);
+                            }
+                        } catch (e) { console.error("HW Fetch error", e); }
+                    }
                 }
             }
 
@@ -196,6 +227,38 @@ export default function ParentDashboard() {
                         <Text style={[styles.statValue, { color: colors.warning }]}>{stats.late}</Text>
                         <Text style={styles.statLabel}>Late</Text>
                     </View>
+                </View>
+
+                {/* Homework List */}
+                <View style={styles.sectionHeader}>
+                    <Ionicons name="book-outline" size={20} color={colors.primary} />
+                    <Text style={styles.sectionTitle}>Recent Homework</Text>
+                </View>
+
+                <View style={[styles.listContainer, { marginBottom: 30 }]}>
+                    {homeworkList.length === 0 ? (
+                        <View style={{ padding: 20, alignItems: 'center' }}>
+                            <Text style={{ color: colors.textSecondary }}>No homework assigned recently.</Text>
+                        </View>
+                    ) : (
+                        homeworkList.map((item) => (
+                            <View key={item.id} style={styles.listItem}>
+                                <View style={{ flex: 1 }}>
+                                    <Text style={styles.dateFullText}>{item.title}</Text>
+                                    <Text style={{ fontSize: 12, color: colors.textSecondary }}>Due: {item.dueDate}</Text>
+                                </View>
+                                <View style={[styles.statusBadge, {
+                                    backgroundColor: (item.submission ? (item.submission.status === 'CHECKED' ? colors.success : colors.primary) : colors.warning) + '20'
+                                }]}>
+                                    <Text style={[styles.statusText, {
+                                        color: (item.submission ? (item.submission.status === 'CHECKED' ? colors.success : colors.primary) : colors.warning)
+                                    }]}>
+                                        {item.submission ? (item.submission.status === 'CHECKED' ? 'Verified' : 'Submitted') : 'Pending'}
+                                    </Text>
+                                </View>
+                            </View>
+                        ))
+                    )}
                 </View>
 
                 {/* Attendance List */}

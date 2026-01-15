@@ -57,11 +57,45 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    // --- ATTENDANCE ---
+    match /attendance/{id} {
+      allow read: if request.auth != null && (resource.data.tenantId == 'default' || isTenantUser(resource.data.tenantId));
+      // Allow write if Admin and their tenantId matches the document's tenantId
+      allow write: if isAdmin() && (request.resource.data.tenantId == getUserData().tenantId || resource.data.tenantId == getUserData().tenantId);
+    }
+
     // --- DOUBTS ---
     match /doubts/{id} {
       allow read, update: if request.auth != null && isTenantUser(resource.data.tenantId);
       allow create: if request.auth != null && request.resource.data.tenantId == getUserData().tenantId;
       allow delete: if isAdmin();
+    }
+
+    // --- HOMEWORK ---
+    match /homework/{id} {
+        allow read: if request.auth != null && isTenantUser(resource.data.tenantId);
+        allow create, update, delete: if isAdmin() && (request.resource.data.tenantId == getUserData().tenantId || resource.data.tenantId == getUserData().tenantId);
+    }
+
+    // --- SUBMISSIONS ---
+    match /submissions/{id} {
+        // Read: Student (Self), Admin (Tenant), Parent (Tenant - simplified)
+        allow read: if request.auth != null && (
+          resource.data.studentId == request.auth.uid || 
+          isTenantUser(resource.data.tenantId)
+        );
+
+        // Create: Student (Self) OR Admin (Manual Entry)
+        allow create: if request.auth != null && (
+          (request.resource.data.studentId == request.auth.uid && request.resource.data.tenantId == getUserData().tenantId) ||
+          (isAdmin() && request.resource.data.tenantId == getUserData().tenantId)
+        );
+
+        // Update: Student (Self) OR Admin
+        allow update: if request.auth != null && (
+          resource.data.studentId == request.auth.uid || 
+          isAdmin()
+        );
     }
 
     // --- LEGACY ---

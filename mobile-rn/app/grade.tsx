@@ -292,11 +292,18 @@ export default function GradeSelectionScreen() {
                             <Text style={styles.quickActionText}>Leaderboard</Text>
                         </TouchableOpacity>
 
+                        <TouchableOpacity style={styles.quickActionCard} onPress={() => router.push('/homework')}>
+                            <View style={[styles.actionIcon, { backgroundColor: 'rgba(59, 130, 246, 0.1)' }]}>
+                                <Ionicons name="book" size={24} color="#3B82F6" />
+                            </View>
+                            <Text style={styles.quickActionText}>Homework</Text>
+                        </TouchableOpacity>
+
                         <TouchableOpacity style={styles.quickActionCard} onPress={() => router.push('/assignments')}>
                             <View style={[styles.actionIcon, { backgroundColor: 'rgba(168, 85, 247, 0.1)' }]}>
-                                <Ionicons name="document-text" size={24} color="#A855F7" />
+                                <Ionicons name="checkbox-outline" size={24} color="#A855F7" />
                             </View>
-                            <Text style={styles.quickActionText}>Assignments</Text>
+                            <Text style={styles.quickActionText}>Quizzes</Text>
                         </TouchableOpacity>
 
                         <TouchableOpacity style={styles.quickActionCard} onPress={() => router.push('/doubts')}>
