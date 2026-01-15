@@ -1,19 +1,31 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert, FlatList } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert, FlatList, Modal, TextInput } from 'react-native';
 import { useRouter } from 'expo-router';
 import { auth, db } from '../services/firebaseConfig';
 import { useTheme } from '../context/ThemeContext';
 import { useTenant } from '../context/TenantContext';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { collection, query, where, onSnapshot, doc, updateDoc, deleteDoc } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, doc, updateDoc, deleteDoc, getDoc } from 'firebase/firestore';
 
 export default function AdminDashboard() {
     const router = useRouter();
     const { colors } = useTheme();
     const { tenantId } = useTenant();
+    const [grades, setGrades] = useState(Array.from({ length: 12 }, (_, i) => "Grade " + (i + 1)));
+
+    // Fetch Institute Config
+    useEffect(() => {
+        if (!tenantId) return;
+        getDoc(doc(db, "tenants", tenantId, "metadata", "lists")).then(snap => {
+            if (snap.exists() && snap.data().grades && Array.isArray(snap.data().grades)) {
+                setGrades(snap.data().grades);
+            }
+        }).catch(e => console.log("Config fetch error", e));
+    }, [tenantId]);
     const styles = useMemo(() => makeStyles(colors), [colors]);
     const [activeTab, setActiveTab] = useState('STUDENTS'); // STUDENTS, HOMEWORK, ATTENDANCE
+    const [selectedGradeFilter, setSelectedGradeFilter] = useState("All");
 
     const [students, setStudents] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
@@ -23,7 +35,156 @@ export default function AdminDashboard() {
     const [attendanceMap, setAttendanceMap] = useState<any>({});
     const [saving, setSaving] = useState(false);
 
-    // Fetch Data
+    // HOMEWORK STATE
+    const [assignments, setAssignments] = useState<any[]>([]);
+
+    // SUBMISSIONS STATE
+    const [submissions, setSubmissions] = useState<any>({});
+    const [expandedHomeworkId, setExpandedHomeworkId] = useState<string | null>(null);
+
+    // Fetch Submissions
+    useEffect(() => {
+        if (activeTab === 'HOMEWORK' && tenantId) {
+            const q = query(collection(db, "submissions"), where("tenantId", "==", tenantId));
+            const unsub = onSnapshot(q, (snapshot) => {
+                const map: any = {};
+                snapshot.docs.forEach(d => {
+                    const data = d.data();
+                    if (!map[data.homeworkId]) map[data.homeworkId] = {};
+                    map[data.homeworkId][data.studentId] = { id: d.id, ...data };
+                });
+                setSubmissions(map);
+            });
+            return () => unsub();
+        }
+    }, [activeTab, tenantId]);
+
+    const verifySubmission = async (homeworkId: string, studentId: string, status: string) => {
+        try {
+            const sub = submissions[homeworkId]?.[studentId];
+            if (sub && sub.id) {
+                await updateDoc(doc(db, "submissions", sub.id), {
+                    status,
+                    checkedAt: new Date()
+                });
+            } else {
+                // Create manual submission/record
+                await import('firebase/firestore').then(({ addDoc, collection, serverTimestamp }) => {
+                    addDoc(collection(db, "submissions"), {
+                        homeworkId,
+                        studentId,
+                        tenantId,
+                        status,
+                        checkedAt: serverTimestamp(),
+                        submittedAt: null
+                    });
+                });
+            }
+        } catch (e) {
+            Alert.alert("Error", "Failed to update status");
+        }
+    };
+
+    // MODAL STATE
+    const [addStudentVisible, setAddStudentVisible] = useState(false);
+    const [newStudent, setNewStudent] = useState({ name: '', phoneNumber: '', grade: '', password: '' });
+
+    const saveNewStudent = async () => {
+        if (!newStudent.name || !newStudent.phoneNumber || !newStudent.grade) {
+            Alert.alert("Error", "Please fill required fields (Name, Phone, Grade)");
+            return;
+        }
+        setLoading(true);
+        try {
+            await import('firebase/firestore').then(({ addDoc, collection, serverTimestamp }) => {
+                addDoc(collection(db, "users"), {
+                    ...newStudent,
+                    role: 'student', // Strict role
+                    tenantId,
+                    status: 'ACTIVE',
+                    createdAt: serverTimestamp(),
+                });
+            });
+            Alert.alert("Success", "Student Added!");
+            setAddStudentVisible(false);
+            setNewStudent({ name: '', phoneNumber: '', grade: '', password: '' });
+        } catch (e: any) {
+            Alert.alert("Error", e.message);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    // EDIT STATE
+    const [editStudentVisible, setEditStudentVisible] = useState(false);
+    const [editingStudent, setEditingStudent] = useState<any>(null);
+
+    const openEditStudent = (student: any) => {
+        setEditingStudent({ ...student });
+        setEditStudentVisible(true);
+    };
+
+    const saveEditStudent = async () => {
+        if (!editingStudent?.name || !editingStudent?.grade) return;
+        setLoading(true);
+        try {
+            const updates: any = {
+                name: editingStudent.name || '',
+                phoneNumber: editingStudent.phoneNumber || '',
+                grade: editingStudent.grade || ''
+            };
+            if (editingStudent.password) updates.password = editingStudent.password;
+
+            await updateDoc(doc(db, "users", editingStudent.id), updates);
+            Alert.alert("Success", "Student Updated");
+            setEditStudentVisible(false);
+        } catch (e: any) {
+            Alert.alert("Error", e.message);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const confirmDelete = (id: string) => {
+        Alert.alert("Confirm Delete", "Are you sure you want to delete this student?", [
+            { text: "Cancel", style: "cancel" },
+            {
+                text: "Delete", style: "destructive", onPress: async () => {
+                    try {
+                        await deleteDoc(doc(db, "users", id));
+                    } catch (e) { Alert.alert("Error", "Failed to delete"); }
+                }
+            }
+        ]);
+    };
+
+    // HOMEWORK CREATE STATE
+    const [createHomeworkVisible, setCreateHomeworkVisible] = useState(false);
+    const [newHomework, setNewHomework] = useState({ title: '', description: '', subject: '', grade: '', dueDate: new Date().toISOString().split('T')[0] });
+
+    const saveNewHomework = async () => {
+        if (!newHomework.title || !newHomework.subject || !newHomework.grade) return Alert.alert("Error", "Fill required fields");
+        setLoading(true);
+        try {
+            await import('firebase/firestore').then(({ addDoc, collection, serverTimestamp }) => {
+                addDoc(collection(db, "homework"), {
+                    ...newHomework,
+                    tenantId,
+                    createdAt: serverTimestamp(),
+                    status: 'OPEN'
+                });
+            });
+            Alert.alert("Success", "Homework Created!");
+            setCreateHomeworkVisible(false);
+            setNewHomework({ title: '', description: '', subject: '', grade: '', dueDate: new Date().toISOString().split('T')[0] });
+        } catch (e: any) {
+            Alert.alert("Error", e.message);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    // Fetch Students
     useEffect(() => {
         if (!tenantId) return;
         setLoading(true);
@@ -38,6 +199,17 @@ export default function AdminDashboard() {
 
         return () => unsub();
     }, [tenantId]);
+
+    // Fetch Assignments when tab is HOMEWORK
+    useEffect(() => {
+        if (activeTab === 'HOMEWORK' && tenantId) {
+            const q = query(collection(db, "homework"), where("tenantId", "==", tenantId));
+            const unsub = onSnapshot(q, (snapshot) => {
+                setAssignments(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+            });
+            return () => unsub();
+        }
+    }, [activeTab, tenantId]);
 
     // Fetch Attendance Record when Date/Tab changes
     useEffect(() => {
@@ -83,7 +255,7 @@ export default function AdminDashboard() {
     };
 
     // ATTENDANCE FUNCTIONS
-    const activeStudentList = students.filter(s => s.status === 'ACTIVE');
+    const activeStudentList = students.filter(s => s.status === 'ACTIVE' && (s.role === 'student' || s.role === 'STUDENT') && (selectedGradeFilter === 'All' || s.grade === selectedGradeFilter));
 
     const changeDate = (days: number) => {
         const newDate = new Date(attendanceDate);
@@ -158,13 +330,22 @@ export default function AdminDashboard() {
                         </View>
                     </View>
                 </View>
-                {item.status === 'PENDING' && (
+                {item.status === 'PENDING' ? (
                     <View style={{ gap: 8 }}>
                         <TouchableOpacity onPress={() => handleApprove(item.id, item.name)} style={[styles.actionBtn, { backgroundColor: colors.success }]}>
                             <Ionicons name="checkmark" size={16} color="#FFF" />
                         </TouchableOpacity>
                         <TouchableOpacity onPress={() => handleReject(item.id)} style={[styles.actionBtn, { backgroundColor: colors.danger }]}>
                             <Ionicons name="close" size={16} color="#FFF" />
+                        </TouchableOpacity>
+                    </View>
+                ) : (
+                    <View style={{ gap: 8 }}>
+                        <TouchableOpacity onPress={() => openEditStudent(item)} style={[styles.actionBtn, { backgroundColor: colors.primary }]}>
+                            <Ionicons name="pencil" size={16} color="#FFF" />
+                        </TouchableOpacity>
+                        <TouchableOpacity onPress={() => confirmDelete(item.id)} style={[styles.actionBtn, { backgroundColor: colors.danger }]}>
+                            <Ionicons name="trash" size={16} color="#FFF" />
                         </TouchableOpacity>
                     </View>
                 )}
@@ -205,8 +386,8 @@ export default function AdminDashboard() {
         );
     };
 
-    const pendingStudents = students.filter(s => s.status === 'PENDING');
-    const activeStudents = students.filter(s => s.status !== 'PENDING');
+    const pendingStudents = students.filter(s => s.status === 'PENDING' && (selectedGradeFilter === 'All' || s.grade === selectedGradeFilter));
+    const activeStudents = students.filter(s => s.status !== 'PENDING' && (selectedGradeFilter === 'All' || s.grade === selectedGradeFilter));
 
     return (
         <View style={styles.container}>
@@ -237,6 +418,24 @@ export default function AdminDashboard() {
             </View>
 
             <View style={styles.content}>
+                <View style={{ marginBottom: 15, marginTop: 5 }}>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingHorizontal: 5 }}>
+                        {['All', ...grades].map(g => (
+                            <TouchableOpacity
+                                key={g}
+                                onPress={() => setSelectedGradeFilter(g)}
+                                style={{
+                                    paddingVertical: 6, paddingHorizontal: 12, borderRadius: 20, borderWidth: 1,
+                                    borderColor: selectedGradeFilter === g ? colors.primary : colors.border,
+                                    backgroundColor: selectedGradeFilter === g ? colors.primary : 'transparent'
+                                }}
+                            >
+                                <Text style={{ color: selectedGradeFilter === g ? '#FFF' : colors.text, fontSize: 13, fontWeight: '500' }}>{g}</Text>
+                            </TouchableOpacity>
+                        ))}
+                    </ScrollView>
+                </View>
+
                 {loading ? (
                     <ActivityIndicator size="large" color={colors.primary} style={{ marginTop: 50 }} />
                 ) : (
@@ -248,6 +447,13 @@ export default function AdminDashboard() {
                                 renderItem={renderStudentItem}
                                 ListHeaderComponent={() => (
                                     <View style={{ marginBottom: 10 }}>
+                                        <TouchableOpacity
+                                            style={[styles.saveBtn, { marginBottom: 15, flexDirection: 'row', justifyContent: 'center', gap: 10 }]}
+                                            onPress={() => setAddStudentVisible(true)}
+                                        >
+                                            <Ionicons name="person-add" size={20} color="#FFF" />
+                                            <Text style={styles.saveBtnText}>Add New Student</Text>
+                                        </TouchableOpacity>
                                         {pendingStudents.length > 0 && <Text style={styles.sectionHeader}>Pending Approvals ({pendingStudents.length})</Text>}
                                     </View>
                                 )}
@@ -257,12 +463,74 @@ export default function AdminDashboard() {
 
                         {activeTab === 'HOMEWORK' && (
                             <View style={styles.section}>
-                                <Text style={styles.sectionTitle}>Homework Management</Text>
-                                <View style={styles.emptyState}>
-                                    <Ionicons name="book-outline" size={48} color={colors.textSecondary} />
-                                    <Text style={{ color: colors.textSecondary, marginTop: 10 }}>Mobile Homework Manager coming soon.</Text>
-                                    <Text style={{ color: colors.textSecondary, fontSize: 12 }}>Use Web Portal for full features.</Text>
+                                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                                    <Text style={styles.sectionTitle}>Assignments</Text>
+                                    <TouchableOpacity style={{ padding: 5 }} onPress={() => setCreateHomeworkVisible(true)}>
+                                        <Ionicons name="add-circle" size={28} color={colors.primary} />
+                                    </TouchableOpacity>
                                 </View>
+
+                                {assignments.length === 0 ? (
+                                    <View style={styles.emptyState}>
+                                        <Text style={{ color: colors.textSecondary }}>No assignments found.</Text>
+                                    </View>
+                                ) : (
+                                    <FlatList
+                                        data={selectedGradeFilter === 'All' ? assignments : assignments.filter(a => a.grade === selectedGradeFilter)}
+                                        keyExtractor={item => item.id}
+                                        renderItem={({ item }) => {
+                                            const expanded = expandedHomeworkId === item.id;
+                                            return (
+                                                <View style={styles.card}>
+                                                    <TouchableOpacity onPress={() => setExpandedHomeworkId(expanded ? null : item.id)}>
+                                                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                            <Text style={styles.cardTitle}>{item.title}</Text>
+                                                            <Ionicons name={expanded ? "chevron-up" : "chevron-down"} size={20} color={colors.textSecondary} />
+                                                        </View>
+                                                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 5 }}>
+                                                            <Text style={{ fontWeight: 'bold', color: colors.primary }}>{item.subject || 'General'}</Text>
+                                                            <Text style={styles.cardSubtitle}>Due: {item.dueDate}</Text>
+                                                        </View>
+                                                        <Text numberOfLines={expanded ? undefined : 2} style={{ color: colors.textSecondary, fontSize: 12, marginTop: 4 }}>{item.description}</Text>
+                                                    </TouchableOpacity>
+
+                                                    {/* STUDENT LIST (EXPANDED) */}
+                                                    {expanded && (
+                                                        <View style={{ marginTop: 15, borderTopWidth: 1, borderColor: colors.border, paddingTop: 10 }}>
+                                                            <Text style={{ fontSize: 12, fontWeight: 'bold', color: colors.textSecondary, marginBottom: 8 }}>SUBMISSIONS ({item.grade})</Text>
+                                                            {students.filter(s => s.grade === item.grade && s.status === 'ACTIVE' && (s.role === 'student' || s.role === 'STUDENT')).map(student => {
+                                                                const sub = submissions[item.id]?.[student.id];
+                                                                const isChecked = sub?.status === 'CHECKED';
+                                                                const isIncomplete = sub?.status === 'INCOMPLETE';
+                                                                return (
+                                                                    <View key={student.id} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                                                                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                                                                            <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: isChecked ? colors.success : (isIncomplete ? colors.danger : colors.border) }} />
+                                                                            <Text style={{ color: colors.text, fontSize: 14 }}>{student.name}</Text>
+                                                                        </View>
+                                                                        <View style={{ flexDirection: 'row', gap: 8 }}>
+                                                                            <TouchableOpacity onPress={() => verifySubmission(item.id, student.id, 'CHECKED')} style={{ padding: 4, borderWidth: 1, borderColor: isChecked ? colors.success : colors.border, borderRadius: 4, backgroundColor: isChecked ? colors.success + '20' : 'transparent' }}>
+                                                                                <Ionicons name="checkmark" size={16} color={isChecked ? colors.success : colors.textSecondary} />
+                                                                            </TouchableOpacity>
+                                                                            <TouchableOpacity onPress={() => verifySubmission(item.id, student.id, 'INCOMPLETE')} style={{ padding: 4, borderWidth: 1, borderColor: isIncomplete ? colors.danger : colors.border, borderRadius: 4, backgroundColor: isIncomplete ? colors.danger + '20' : 'transparent' }}>
+                                                                                <Ionicons name="close" size={16} color={isIncomplete ? colors.danger : colors.textSecondary} />
+                                                                            </TouchableOpacity>
+                                                                        </View>
+                                                                    </View>
+                                                                );
+                                                            })}
+                                                            {students.filter(s => s.grade === item.grade && (s.role === 'student' || s.role === 'STUDENT')).length === 0 && (
+                                                                <Text style={{ color: colors.textSecondary, fontSize: 12 }}>No students found in {item.grade}</Text>
+                                                            )}
+                                                        </View>
+                                                    )}
+                                                </View>
+                                            );
+                                        }}
+                                        style={{ flex: 1 }}
+                                        contentContainerStyle={{ paddingBottom: 20 }}
+                                    />
+                                )}
                             </View>
                         )}
 
@@ -295,7 +563,7 @@ export default function AdminDashboard() {
                                         </View>
 
                                         <FlatList
-                                            data={activeStudents}
+                                            data={activeStudentList}
                                             keyExtractor={item => item.id}
                                             renderItem={renderAttendanceItem}
                                             contentContainerStyle={{ paddingBottom: 20 }}
@@ -316,6 +584,181 @@ export default function AdminDashboard() {
                     </>
                 )}
             </View>
+
+            {/* ADD STUDENT MODAL */}
+            <Modal visible={addStudentVisible} animationType="slide" transparent>
+                <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 20 }}>
+                    <View style={styles.card}>
+                        <Text style={styles.sectionTitle}>Add New Student</Text>
+                        <TextInput
+                            placeholder="Student Name"
+                            placeholderTextColor={colors.textSecondary}
+                            style={{ borderWidth: 1, borderColor: colors.border, padding: 10, borderRadius: 8, color: colors.text, marginBottom: 10 }}
+                            value={newStudent.name}
+                            onChangeText={t => setNewStudent({ ...newStudent, name: t })}
+                        />
+                        <TextInput
+                            placeholder="Phone (e.g. 9876543210)"
+                            placeholderTextColor={colors.textSecondary}
+                            keyboardType="phone-pad"
+                            style={{ borderWidth: 1, borderColor: colors.border, padding: 10, borderRadius: 8, color: colors.text, marginBottom: 10 }}
+                            value={newStudent.phoneNumber}
+                            onChangeText={t => setNewStudent({ ...newStudent, phoneNumber: t })}
+                        />
+                        <View style={{ flexDirection: 'row', gap: 10, marginBottom: 10, flexWrap: 'wrap' }}>
+                            {grades.map(g => (
+                                <TouchableOpacity
+                                    key={g}
+                                    onPress={() => setNewStudent({ ...newStudent, grade: g })}
+                                    style={{
+                                        padding: 8, borderRadius: 8, borderWidth: 1,
+                                        borderColor: newStudent.grade === g ? colors.primary : colors.border,
+                                        backgroundColor: newStudent.grade === g ? colors.primary + '20' : 'transparent'
+                                    }}
+                                >
+                                    <Text style={{ color: colors.text, fontSize: 12 }}>{g}</Text>
+                                </TouchableOpacity>
+                            ))}
+                        </View>
+                        <TextInput
+                            placeholder="Password (Optional)"
+                            placeholderTextColor={colors.textSecondary}
+                            secureTextEntry
+                            style={{ borderWidth: 1, borderColor: colors.border, padding: 10, borderRadius: 8, color: colors.text, marginBottom: 20 }}
+                            value={newStudent.password}
+                            onChangeText={t => setNewStudent({ ...newStudent, password: t })}
+                        />
+                        <View style={{ flexDirection: 'row', gap: 10 }}>
+                            <TouchableOpacity onPress={() => setAddStudentVisible(false)} style={{ flex: 1, padding: 12, borderWidth: 1, borderColor: colors.border, borderRadius: 8, alignItems: 'center' }}>
+                                <Text style={{ color: colors.text }}>Cancel</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity onPress={saveNewStudent} style={{ flex: 1, padding: 12, backgroundColor: colors.primary, borderRadius: 8, alignItems: 'center' }}>
+                                <Text style={{ color: '#FFF', fontWeight: 'bold' }}>Save</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
+            </Modal>
+            {/* EDIT STUDENT MODAL */}
+            <Modal visible={editStudentVisible} animationType="slide" transparent>
+                <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 20 }}>
+                    <View style={styles.card}>
+                        <Text style={styles.sectionTitle}>Edit Student</Text>
+                        <TextInput
+                            placeholder="Student Name"
+                            placeholderTextColor={colors.textSecondary}
+                            style={{ borderWidth: 1, borderColor: colors.border, padding: 10, borderRadius: 8, color: colors.text, marginBottom: 10 }}
+                            value={editingStudent?.name}
+                            onChangeText={t => setEditingStudent({ ...editingStudent, name: t })}
+                        />
+                        <TextInput
+                            placeholder="Phone"
+                            placeholderTextColor={colors.textSecondary}
+                            keyboardType="phone-pad"
+                            style={{ borderWidth: 1, borderColor: colors.border, padding: 10, borderRadius: 8, color: colors.text, marginBottom: 10 }}
+                            value={editingStudent?.phoneNumber}
+                            onChangeText={t => setEditingStudent({ ...editingStudent, phoneNumber: t })}
+                        />
+                        <View style={{ flexDirection: 'row', gap: 10, marginBottom: 20, flexWrap: 'wrap' }}>
+                            {grades.map(g => (
+                                <TouchableOpacity
+                                    key={g}
+                                    onPress={() => setEditingStudent({ ...editingStudent, grade: g })}
+                                    style={{
+                                        padding: 8, borderRadius: 8, borderWidth: 1,
+                                        borderColor: editingStudent?.grade === g ? colors.primary : colors.border,
+                                        backgroundColor: editingStudent?.grade === g ? colors.primary + '20' : 'transparent'
+                                    }}
+                                >
+                                    <Text style={{ color: colors.text, fontSize: 12 }}>{g}</Text>
+                                </TouchableOpacity>
+                            ))}
+                        </View>
+                        <TextInput
+                            placeholder="New Password (Optional)"
+                            placeholderTextColor={colors.textSecondary}
+                            secureTextEntry
+                            style={{ borderWidth: 1, borderColor: colors.border, padding: 10, borderRadius: 8, color: colors.text, marginBottom: 20 }}
+                            value={editingStudent?.password}
+                            onChangeText={t => setEditingStudent({ ...editingStudent, password: t })}
+                        />
+                        <View style={{ flexDirection: 'row', gap: 10 }}>
+                            <TouchableOpacity onPress={() => setEditStudentVisible(false)} style={{ flex: 1, padding: 12, borderWidth: 1, borderColor: colors.border, borderRadius: 8, alignItems: 'center' }}>
+                                <Text style={{ color: colors.text }}>Cancel</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity onPress={saveEditStudent} style={{ flex: 1, padding: 12, backgroundColor: colors.primary, borderRadius: 8, alignItems: 'center' }}>
+                                <Text style={{ color: '#FFF', fontWeight: 'bold' }}>Update</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
+            </Modal>
+
+            {/* CREATE HOMEWORK MODAL */}
+            <Modal visible={createHomeworkVisible} animationType="slide" transparent>
+                <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 20 }}>
+                    <View style={styles.card}>
+                        <Text style={styles.sectionTitle}>Assign Homework</Text>
+                        <View style={{ flexDirection: 'row', gap: 10, marginBottom: 10 }}>
+                            <TextInput
+                                placeholder="Due Date (YYYY-MM-DD)"
+                                placeholderTextColor={colors.textSecondary}
+                                style={{ flex: 1, borderWidth: 1, borderColor: colors.border, padding: 10, borderRadius: 8, color: colors.text }}
+                                value={newHomework.dueDate}
+                                onChangeText={t => setNewHomework({ ...newHomework, dueDate: t })}
+                            />
+                        </View>
+                        <TextInput
+                            placeholder="Title"
+                            placeholderTextColor={colors.textSecondary}
+                            style={{ borderWidth: 1, borderColor: colors.border, padding: 10, borderRadius: 8, color: colors.text, marginBottom: 10 }}
+                            value={newHomework.title}
+                            onChangeText={t => setNewHomework({ ...newHomework, title: t })}
+                        />
+                        <TextInput
+                            placeholder="Subject"
+                            placeholderTextColor={colors.textSecondary}
+                            style={{ borderWidth: 1, borderColor: colors.border, padding: 10, borderRadius: 8, color: colors.text, marginBottom: 10 }}
+                            value={newHomework.subject}
+                            onChangeText={t => setNewHomework({ ...newHomework, subject: t })}
+                        />
+
+                        <Text style={{ color: colors.textSecondary, marginBottom: 5, fontSize: 12 }}>Select Grade:</Text>
+                        <View style={{ flexDirection: 'row', gap: 10, marginBottom: 15, flexWrap: 'wrap' }}>
+                            {grades.map(g => (
+                                <TouchableOpacity
+                                    key={g}
+                                    onPress={() => setNewHomework({ ...newHomework, grade: g })}
+                                    style={{
+                                        padding: 8, borderRadius: 8, borderWidth: 1,
+                                        borderColor: newHomework.grade === g ? colors.primary : colors.border,
+                                        backgroundColor: newHomework.grade === g ? colors.primary + '20' : 'transparent'
+                                    }}
+                                >
+                                    <Text style={{ color: colors.text, fontSize: 12 }}>{g}</Text>
+                                </TouchableOpacity>
+                            ))}
+                        </View>
+                        <TextInput
+                            placeholder="Description"
+                            placeholderTextColor={colors.textSecondary}
+                            multiline
+                            numberOfLines={3}
+                            style={{ borderWidth: 1, borderColor: colors.border, padding: 10, borderRadius: 8, color: colors.text, marginBottom: 20, height: 80 }}
+                            value={newHomework.description}
+                            onChangeText={t => setNewHomework({ ...newHomework, description: t })}
+                        />
+                        <View style={{ flexDirection: 'row', gap: 10 }}>
+                            <TouchableOpacity onPress={() => setCreateHomeworkVisible(false)} style={{ flex: 1, padding: 12, borderWidth: 1, borderColor: colors.border, borderRadius: 8, alignItems: 'center' }}>
+                                <Text style={{ color: colors.text }}>Cancel</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity onPress={saveNewHomework} style={{ flex: 1, padding: 12, backgroundColor: colors.primary, borderRadius: 8, alignItems: 'center' }}>
+                                <Text style={{ color: '#FFF', fontWeight: 'bold' }}>Assign</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
+            </Modal>
         </View>
     );
 }

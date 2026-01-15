@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Keyboard, ScrollView } from 'react-native';
 import { useRouter } from 'expo-router';
 import { auth, db } from '../services/firebaseConfig';
-import { signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile } from "firebase/auth";
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile, signInAnonymously } from "firebase/auth";
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '../context/ThemeContext';
 import { useTenant } from '../context/TenantContext';
@@ -225,6 +225,67 @@ export default function AuthScreen() {
 
         } catch (error: any) {
             console.error(error);
+
+            // FALLBACK: Manual Firestore Password Check (For Admin-created users or Updated passwords)
+            if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password' || error.code === 'auth/invalid-credential') {
+                try {
+                    const q = query(collection(db, "users"), where("phoneNumber", "==", cleanPhone));
+                    const snapshot = await getDocs(q);
+
+                    if (!snapshot.empty) {
+                        const userDoc = snapshot.docs[0];
+                        const userData = userDoc.data();
+                        // Verify Password
+                        if (userData.password && userData.password === password) {
+                            console.log("Logged in via Firestore Password Fallback");
+
+                            // Authenticate Anonymously to satisfy Security Rules
+                            await signInAnonymously(auth);
+
+                            const userUid = userDoc.id;
+
+                            if (userData.role === 'admin' || userData.role === 'ADMIN') {
+                                await setTenantId(userData.tenantId);
+                                await AsyncStorage.setItem('user_uid', userUid);
+                                router.replace('/admin-dashboard');
+                                return;
+                            }
+
+                            let deviceId = "unknown";
+                            if (Platform.OS === 'ios') deviceId = await Application.getIosIdForVendorAsync() || "ios-unknown";
+                            else if (Platform.OS === 'android') deviceId = await Application.getAndroidId() || "android-unknown";
+
+                            if (!userData.deviceId) await setDoc(doc(db, "users", userUid), { deviceId: deviceId }, { merge: true });
+                            else if (userData.deviceId !== deviceId) {
+                                Alert.alert("Login Blocked", "Logged in on another device.");
+                                await auth.signOut();
+                                return;
+                            }
+
+                            if (userData.status === 'BLOCKED' || userData.status === 'REJECTED') {
+                                Alert.alert("Access Denied", "Account disabled.");
+                                await auth.signOut();
+                                return;
+                            }
+
+                            await AsyncStorage.setItem('user_uid', userUid);
+                            await setTenantId(userData.tenantId);
+
+                            if (userData.role === 'PARENT') {
+                                if (userData.status === 'PENDING') router.replace('/approval-pending');
+                                else router.replace('/parent-dashboard');
+                            } else {
+                                if (userData.status === 'PENDING') router.replace('/approval-pending');
+                                else router.replace('/grade');
+                            }
+                            return;
+                        }
+                    }
+                } catch (fallbackError) {
+                    console.error("Fallback login failed", fallbackError);
+                }
+            }
+
             let msg = error.message;
             if (error.code === 'auth/invalid-email') msg = "Invalid Phone Number.";
             if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password' || error.code === 'auth/invalid-credential') msg = "Invalid Mobile or Password.";

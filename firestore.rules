@@ -59,7 +59,7 @@ service cloud.firestore {
 
     // --- ATTENDANCE ---
     match /attendance/{id} {
-      allow read: if request.auth != null && (resource.data.tenantId == 'default' || isTenantUser(resource.data.tenantId));
+      allow read: if request.auth != null && (resource == null || resource.data.tenantId == 'default' || isTenantUser(resource.data.tenantId));
       allow create: if isAdmin() && request.resource.data.tenantId == getUserData().tenantId;
       allow update: if isAdmin() && (request.resource.data.tenantId == getUserData().tenantId || resource.data.tenantId == getUserData().tenantId);
       allow delete: if isAdmin() && resource.data.tenantId == getUserData().tenantId;

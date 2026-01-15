@@ -123,6 +123,7 @@ function App() {
   const [topics, setTopics] = useState([]);
 
 
+  const [selectedGradeFilter, setSelectedGradeFilter] = useState("All");
   // Doubts State
   const [doubts, setDoubts] = useState([]);
   const [replyText, setReplyText] = useState({}); // Map of doubtId -> text
@@ -464,8 +465,8 @@ function App() {
       } else {
         // Initialize Defaults if first run
         const defaults = {
-          grades: ["Grade 10", "Grade 11", "Grade 12"],
-          subjects: ["Maths", "Physics", "Chemistry", "Biology"],
+          grades: Array.from({ length: 12 }, (_, i) => `Grade ${i + 1}`),
+          subjects: ["Maths", "Physics", "Chemistry", "Biology", "English", "History"],
           topics: ["Algebra", "Geometry", "Calculus"]
         };
         await setDoc(docRef, defaults);
@@ -758,7 +759,7 @@ Password: [Hidden]`);
 
   const cancelEdit = () => {
     setEditingId(null);
-    setFormData({ title: "", topic: topics[0] || "", grade: grades[0] || "Grade 10", subject: subjects[0] || "Maths", overview: "", notes: "" });
+    setFormData({ title: "", topic: topics[0] || "", grade: grades[0] || "Grade 1", subject: subjects[0] || "Maths", overview: "", notes: "" });
     setExistingVideoUrl("");
     setQuizzes([{ question: "", options: ["", "", ""], correctIndex: 0, triggerPercentage: 50 }]);
   };
@@ -1040,6 +1041,27 @@ Password: [Hidden]`);
             <span style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>System Online</span>
           </div>
         </header>
+
+        {/* Global Grade Filter */}
+        {['students', 'attendance', 'homework', 'exams', 'doubts'].includes(activeTab) && (
+          <div style={{ padding: '0 2rem 1rem 2rem', overflowX: 'auto', display: 'flex', gap: '8px', alignItems: 'center' }}>
+            <span style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>Filter:</span>
+            {['All', ...grades].map(g => (
+              <button
+                key={g}
+                onClick={() => setSelectedGradeFilter(g)}
+                style={{
+                  padding: '6px 12px', borderRadius: '20px', border: '1px solid var(--border)', cursor: 'pointer',
+                  background: selectedGradeFilter === g ? 'var(--primary)' : 'var(--bg-secondary)',
+                  color: selectedGradeFilter === g ? 'white' : 'var(--text)',
+                  fontSize: '0.9rem', whiteSpace: 'nowrap'
+                }}
+              >
+                {g}
+              </button>
+            ))}
+          </div>
+        )}
 
         {activeTab === 'dashboard' && <DashboardView />}
 
@@ -1539,11 +1561,11 @@ Password: [Hidden]`);
             ) : (
               <>
                 {/* Pending Requests Section */}
-                {students.filter(s => s.status === 'PENDING').length > 0 && (
+                {students.filter(s => s.status === 'PENDING' && (selectedGradeFilter === 'All' || s.grade === selectedGradeFilter)).length > 0 && (
                   <div style={{ marginBottom: '40px' }}>
-                    <h3 style={{ marginBottom: '15px', color: 'var(--accent)' }}>Pending Approval ({students.filter(s => s.status === 'PENDING').length})</h3>
+                    <h3 style={{ marginBottom: '15px', color: 'var(--accent)' }}>Pending Approval ({students.filter(s => s.status === 'PENDING' && (selectedGradeFilter === 'All' || s.grade === selectedGradeFilter)).length})</h3>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '15px' }}>
-                      {students.filter(s => s.status === 'PENDING').map(s => (
+                      {students.filter(s => s.status === 'PENDING' && (selectedGradeFilter === 'All' || s.grade === selectedGradeFilter)).map(s => (
                         <div key={s.id} className="card" style={{ border: '1px solid var(--accent)', background: 'rgba(59, 130, 246, 0.05)' }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                             <div>
@@ -1584,7 +1606,7 @@ Password: [Hidden]`);
                     </tr>
                   </thead>
                   <tbody>
-                    {students.map(s => (
+                    {students.filter(s => selectedGradeFilter === 'All' || s.grade === selectedGradeFilter).map(s => (
                       <tr key={s.id} style={{ borderBottom: '1px solid var(--border)', opacity: (s.status === 'REJECTED' || s.status === 'BLOCKED') ? 0.6 : 1 }}>
                         <td style={{ padding: '15px 10px', fontWeight: 'bold' }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -1656,11 +1678,11 @@ Password: [Hidden]`);
 
         {/* Attendance Tab */}
         {activeTab === 'attendance' && (
-          <AttendanceManager students={students.filter(s => s.role === 'STUDENT')} tenantId={adminTenantId} onAlert={customAlert} />
+          <AttendanceManager filterGrade={selectedGradeFilter} students={students.filter(s => s.role === 'STUDENT')} tenantId={adminTenantId} onAlert={customAlert} />
         )}
 
         {activeTab === 'homework' && (
-          <HomeworkManager students={students} tenantId={adminTenantId} onAlert={customAlert} />
+          <HomeworkManager filterGrade={selectedGradeFilter} grades={grades} students={students} tenantId={adminTenantId} onAlert={customAlert} />
         )}
 
         {activeTab === 'lectures' && (

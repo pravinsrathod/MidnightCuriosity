@@ -3,7 +3,7 @@ import { db, storage } from './firebase'; // Ensure storage is imported
 import { doc, getDoc, setDoc, updateDoc, arrayUnion, serverTimestamp, collection, query, where, onSnapshot, addDoc, orderBy } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 
-const HomeworkManager = ({ students, tenantId, onAlert }) => {
+const HomeworkManager = ({ students, tenantId, onAlert, grades: propGrades, filterGrade }) => {
     const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
     const [homeworkList, setHomeworkList] = useState([]);
     const [submissions, setSubmissions] = useState({}); // Map: homeworkId -> { studentId -> submissionData }
@@ -19,8 +19,8 @@ const HomeworkManager = ({ students, tenantId, onAlert }) => {
     const [teacherComment, setTeacherComment] = useState("");
     const [teacherFile, setTeacherFile] = useState(null);
 
-    // Config options (could be passed as props or fetched)
-    const grades = ["Grade 10", "Grade 11", "Grade 12"];
+    // Config options
+    const grades = propGrades && propGrades.length > 0 ? propGrades : Array.from({ length: 12 }, (_, i) => "Grade " + (i + 1));
     const subjects = ["Maths", "Physics", "Chemistry", "Biology"];
 
     useEffect(() => {
@@ -154,7 +154,7 @@ const HomeworkManager = ({ students, tenantId, onAlert }) => {
     };
 
     // Helper to filtered homework by date
-    const filteredHomework = homeworkList.filter(hw => hw.dueDate === selectedDate);
+    const filteredHomework = homeworkList.filter(hw => hw.dueDate === selectedDate && (!filterGrade || filterGrade === 'All' || hw.grade === filterGrade));
 
     return (
         <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
@@ -239,7 +239,7 @@ const HomeworkManager = ({ students, tenantId, onAlert }) => {
                                 {/* Student Status List */}
                                 <div style={{ background: 'var(--bg-secondary)', padding: '10px', borderRadius: '8px', maxHeight: '300px', overflowY: 'auto' }}>
                                     <div style={{ fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '10px', color: 'var(--text-secondary)' }}> STUDENT SUBMISSIONS</div>
-                                    {students.filter(s => s.grade === hw.grade && s.status === 'ACTIVE').map(student => {
+                                    {students.filter(s => s.grade === hw.grade && s.status === 'ACTIVE' && (s.role === 'student' || s.role === 'STUDENT')).map(student => {
                                         const sub = submissions[hw.id]?.[student.id];
                                         const isChecked = sub?.status === 'CHECKED';
                                         const isIncomplete = sub?.status === 'INCOMPLETE';
@@ -281,7 +281,7 @@ const HomeworkManager = ({ students, tenantId, onAlert }) => {
                                             </div>
                                         )
                                     })}
-                                    {students.filter(s => s.grade === hw.grade && s.status === 'ACTIVE').length === 0 && (
+                                    {students.filter(s => s.grade === hw.grade && s.status === 'ACTIVE' && (s.role === 'student' || s.role === 'STUDENT')).length === 0 && (
                                         <div style={{ fontSize: '0.8rem', color: 'var(--text-tertiary)' }}>No students found in {hw.grade}</div>
                                     )}
                                 </div>

@@ -2,14 +2,14 @@ import React, { useState, useEffect } from 'react';
 import { db } from './firebase';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 
-const AttendanceManager = ({ students, tenantId, onAlert }) => {
+const AttendanceManager = ({ students, tenantId, onAlert, filterGrade }) => {
     const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]); // YYYY-MM-DD
     const [attendanceMap, setAttendanceMap] = useState({});
     const [loading, setLoading] = useState(false);
     const [saving, setSaving] = useState(false);
 
     // Filter only active students
-    const activeStudents = students.filter(s => s.status === 'ACTIVE');
+    const activeStudents = students.filter(s => s.status === 'ACTIVE' && (!filterGrade || filterGrade === 'All' || s.grade === filterGrade));
 
     useEffect(() => {
         if (tenantId && selectedDate) {
