@@ -5,6 +5,7 @@ import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import AdminLogin from "./AdminLogin";
 import ConfirmModal from "./ConfirmModal";
+import AttendanceManager from "./AttendanceManager"; // Import Attendance Component
 
 import { generateLessonContent, getApiKey, setApiKey, generateDoubtAnswer, generateExamFromPdf } from "./aiService";
 import { seedDemoData } from "./demoSeeder";
@@ -129,6 +130,8 @@ function App() {
   const [students, setStudents] = useState([]);
   const [editingStudentId, setEditingStudentId] = useState(null);
   const [studentFormData, setStudentFormData] = useState({ name: "", grade: "" });
+  const [showAddStudentModal, setShowAddStudentModal] = useState(false);
+  const [newStudentForm, setNewStudentForm] = useState({ name: "", phoneNumber: "", grade: "" });
 
   // AI State
   const [aiLoading, setAiLoading] = useState(false);
@@ -594,6 +597,38 @@ function App() {
     setStudentFormData({ name: "", grade: "" });
   };
 
+  const handleAddStudent = async (e) => {
+    e.preventDefault();
+    if (!newStudentForm.name || !newStudentForm.phoneNumber || !newStudentForm.grade) {
+      alert("Please fill all fields");
+      return;
+    }
+
+    try {
+      setLoading(true);
+      await addDoc(collection(db, "users"), {
+        name: newStudentForm.name,
+        phoneNumber: newStudentForm.phoneNumber,
+        grade: newStudentForm.grade,
+        tenantId: adminTenantId,
+        instituteCode: tenantData.code || adminTenantId,
+        role: 'STUDENT',
+        status: 'ACTIVE', // Auto-activate
+        createdAt: new Date().toISOString(),
+        createdBy: 'ADMIN'
+      });
+
+      alert("Student added successfully! They are now ACTIVE.");
+      setNewStudentForm({ name: "", phoneNumber: "", grade: "" });
+      setShowAddStudentModal(false);
+    } catch (error) {
+      console.error("Error adding student:", error);
+      alert("Failed to add student: " + error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleUpdateStudent = async (e) => {
     e.preventDefault();
     if (!studentFormData.name || !studentFormData.grade) {
@@ -887,6 +922,9 @@ function App() {
         <button className={`nav-item ${activeTab === 'exams' ? 'active' : ''}`} onClick={() => { setActiveTab('exams'); cancelEdit(); }}>
           <span>📝</span> Scheduled Exams
         </button>
+        <button className={`nav-item ${activeTab === 'attendance' ? 'active' : ''}`} onClick={() => { setActiveTab('attendance'); cancelEdit(); }}>
+          <span>📅</span> Attendance
+        </button>
 
         <button className={`nav-item ${activeTab === 'students' ? 'active' : ''}`} onClick={() => { setActiveTab('students'); cancelEdit(); }}>
           <span>🎓</span> Students {stats.pendingStudents > 0 && <span className="badge" style={{ background: 'var(--accent)' }}>{stats.pendingStudents}</span>}
@@ -946,6 +984,7 @@ function App() {
             {activeTab === 'doubts' && 'Student Community'}
             {activeTab === 'polls' && 'Live Classroom Polls'}
             {activeTab === 'exams' && 'Scheduled Exams'}
+            {activeTab === 'attendance' && 'Daily Attendance'}
             {activeTab === 'students' && 'Manage Students'}
             {activeTab === 'settings' && 'System Configuration'}
           </h1>
@@ -1343,7 +1382,53 @@ function App() {
 
         {activeTab === 'students' && (
           <div className="card">
-            <h2 style={{ marginBottom: '20px' }}>Student Management</h2>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+              <h2 style={{ margin: 0 }}>Student Management</h2>
+              <button className="btn-primary" onClick={() => setShowAddStudentModal(true)}>+ Add Student</button>
+            </div>
+
+            {/* Add Student Modal */}
+            {showAddStudentModal && (
+              <div style={{
+                position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+                backgroundColor: 'rgba(0, 0, 0, 0.7)', backdropFilter: 'blur(5px)',
+                display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 9999
+              }}>
+                <div style={{
+                  backgroundColor: '#1e293b', padding: '24px', borderRadius: '16px',
+                  width: '90%', maxWidth: '400px', border: '1px solid #334155',
+                  boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.4)'
+                }}>
+                  <h3 style={{ marginTop: 0, marginBottom: '20px', fontSize: '1.25rem' }}>Add New Student</h3>
+                  <form onSubmit={handleAddStudent} style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+
+                    <div>
+                      <label className="label">Full Name</label>
+                      <input autoFocus placeholder="e.g. Rahul Sharma" value={newStudentForm.name} onChange={e => setNewStudentForm({ ...newStudentForm, name: e.target.value })} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #475569', background: '#0f172a', color: 'white' }} />
+                    </div>
+
+                    <div>
+                      <label className="label">Phone Number</label>
+                      <input placeholder="e.g. +919876543210" value={newStudentForm.phoneNumber} onChange={e => setNewStudentForm({ ...newStudentForm, phoneNumber: e.target.value })} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #475569', background: '#0f172a', color: 'white' }} />
+                      <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Must allow student to login via this number.</span>
+                    </div>
+
+                    <div>
+                      <label className="label">Grade</label>
+                      <select value={newStudentForm.grade} onChange={e => setNewStudentForm({ ...newStudentForm, grade: e.target.value })} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #475569', background: '#0f172a', color: 'white' }}>
+                        <option value="">Select Grade</option>
+                        {grades.map(g => <option key={g} value={g}>{g}</option>)}
+                      </select>
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '10px' }}>
+                      <button type="button" className="btn-ghost" onClick={() => setShowAddStudentModal(false)}>Cancel</button>
+                      <button type="submit" className="btn-primary" disabled={loading}>{loading ? 'Adding...' : 'Add Student'}</button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            )}
 
             {/* Student Edit Form */}
             {editingStudentId && (
@@ -1400,6 +1485,13 @@ function App() {
                             </div>
                             <span className="badge" style={{ background: 'var(--accent)' }}>NEW</span>
                           </div>
+                          {/* Role Badge */}
+                          {s.role === 'PARENT' && (
+                            <div style={{ marginTop: '5px' }}>
+                              <span style={{ fontSize: '0.75rem', background: '#ec4899', color: 'white', padding: '2px 8px', borderRadius: '10px' }}>PARENT</span>
+                              {s.linkedStudentPhone && <div style={{ fontSize: '0.8rem', color: '#ec4899', marginTop: '2px' }}>Links to: {s.linkedStudentPhone}</div>}
+                            </div>
+                          )}
                           <div style={{ display: 'flex', gap: '10px', marginTop: '20px' }}>
                             <button className="btn-primary" style={{ flex: 1 }} onClick={() => handleApproveStudent(s.id)}>Approve</button>
                             <button className="btn-ghost" style={{ flex: 1, border: '1px solid var(--danger)', color: 'var(--danger)' }} onClick={() => handleRejectStudent(s.id)}>Reject</button>
@@ -1492,6 +1584,11 @@ function App() {
               </>
             )}
           </div>
+        )}
+
+        {/* Attendance Tab */}
+        {activeTab === 'attendance' && (
+          <AttendanceManager students={students} tenantId={adminTenantId} />
         )}
 
         {activeTab === 'lectures' && (

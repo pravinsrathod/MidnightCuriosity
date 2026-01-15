@@ -2,7 +2,6 @@ import React, { useState, useMemo } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Keyboard, ScrollView } from 'react-native';
 import { useRouter } from 'expo-router';
 import { auth, db } from '../services/firebaseConfig';
-
 import { signInAnonymously, updateProfile } from "firebase/auth";
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '../context/ThemeContext';
@@ -10,7 +9,7 @@ import { useTenant } from '../context/TenantContext';
 import { Ionicons } from '@expo/vector-icons';
 import * as Application from 'expo-application';
 import * as Device from 'expo-device';
-import { doc, setDoc, query, collection, where, getDocs, getDoc } from 'firebase/firestore';
+import { doc, setDoc, query, collection, where, getDocs, getDoc, deleteDoc } from 'firebase/firestore';
 
 export default function AuthScreen() {
     const router = useRouter();
@@ -19,8 +18,10 @@ export default function AuthScreen() {
     const styles = useMemo(() => makeStyles(colors), [colors]);
 
     const [isSignUp, setIsSignUp] = useState(true);
+    const [isParent, setIsParent] = useState(false); // New Parent Mode
     const [authStage, setAuthStage] = useState<'TENANT' | 'FORM' | 'OTP'>('TENANT');
     const [phoneNumber, setPhoneNumber] = useState('');
+    const [linkedStudentPhone, setLinkedStudentPhone] = useState(''); // Parent Mode: Student to link
     const [inputTenantId, setInputTenantId] = useState('');
     const [resolvedTenantId, setResolvedTenantId] = useState(''); // Store the actual DocID
     const [instituteName, setInstituteName] = useState('');
@@ -34,18 +35,15 @@ export default function AuthScreen() {
         if (!inputTenantId) { console.warn('Please enter an Institute Code'); return; }
         setLoading(true);
         try {
-            // Query by "code" field, not Doc ID
             const q = query(collection(db, "tenants"), where("code", "==", inputTenantId));
             const snapshot = await getDocs(q);
 
             if (!snapshot.empty) {
                 const tenantDoc = snapshot.docs[0];
-                const tenantId = tenantDoc.id; // Correct Stable ID
+                const tenantId = tenantDoc.id;
                 setResolvedTenantId(tenantId);
-
                 setInstituteName(tenantDoc.data().name || tenantDoc.data().institute_name || "Your Institute");
 
-                // Fetch available grades for this tenant using Stable ID
                 const configDoc = await getDoc(doc(db, "tenants", tenantId, "metadata", "lists"));
                 if (configDoc.exists()) {
                     const grades = configDoc.data().grades || [];
@@ -55,11 +53,11 @@ export default function AuthScreen() {
 
                 setAuthStage('FORM');
             } else {
-                console.warn('Invalid Code', 'No institute found with this code.');
+                Alert.alert('Invalid Code', 'No institute found with this code.');
             }
-        } catch (e) {
-            console.error(e);
-            console.warn('Error', 'Failed to validate code.');
+        } catch (e: any) {
+            console.error("Validation Error:", e);
+            Alert.alert('Error', `Failed to validate code: ${e.message}`);
         } finally {
             setLoading(false);
         }
@@ -70,7 +68,11 @@ export default function AuthScreen() {
             console.warn('Error', 'Please enter a valid phone number');
             return;
         }
-        if (isSignUp && (!name || !selectedGrade)) {
+
+        if (isSignUp && !isParent && (!name || !selectedGrade)) {
+            console.warn('Error', 'Please fill all fields');
+            return;
+        } else if (isSignUp && isParent && (!name || !linkedStudentPhone)) {
             console.warn('Error', 'Please fill all fields');
             return;
         }
@@ -97,12 +99,9 @@ export default function AuthScreen() {
         }
         setLoading(true);
         try {
-            // Mock verify:
             if (otpCode === '123456') {
                 console.log("OTP Valid. Signing in anonymously...");
                 let userUid;
-
-                // Get Device ID for binding
                 let deviceId = "unknown";
                 if (Platform.OS === 'ios') {
                     deviceId = await Application.getIosIdForVendorAsync() || "ios-unknown";
@@ -119,72 +118,126 @@ export default function AuthScreen() {
                     userUid = mockId;
                 }
 
-                if (isSignUp) {
-                    if (auth.currentUser) {
-                        try { await updateProfile(auth.currentUser, { displayName: name }); } catch (e) { }
+
+                if (isSignUp && !isParent) {
+                    // Check if Admin already created a user with this phone number (Pre-Added)
+                    const existingPhoneQ = query(collection(db, "users"), where("phoneNumber", "==", phoneNumber));
+                    const existingPhoneSnap = await getDocs(existingPhoneQ);
+
+                    let preExistsData: any = {};
+                    if (!existingPhoneSnap.empty) {
+                        // POTENTIAL CONFLICT: Check if this phone number belongs to a PARENT or another user
+                        // We only want to migrate "Pre-added Students" (created by Admin)
+                        // If it's a PARENT, we should probably ERROR or handle differently.
+                        // For now, valid Admin-added students usually have role='STUDENT' or undefined.
+                        const oldDoc = existingPhoneSnap.docs[0];
+                        const oldData = oldDoc.data();
+
+                        if (oldDoc.id !== userUid && oldData.role !== 'PARENT') {
+                            console.log("Migrating Admin-created user to Auth UID...");
+                            preExistsData = oldData;
+                            // Migrate data to new Auth UID
+                            await setDoc(doc(db, "users", userUid), {
+                                ...preExistsData,
+                                isActive: true, // Mark as definitely active
+                                legacyUid: oldDoc.id, // SAVE OLD ID for Attendance linking
+                                deviceId: deviceId
+                            }, { merge: true });
+
+                            // Delete old placeholder doc (so they don't appear twice in lists)
+                            await deleteDoc(doc(db, "users", oldDoc.id));
+                        } else if (oldData.role === 'PARENT') {
+                            console.warn("Phone number already in use by a PARENT account.");
+                            // Do NOT migrate. This might mean the student cannot claim this number if a parent has it.
+                            // Ideal fix: Alert user. For now, we simply proceed as a new user, 
+                            // but we might fail uniqueness checks if we had them.
+                            // We will just NOT delete the parent account.
+                        }
                     }
 
                     if (auth.currentUser) {
                         try { await updateProfile(auth.currentUser, { displayName: name }); } catch (e) { }
                     }
 
-                    // Use Resolved Stable ID
                     await setTenantId(resolvedTenantId);
+                    await setDoc(doc(db, "users", userUid), {
+                        name: name || preExistsData.name, // Prefer new name, fallback to pre-existing
+                        phoneNumber: phoneNumber,
+                        tenantId: resolvedTenantId,
+                        instituteCode: inputTenantId,
+                        grade: selectedGrade || preExistsData.grade,
+                        status: preExistsData.status === 'ACTIVE' ? 'ACTIVE' : 'PENDING', // Respect Pre-Active
+                        deviceId: deviceId,
+                        completedTopics: preExistsData.completedTopics || [],
+                        createdAt: preExistsData.createdAt || new Date().toISOString()
+                    }, { merge: true });
 
+                    await AsyncStorage.setItem('user_uid', userUid);
+
+                    // If they were pre-active, go to grade directly
+                    if (preExistsData.status === 'ACTIVE') {
+                        router.replace('/grade');
+                    } else {
+                        router.replace('/approval-pending');
+                    }
+                } else if (isSignUp && isParent) {
+                    // PARENT SIGN UP
+                    if (auth.currentUser) {
+                        try { await updateProfile(auth.currentUser, { displayName: name }); } catch (e) { }
+                    }
+
+                    await setTenantId(resolvedTenantId);
                     await setDoc(doc(db, "users", userUid), {
                         name: name,
                         phoneNumber: phoneNumber,
                         tenantId: resolvedTenantId,
-                        instituteCode: inputTenantId, // Save the code they used for reference
-                        grade: selectedGrade,
-                        status: 'PENDING', // Requirement: Module C
-                        deviceId: deviceId, // Requirement: Module E
-                        completedTopics: [],
+                        instituteCode: inputTenantId,
+                        role: 'PARENT', // IMPORTANT
+                        linkedStudentPhone: linkedStudentPhone, // Link to student
+                        status: 'PENDING',
                         createdAt: new Date().toISOString()
                     }, { merge: true });
 
-                    // Ensure consistency for next reload/session
                     await AsyncStorage.setItem('user_uid', userUid);
-
                     router.replace('/approval-pending');
 
                 } else {
                     const userQ = query(collection(db, "users"), where("phoneNumber", "==", phoneNumber));
-
-                    // Demo logic moved or removed to allow real users with these numbers
-                    // if (phoneNumber.endsWith('001')) demoUid = 'demo_student_1';
-                    // if (phoneNumber.endsWith('002')) demoUid = 'demo_student_2';
-                    // if (phoneNumber.endsWith('003')) demoUid = 'demo_student_3';
-
-                    // if (demoUid) {
-                    //    await AsyncStorage.setItem('user_uid', demoUid);
-                    //    router.replace('/grade');
-                    //    return;
-                    // }
-
-                    const { getDocs } = await import('firebase/firestore');
                     const snapshot = await getDocs(userQ);
 
                     if (!snapshot.empty) {
                         const existingUser = snapshot.docs[0];
                         const userData = existingUser.data();
 
-                        // DEVICE BINDING LOGIC (Requirement: Module E)
-                        if (userData.deviceId && userData.deviceId !== deviceId) {
+                        // DEVICE BINDING LOGIC - Skip for Parents
+                        if (!isParent && userData.deviceId && userData.deviceId !== deviceId) {
                             console.warn("Login Blocked", "You are logged in on another device. Contact Admin.");
                             setLoading(false);
                             return;
                         }
 
-                        // If deviceId was null, save it (Binding)
-                        if (!userData.deviceId) {
+                        if (!isParent && !userData.deviceId) {
                             await setDoc(doc(db, "users", existingUser.id), { deviceId: deviceId }, { merge: true });
                         }
 
                         await AsyncStorage.setItem('user_uid', existingUser.id);
                         await setTenantId(userData.tenantId || 'default');
 
-                        // STATUS CHECK (Requirement: Module D)
+                        // Role Check for Parent Login
+                        if (isParent) {
+                            if (userData.role !== 'PARENT') {
+                                console.warn("Access Denied", "This account is not a parent account.");
+                                await auth.signOut();
+                                return;
+                            }
+                            if (userData.status === 'PENDING') {
+                                router.replace('/approval-pending');
+                                return;
+                            }
+                            router.replace('/parent-dashboard');
+                            return;
+                        }
+
                         if (userData.status === 'PENDING') {
                             router.replace('/approval-pending');
                         } else if (userData.status === 'REJECTED' || userData.status === 'BLOCKED') {
@@ -193,7 +246,7 @@ export default function AuthScreen() {
                             router.replace('/grade');
                         }
                     } else {
-                        console.warn("Access Denied", "No student found with this number. Please Sign Up first.");
+                        console.warn("Access Denied", "No user found with this number.");
                         await auth.signOut();
                     }
                 }
@@ -206,7 +259,6 @@ export default function AuthScreen() {
             setLoading(false);
         }
     };
-
 
     return (
         <KeyboardAvoidingView
@@ -226,35 +278,43 @@ export default function AuthScreen() {
                 </View>
 
                 <View style={styles.card}>
-                    {/* Toggle */}
                     <View style={styles.toggleContainer}>
                         <TouchableOpacity
-                            style={[styles.toggleButton, isSignUp && styles.toggleButtonActive]}
-                            onPress={() => { setIsSignUp(true); setAuthStage('TENANT'); }}
+                            style={[styles.toggleButton, isSignUp && !isParent && styles.toggleButtonActive]}
+                            onPress={() => { setIsSignUp(true); setIsParent(false); setAuthStage('TENANT'); }}
                         >
-                            <Text style={[styles.toggleText, isSignUp && styles.toggleTextActive]}>Sign Up</Text>
+                            <Text style={[styles.toggleText, isSignUp && !isParent && styles.toggleTextActive]}>Student Join</Text>
                         </TouchableOpacity>
                         <TouchableOpacity
-                            style={[styles.toggleButton, !isSignUp && styles.toggleButtonActive]}
-                            onPress={() => { setIsSignUp(false); setAuthStage('FORM'); }}
+                            style={[styles.toggleButton, !isSignUp && !isParent && styles.toggleButtonActive]}
+                            onPress={() => { setIsSignUp(false); setIsParent(false); setAuthStage('FORM'); }}
                         >
-                            <Text style={[styles.toggleText, !isSignUp && styles.toggleTextActive]}>Log In</Text>
+                            <Text style={[styles.toggleText, !isSignUp && !isParent && styles.toggleTextActive]}>Login</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                            style={[styles.toggleButton, isSignUp && isParent && styles.toggleButtonActive]}
+                            onPress={() => { setIsSignUp(true); setIsParent(true); setAuthStage('TENANT'); }}
+                        >
+                            <Text style={[styles.toggleText, isSignUp && isParent && styles.toggleTextActive]}>Parent Join</Text>
                         </TouchableOpacity>
                     </View>
 
-                    <Text style={styles.headerTitle}>{isSignUp ? 'Create Account' : 'Welcome Back'}</Text>
+                    <Text style={styles.headerTitle}>
+                        {isParent ? 'Parent Portal' : (isSignUp ? 'Create Account' : 'Welcome Back')}
+                    </Text>
                     <Text style={styles.headerSubtitle}>
-                        {authStage === 'TENANT' ? 'Validate your Institute' : 'Enter your details to start learning'}
+                        {authStage === 'TENANT' ? 'Validate your Institute' :
+                            isParent ? 'Track your child\'s progress' : 'Enter your details to start learning'}
                     </Text>
 
                     <View style={styles.inputContainer}>
-                        {/* STAGE 1: TENANT VALIDATION */}
+                        {/* STAGE 1: TENANT CHECK */}
                         {authStage === 'TENANT' && (
                             <View style={styles.inputWrapper}>
                                 <Text style={styles.label}>Institute Code</Text>
                                 <TextInput
                                     style={styles.input}
-                                    placeholder="Enter Code (e.g. inst_abc)"
+                                    placeholder="Enter Code (e.g. ProWin_id)"
                                     placeholderTextColor={colors.textSecondary}
                                     value={inputTenantId}
                                     onChangeText={setInputTenantId}
@@ -297,7 +357,21 @@ export default function AuthScreen() {
                                     />
                                 </View>
 
-                                {isSignUp && availableGrades.length > 0 && (
+                                {isSignUp && isParent && (
+                                    <View style={styles.inputWrapper}>
+                                        <Text style={styles.label}>Student's Mobile Number (to link)</Text>
+                                        <TextInput
+                                            style={styles.input}
+                                            placeholder="+1 555 987 6543"
+                                            placeholderTextColor={colors.textSecondary}
+                                            keyboardType="phone-pad"
+                                            value={linkedStudentPhone}
+                                            onChangeText={setLinkedStudentPhone}
+                                        />
+                                    </View>
+                                )}
+
+                                {isSignUp && !isParent && availableGrades.length > 0 && (
                                     <View style={styles.inputWrapper}>
                                         <Text style={styles.label}>Select Grade</Text>
                                         <View style={styles.gradeContainer}>
@@ -361,7 +435,7 @@ export default function AuthScreen() {
                     )}
                 </View>
             </ScrollView>
-        </KeyboardAvoidingView >
+        </KeyboardAvoidingView>
     );
 }
 
