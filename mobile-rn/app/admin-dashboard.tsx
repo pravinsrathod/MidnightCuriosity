@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert, FlatList, Modal, TextInput } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert, FlatList, Modal, TextInput, Image } from 'react-native';
 import { useRouter } from 'expo-router';
 import { collection, query, where, onSnapshot, doc, updateDoc, deleteDoc, getDoc } from 'firebase/firestore';
 import * as ImagePicker from 'expo-image-picker';
@@ -13,7 +13,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 export default function AdminDashboard() {
     const router = useRouter();
     const { colors } = useTheme();
-    const { tenantId } = useTenant();
+    const { tenantId, tenantName, tenantLogo } = useTenant();
     const [grades, setGrades] = useState(Array.from({ length: 12 }, (_, i) => "Grade " + (i + 1)));
 
     // Fetch Institute Config
@@ -439,9 +439,16 @@ export default function AdminDashboard() {
         <View style={styles.container}>
             {/* Header */}
             <View style={styles.header}>
-                <View>
-                    <Text style={styles.headerTitle}>Admin Console</Text>
-                    <Text style={styles.headerSubtitle}>Tenant: {tenantId}</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                    {tenantLogo ? (
+                        <Image source={{ uri: tenantLogo }} style={{ width: 40, height: 40, borderRadius: 8 }} />
+                    ) : (
+                        <Text style={{ fontSize: 24 }}>🚀</Text>
+                    )}
+                    <View>
+                        <Text style={styles.headerTitle}>{tenantName || "Admin Console"}</Text>
+                        <Text style={styles.headerSubtitle}>Tenant: {tenantId}</Text>
+                    </View>
                 </View>
                 <TouchableOpacity onPress={handleLogout} style={styles.logoutButton}>
                     <Ionicons name="log-out-outline" size={24} color={colors.danger} />

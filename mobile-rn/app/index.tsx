@@ -6,10 +6,13 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '../context/ThemeContext';
 import { doc, getDoc } from 'firebase/firestore';
 import * as LocalAuthentication from 'expo-local-authentication';
+import { useTenant } from '../context/TenantContext';
+import { Image } from 'react-native';
 
 export default function SplashScreen() {
     const router = useRouter();
     const { colors } = useTheme();
+    const { tenantName, tenantLogo } = useTenant();
     const styles = useMemo(() => makeStyles(colors), [colors]);
 
     useEffect(() => {
@@ -78,7 +81,12 @@ export default function SplashScreen() {
     return (
         <View style={styles.container}>
             <View style={styles.content}>
-                <Text style={styles.title}>EduPro 🚀</Text>
+                {tenantLogo ? (
+                    <Image source={{ uri: tenantLogo }} style={{ width: 100, height: 100, borderRadius: 20, marginBottom: 20 }} />
+                ) : (
+                    <Text style={{ fontSize: 60, marginBottom: 10 }}>🚀</Text>
+                )}
+                <Text style={styles.title}>{tenantName || "EduPro"}</Text>
                 <Text style={styles.subtitle}>Ignite your potential</Text>
                 <ActivityIndicator size="large" color={colors.primary} style={styles.loader} />
             </View>

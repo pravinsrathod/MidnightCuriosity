@@ -110,8 +110,8 @@ function App() {
     const unsub = onSnapshot(doc(db, "tenants", adminTenantId), (doc) => {
       if (doc.exists()) {
         const data = doc.data();
-        setTenantData({ name: data.name, code: data.code });
-        setTenantEditForm({ name: data.name, code: data.code });
+        setTenantData({ name: data.name, code: data.code, logoUrl: data.logoUrl });
+        setTenantEditForm({ name: data.name, code: data.code, logoUrl: data.logoUrl });
       }
     });
     return () => unsub();
@@ -774,6 +774,19 @@ Password: [Hidden]`);
     }
   };
 
+  const handleLogoChange = (e) => {
+    if (e.target.files && e.target.files.length > 0) {
+      const selectedFile = e.target.files[0];
+      if (!selectedFile.type.startsWith('image/')) {
+        customAlert("Invalid format. Please upload an image (PNG, JPG, etc).");
+        e.target.value = "";
+        setFile(null);
+        return;
+      }
+      setFile(selectedFile);
+    }
+  };
+
   const handleDelete = async (id) => {
     if (await customConfirm("Are you sure you want to delete this lecture?", "Delete Lecture", true)) {
       await deleteDoc(doc(db, "lectures", id));
@@ -816,37 +829,34 @@ Password: [Hidden]`);
     setQuizzes([{ question: "", options: ["", "", ""], correctIndex: 0, triggerPercentage: 50 }]);
   };
 
-  const finalizeTenantUpdate = async (formData) => {
+  const finalizeTenantUpdate = async (formData, newLogoUrl = null) => {
     setLoading(true);
 
     try {
       const isCodeChanged = formData.code !== tenantData.code;
+      const dataToUpdate = {
+        name: formData.name,
+        updatedAt: serverTimestamp()
+      };
 
       if (isCodeChanged) {
-        // UPDATE IN PLACE (Decoupled Logic)
-        // Since we are now treating 'code' as a field, we just update it.
-        // NOTE: We do NOT change the DocID (adminTenantId) anymore. 
-        // The Admin Tenant ID remains the same (e.g. inst_m2mf4), but the public 'code' changes.
-
-        await updateDoc(doc(db, "tenants", adminTenantId), {
-          name: formData.name,
-          code: formData.code,
-          updatedAt: serverTimestamp()
-        });
-
-        // We also need to update the local state to reflect the new code representation
-        setTenantData(prev => ({ ...prev, code: formData.code, name: formData.name }));
-
-        customAlert(`Institute Code updated to '${formData.code}' successfully! \n(The internal ID remains ${adminTenantId})`);
-      } else {
-        // SIMPLE UPDATE (Name only)
-        await updateDoc(doc(db, "tenants", adminTenantId), {
-          name: formData.name,
-          updatedAt: serverTimestamp()
-        });
-        setTenantData(prev => ({ ...prev, name: formData.name }));
-        customAlert("Institute Name updated!");
+        dataToUpdate.code = formData.code;
       }
+
+      if (newLogoUrl) {
+        dataToUpdate.logoUrl = newLogoUrl;
+      }
+
+      await updateDoc(doc(db, "tenants", adminTenantId), dataToUpdate);
+
+      setTenantData(prev => ({
+        ...prev,
+        ...dataToUpdate,
+        // Since serverTimestamp won't be immediately available, use Date
+        updatedAt: new Date()
+      }));
+
+      customAlert(`Institute Profile Updated Successfully! ${isCodeChanged ? `\nNew Code: '${formData.code}'` : ''}`);
       setIsEditingTenant(false);
     } catch (e) {
       console.error(e);
@@ -863,6 +873,7 @@ Password: [Hidden]`);
     setLoading(true);
     try {
       const isCodeChanged = tenantEditForm.code !== tenantData.code;
+      let newLogoUrl = null;
 
       // 1. DUPLICATE CHECK
       if (isCodeChanged) {
@@ -876,19 +887,30 @@ Password: [Hidden]`);
         }
       }
 
+      // 2. LOGO UPLOAD
+      if (file) {
+        const storageRef = ref(storage, `logos/${adminTenantId}/logo_${Date.now()}.png`);
+        await uploadBytes(storageRef, file);
+        newLogoUrl = await getDownloadURL(storageRef);
+      }
+
+      const proceed = async () => {
+        await finalizeTenantUpdate(tenantEditForm, newLogoUrl);
+      };
+
       if (isCodeChanged) {
         setLoading(false); // Pause loading to show modal
 
         if (await customConfirm(`Are you sure you want to change your Institute Code to '${tenantEditForm.code}'?\n\n• Existing students will need the new code to log in.\n• Your curriculum and content will be migrated automatically.`, "Change Institute Code?", true)) {
-          await finalizeTenantUpdate(tenantEditForm);
+          await proceed();
         }
       } else {
-        // No confirmation needed for name change
-        await finalizeTenantUpdate(tenantEditForm);
+        await proceed();
       }
     } catch (e) {
       console.error(e);
       setLoading(false);
+      customAlert("Update Failed: " + e.message);
     }
   };
 
@@ -1000,7 +1022,12 @@ Password: [Hidden]`);
   const Sidebar = () => (
     <aside className="sidebar">
       <div className="logo">
-        <span>🚀</span> EduPro
+        {tenantData?.logoUrl ? (
+          <img src={tenantData.logoUrl} alt="Logo" style={{ width: '40px', height: '40px', borderRadius: '8px', objectFit: 'cover' }} />
+        ) : (
+          <span>🚀</span>
+        )}
+        <span style={{ marginLeft: '10px' }}>{tenantData?.name || "EduPro"}</span>
       </div>
       <nav>
         <button className={`nav-item ${activeTab === 'dashboard' ? 'active' : ''}`} onClick={() => { setActiveTab('dashboard'); cancelEdit(); }}>
@@ -1040,7 +1067,7 @@ Password: [Hidden]`);
         <span>🚪</span> Sign Out
       </button>
       <div style={{ marginTop: '10px', fontSize: '0.8rem', color: 'var(--text-secondary)', textAlign: 'center' }}>
-        v1.0.0
+        v1.1.0
       </div>
     </aside>
   );
@@ -1132,12 +1159,23 @@ Password: [Hidden]`);
                 {isEditingTenant ? (
                   <form onSubmit={handleUpdateTenantInfo} style={{ marginTop: '15px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
                     <div>
-                      <label className="label">Institute Name</label>
+                      <label className="label">Institute Logo</label>
+                      <input type="file" accept="image/*" onChange={handleLogoChange} />
+                      {tenantData.logoUrl && !file && (
+                        <div style={{ marginTop: '5px' }}>
+                          <img src={tenantData.logoUrl} alt="Current" style={{ width: '40px', height: '40px', borderRadius: '4px', border: '1px solid #475569' }} />
+                          <span style={{ marginLeft: '10px', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Current Logo</span>
+                        </div>
+                      )}
+                    </div>
+                    <div>
+                      <label className="label">Institute Name (App Name)</label>
                       <input
                         type="text"
                         value={tenantEditForm.name}
                         onChange={e => setTenantEditForm({ ...tenantEditForm, name: e.target.value })}
                         required
+                        placeholder="e.g. Erudite Academy"
                       />
                     </div>
                     <div>
@@ -1147,13 +1185,14 @@ Password: [Hidden]`);
                         value={tenantEditForm.code}
                         onChange={e => setTenantEditForm({ ...tenantEditForm, code: e.target.value })}
                         required
+                        placeholder="e.g. erudite"
                       />
                     </div>
                     <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
                       <button type="submit" className="btn-primary" disabled={loading}>
                         {loading ? "Updating..." : "Save Profile"}
                       </button>
-                      <button type="button" onClick={() => setIsEditingTenant(false)} className="btn-ghost">Cancel</button>
+                      <button type="button" onClick={() => { setIsEditingTenant(false); setFile(null); }} className="btn-ghost">Cancel</button>
                     </div>
                   </form>
                 ) : (

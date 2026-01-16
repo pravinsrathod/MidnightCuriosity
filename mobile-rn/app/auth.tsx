@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Keyboard, ScrollView } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Keyboard, ScrollView, Image } from 'react-native';
 import { useRouter } from 'expo-router';
 import { auth, db } from '../services/firebaseConfig';
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile, signInAnonymously } from "firebase/auth";
@@ -15,7 +15,7 @@ import * as LocalAuthentication from 'expo-local-authentication';
 export default function AuthScreen() {
     const router = useRouter();
     const { colors, toggleTheme, isDark } = useTheme();
-    const { setTenantId } = useTenant();
+    const { tenantId, setTenantId, tenantName, tenantLogo } = useTenant();
     const styles = useMemo(() => makeStyles(colors), [colors]);
 
     const [isSignUp, setIsSignUp] = useState(true);
@@ -369,8 +369,12 @@ export default function AuthScreen() {
                 <View style={styles.headerSpacer} />
 
                 <View style={styles.logoContainer}>
-                    <Text style={styles.brandEmoji}>🚀</Text>
-                    <Text style={styles.brandTitle}>EduPro</Text>
+                    {tenantLogo ? (
+                        <Image source={{ uri: tenantLogo }} style={{ width: 80, height: 80, borderRadius: 16, marginBottom: 10 }} />
+                    ) : (
+                        <Text style={styles.brandEmoji}>🚀</Text>
+                    )}
+                    <Text style={styles.brandTitle}>{tenantName || "EduPro"}</Text>
                 </View>
 
                 <View style={styles.card}>

@@ -14,7 +14,7 @@ import { useTenant } from '../context/TenantContext';
 export default function GradeSelectionScreen() {
     const router = useRouter();
     const { colors, toggleTheme, isDark } = useTheme();
-    const { tenantId } = useTenant();
+    const { tenantId, tenantName, tenantLogo } = useTenant();
     const styles = useMemo(() => makeStyles(colors), [colors]);
 
     const [userName, setUserName] = useState("Student");
@@ -212,7 +212,14 @@ export default function GradeSelectionScreen() {
             <View style={styles.content}>
                 {/* Header */}
                 <View style={styles.header}>
-                    <Text style={styles.brand}>EduPro</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                        {tenantLogo ? (
+                            <Image source={{ uri: tenantLogo }} style={{ width: 30, height: 30, borderRadius: 6 }} />
+                        ) : (
+                            <Text style={{ fontSize: 20 }}>🚀</Text>
+                        )}
+                        <Text style={styles.brand}>{tenantName || "EduPro"}</Text>
+                    </View>
                     <View style={{ flexDirection: 'row', gap: 16, alignItems: 'center' }}>
                         <TouchableOpacity onPress={toggleTheme}>
                             <Ionicons name={isDark ? "sunny-outline" : "moon-outline"} size={24} color={colors.text} />
