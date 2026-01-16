@@ -239,6 +239,7 @@ export default function ParentDashboard() {
         try {
             await auth.signOut();
             await AsyncStorage.removeItem('user_uid');
+            await AsyncStorage.removeItem('biometric_enabled');
             router.replace('/auth');
         } catch (e) {
             console.error(e);

@@ -3,7 +3,7 @@ import { db } from './firebase';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 
 const AttendanceManager = ({ students, tenantId, onAlert, filterGrade }) => {
-    const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]); // YYYY-MM-DD
+    const [selectedDate, setSelectedDate] = useState(new Date(new Date().getTime() - (new Date().getTimezoneOffset() * 60000)).toISOString().split('T')[0]);
     const [attendanceMap, setAttendanceMap] = useState({});
     const [loading, setLoading] = useState(false);
     const [saving, setSaving] = useState(false);
@@ -60,7 +60,33 @@ const AttendanceManager = ({ students, tenantId, onAlert, filterGrade }) => {
         }));
     };
 
+    // Use local date to avoid timezone issues blocking 'Today'
+    const today = new Date();
+    const offset = today.getTimezoneOffset();
+    const todayLocal = new Date(today.getTime() - (offset * 60 * 1000));
+    const todayStr = todayLocal.toISOString().split('T')[0];
+
+    const isLocked = () => {
+        if (selectedDate > todayStr) return true; // Future
+        const sel = new Date(selectedDate);
+        const today = new Date(todayStr);
+        // Reset times to compare dates only
+        sel.setHours(0, 0, 0, 0);
+        today.setHours(0, 0, 0, 0);
+
+        const diffTime = today - sel;
+        const diffDays = diffTime / (1000 * 60 * 60 * 24);
+        return diffDays > 2; // Allow Today(0), Yesterday(1), DayBefore(2). Lock > 2.
+    };
+
     const saveAttendance = async () => {
+        if (selectedDate > todayStr) {
+            return onAlert("Cannot mark attendance for future dates.", "Error");
+        }
+        if (isLocked()) {
+            return onAlert("Attendance log is locked for this date (older than 48h).", "Error");
+        }
+
         setSaving(true);
         try {
             const docId = `${tenantId}_${selectedDate}`;
@@ -94,6 +120,7 @@ const AttendanceManager = ({ students, tenantId, onAlert, filterGrade }) => {
                     <label className="label" style={{ margin: 0 }}>Select Date:</label>
                     <input
                         type="date"
+                        max={todayStr}
                         value={selectedDate}
                         onChange={(e) => setSelectedDate(e.target.value)}
                         style={{ padding: '8px', borderRadius: '4px', border: '1px solid var(--border)', background: 'var(--bg-input)', color: '#fff' }}
@@ -110,9 +137,10 @@ const AttendanceManager = ({ students, tenantId, onAlert, filterGrade }) => {
             ) : (
                 <>
                     {/* Bulk Actions */}
-                    <div style={{ marginBottom: '20px', display: 'flex', gap: '10px' }}>
-                        <button className="btn-ghost" onClick={() => markAll('PRESENT')} style={{ color: 'var(--success)', borderColor: 'var(--success)' }}>Mark All Present</button>
-                        <button className="btn-ghost" onClick={() => markAll('ABSENT')} style={{ color: 'var(--danger)', borderColor: 'var(--danger)' }}>Mark All Absent</button>
+                    <div style={{ marginBottom: '20px', display: 'flex', gap: '10px', alignItems: 'center' }}>
+                        <button className="btn-ghost" onClick={() => markAll('PRESENT')} disabled={isLocked()} style={{ color: 'var(--success)', borderColor: 'var(--success)', opacity: isLocked() ? 0.5 : 1 }}>Mark All Present</button>
+                        <button className="btn-ghost" onClick={() => markAll('ABSENT')} disabled={isLocked()} style={{ color: 'var(--danger)', borderColor: 'var(--danger)', opacity: isLocked() ? 0.5 : 1 }}>Mark All Absent</button>
+                        {isLocked() && <span style={{ color: 'var(--warning)', fontSize: '0.9rem' }}>🔒 Record Locked (Read Only)</span>}
                     </div>
 
                     <div style={{ overflowX: 'auto' }}>
@@ -147,6 +175,7 @@ const AttendanceManager = ({ students, tenantId, onAlert, filterGrade }) => {
                                             <td style={{ padding: '10px', textAlign: 'center' }}>
                                                 <div style={{ display: 'flex', justifyContent: 'center', gap: '5px' }}>
                                                     <button
+                                                        disabled={isLocked()}
                                                         onClick={() => handleStatusChange(student.id, 'PRESENT')}
                                                         style={{
                                                             padding: '6px 15px',
@@ -156,12 +185,14 @@ const AttendanceManager = ({ students, tenantId, onAlert, filterGrade }) => {
                                                             color: status === 'PRESENT' ? '#fff' : 'var(--success)',
                                                             cursor: 'pointer',
                                                             fontWeight: 'bold',
-                                                            transition: 'all 0.2s'
+                                                            transition: 'all 0.2s',
+                                                            opacity: isLocked() ? 0.3 : 1
                                                         }}
                                                     >
                                                         P
                                                     </button>
                                                     <button
+                                                        disabled={isLocked()}
                                                         onClick={() => handleStatusChange(student.id, 'ABSENT')}
                                                         style={{
                                                             padding: '6px 15px',
@@ -171,12 +202,14 @@ const AttendanceManager = ({ students, tenantId, onAlert, filterGrade }) => {
                                                             color: status === 'ABSENT' ? '#fff' : 'var(--danger)',
                                                             cursor: 'pointer',
                                                             fontWeight: 'bold',
-                                                            transition: 'all 0.2s'
+                                                            transition: 'all 0.2s',
+                                                            opacity: isLocked() ? 0.3 : 1
                                                         }}
                                                     >
                                                         A
                                                     </button>
                                                     <button
+                                                        disabled={isLocked()}
                                                         onClick={() => handleStatusChange(student.id, 'LATE')}
                                                         style={{
                                                             padding: '6px 15px',
@@ -186,7 +219,8 @@ const AttendanceManager = ({ students, tenantId, onAlert, filterGrade }) => {
                                                             color: status === 'LATE' ? '#fff' : 'var(--warning)',
                                                             cursor: 'pointer',
                                                             fontWeight: 'bold',
-                                                            transition: 'all 0.2s'
+                                                            transition: 'all 0.2s',
+                                                            opacity: isLocked() ? 0.3 : 1
                                                         }}
                                                     >
                                                         L
@@ -204,10 +238,10 @@ const AttendanceManager = ({ students, tenantId, onAlert, filterGrade }) => {
                         <button
                             className="btn-primary"
                             onClick={saveAttendance}
-                            disabled={saving}
-                            style={{ padding: '10px 30px', fontSize: '1rem' }}
+                            disabled={saving || isLocked()}
+                            style={{ padding: '10px 30px', fontSize: '1rem', opacity: isLocked() ? 0.5 : 1 }}
                         >
-                            {saving ? 'Saving...' : '💾 Save Attendance Log'}
+                            {saving ? 'Saving...' : (isLocked() ? 'Log Locked' : '💾 Save Attendance Log')}
                         </button>
                     </div>
                 </>

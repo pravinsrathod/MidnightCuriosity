@@ -10,6 +10,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Application from 'expo-application';
 import * as Device from 'expo-device';
 import { doc, setDoc, query, collection, where, getDocs, getDoc, deleteDoc } from 'firebase/firestore';
+import * as LocalAuthentication from 'expo-local-authentication';
 
 export default function AuthScreen() {
     const router = useRouter();
@@ -213,16 +214,13 @@ export default function AuthScreen() {
                 await AsyncStorage.setItem('user_uid', userUid);
                 await setTenantId(userData.tenantId);
 
-                // Routing
-                if (userData.role === 'PARENT') {
-                    if (userData.status === 'PENDING') router.replace('/approval-pending');
-                    else router.replace('/parent-dashboard');
-                } else {
-                    if (userData.status === 'PENDING') router.replace('/approval-pending');
-                    else router.replace('/grade');
+                if (isParent) {
+                    userData.role = 'PARENT'; // Ensure role context
                 }
-            }
 
+                // CHECK BIOMETRICS
+                checkBiometrics(userData);
+            }
         } catch (error: any) {
             console.error(error);
 
@@ -238,8 +236,6 @@ export default function AuthScreen() {
                         // Verify Password
                         if (userData.password && userData.password === password) {
                             console.log("Logged in via Firestore Password Fallback");
-
-                            // Authenticate Anonymously to satisfy Security Rules
                             await signInAnonymously(auth);
 
                             const userUid = userDoc.id;
@@ -271,13 +267,7 @@ export default function AuthScreen() {
                             await AsyncStorage.setItem('user_uid', userUid);
                             await setTenantId(userData.tenantId);
 
-                            if (userData.role === 'PARENT') {
-                                if (userData.status === 'PENDING') router.replace('/approval-pending');
-                                else router.replace('/parent-dashboard');
-                            } else {
-                                if (userData.status === 'PENDING') router.replace('/approval-pending');
-                                else router.replace('/grade');
-                            }
+                            checkBiometrics(userData);
                             return;
                         }
                     }
@@ -294,6 +284,54 @@ export default function AuthScreen() {
             Alert.alert("Authentication Failed", msg);
         } finally {
             setLoading(false);
+        }
+    };
+
+    const handleNavigation = (userData: any) => {
+        if (userData.role === 'PARENT') {
+            if (userData.status === 'PENDING') router.replace('/approval-pending');
+            else router.replace('/parent-dashboard');
+        } else {
+            if (userData.status === 'PENDING') router.replace('/approval-pending');
+            else router.replace('/grade');
+        }
+    };
+
+    const checkBiometrics = async (userData: any) => {
+        try {
+            const hasHardware = await LocalAuthentication.hasHardwareAsync();
+            const isEnrolled = await LocalAuthentication.isEnrolledAsync();
+
+            if (hasHardware && isEnrolled) {
+                Alert.alert(
+                    "Enable Biometrics? 🔒",
+                    "Would you like to enable FaceID / TouchID for faster login next time?",
+                    [
+                        {
+                            text: "No",
+                            style: "cancel",
+                            onPress: () => handleNavigation(userData)
+                        },
+                        {
+                            text: "Yes",
+                            onPress: async () => {
+                                const result = await LocalAuthentication.authenticateAsync();
+                                if (result.success) {
+                                    await AsyncStorage.setItem('biometric_enabled', 'true');
+                                    await AsyncStorage.setItem('biometric_uid', auth.currentUser?.uid || userData.id || ""); // Store UID for safety
+                                    Alert.alert("Success", "Biometric Login Enabled! ✅");
+                                }
+                                handleNavigation(userData);
+                            }
+                        }
+                    ]
+                );
+            } else {
+                handleNavigation(userData);
+            }
+        } catch (e) {
+            console.warn("Biometric check failed", e);
+            handleNavigation(userData);
         }
     };
 

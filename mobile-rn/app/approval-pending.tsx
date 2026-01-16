@@ -47,6 +47,7 @@ export default function ApprovalPendingScreen() {
     const handleSignOut = async () => {
         await auth.signOut();
         await AsyncStorage.removeItem('user_uid');
+        await AsyncStorage.removeItem('biometric_enabled');
         router.replace('/auth');
     };
 

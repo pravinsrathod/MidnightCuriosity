@@ -3,6 +3,7 @@ import { View, Text, TouchableOpacity, StyleSheet, SafeAreaView, Image, Activity
 import { useRouter, useFocusEffect } from 'expo-router';
 import { auth, db, storage } from '../services/firebaseConfig';
 import { doc, getDoc, updateDoc, setDoc, collection, query, where, onSnapshot } from 'firebase/firestore';
+import { onAuthStateChanged } from 'firebase/auth';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
@@ -67,26 +68,32 @@ export default function GradeSelectionScreen() {
         }
     };
 
+
+
     // Real-time Profile Listener
     useEffect(() => {
-        let unsubUser: () => void;
+        let unsubUser: any;
 
-        const setupListener = async () => {
-            // FIX: Priority to Demo/Mock IDs from storage to ensure we load the correct profile data
-            // (Even if we have an anonymous Auth session with a different ID)
-            const stored = await AsyncStorage.getItem('user_uid');
-            let uid;
-
-            if (stored && (stored.startsWith('demo_') || stored.startsWith('mock_'))) {
-                uid = stored;
-            } else {
-                uid = auth.currentUser?.uid || stored;
+        const unsubAuth = onAuthStateChanged(auth, async (user) => {
+            // Cleanup previous listener
+            if (unsubUser) {
+                unsubUser();
+                unsubUser = undefined;
             }
 
+            let uid = user?.uid;
+
+            // Fallback to stored ID for demo/mock users (only if not really authenticated)
             if (!uid) {
-                // Not logged in?
-                return;
+                try {
+                    const stored = await AsyncStorage.getItem('user_uid');
+                    if (stored && (stored.startsWith('demo_') || stored.startsWith('mock_'))) {
+                        uid = stored;
+                    }
+                } catch (e) { /* ignore */ }
             }
+
+            if (!uid) return;
 
             const userRef = doc(db, 'users', uid);
 
@@ -110,23 +117,34 @@ export default function GradeSelectionScreen() {
                     setRank(calculatedRank);
                 } else {
                     // Doc doesn't exist? Create it automatically (Self-Healing)
-                    console.log("User doc missing, creating default...");
-                    await setDoc(userRef, {
-                        name: "New Student",
-                        grade: "Grade 10",
-                        completedTopics: [],
-                        createdAt: new Date().toISOString()
-                    }, { merge: true });
+                    // Only attempt if we have a valid authenticated user to avoid permission errors
+                    if (user) {
+                        console.log("User doc missing, creating default...");
+                        try {
+                            await setDoc(userRef, {
+                                name: "New Student",
+                                grade: "Grade 10",
+                                completedTopics: [],
+                                createdAt: new Date().toISOString()
+                            }, { merge: true });
+                        } catch (e) {
+                            console.warn("Auto-create profile failed:", e);
+                        }
+                    }
                 }
             }, (error) => {
-                console.error("Profile listen error:", error);
+                // Gracefully handle permission errors (common during auth transitions)
+                if (error.code === 'permission-denied') {
+                    console.log("Profile listen: Permission denied (waiting for auth).");
+                } else {
+                    console.error("Profile listen error:", error);
+                }
             });
-        };
-
-        setupListener();
+        });
 
         return () => {
             if (unsubUser) unsubUser();
+            unsubAuth();
         };
     }, []);
 
@@ -182,6 +200,7 @@ export default function GradeSelectionScreen() {
         try {
             await auth.signOut();
             await AsyncStorage.removeItem('user_uid');
+            await AsyncStorage.removeItem('biometric_enabled');
             router.replace('/auth');
         } catch (e) {
             console.error("Logout failed", e);

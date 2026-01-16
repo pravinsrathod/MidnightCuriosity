@@ -5,6 +5,7 @@ import { auth, db } from '../services/firebaseConfig';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '../context/ThemeContext';
 import { doc, getDoc } from 'firebase/firestore';
+import * as LocalAuthentication from 'expo-local-authentication';
 
 export default function SplashScreen() {
     const router = useRouter();
@@ -21,50 +22,53 @@ export default function SplashScreen() {
 
             const currentUser = auth.currentUser;
             const storedUid = await AsyncStorage.getItem('user_uid');
+            const bioEnabled = await AsyncStorage.getItem('biometric_enabled');
 
-            if (currentUser || (storedUid && (storedUid.startsWith('mock_') || storedUid.startsWith('demo_')))) {
-                const uid = currentUser?.uid || storedUid;
+            // 1. Check for Biometric Enablement
+            if (bioEnabled === 'true' && storedUid) {
+                const hasHardware = await LocalAuthentication.hasHardwareAsync();
+                const isEnrolled = await LocalAuthentication.isEnrolledAsync();
 
-                if (uid) {
-                    let userRole = 'STUDENT';
+                if (hasHardware && isEnrolled) {
+                    const result = await LocalAuthentication.authenticateAsync({
+                        promptMessage: "Welcome back! Login with Biometrics",
+                        fallbackLabel: "Use Passcode"
+                    });
 
-                    try {
-                        const userDoc = await getDoc(doc(db, "users", uid));
-                        if (userDoc.exists()) {
-                            const userData = userDoc.data();
-                            userRole = userData.role || 'STUDENT';
+                    if (result.success) {
+                        // SUCCESS: Fetch User & Redirect
+                        try {
+                            const userDoc = await getDoc(doc(db, "users", storedUid));
+                            if (userDoc.exists()) {
+                                const userData = userDoc.data();
+                                if (userData.status === 'BLOCKED' || userData.status === 'REJECTED') {
+                                    router.replace('/auth');
+                                    return;
+                                }
 
-                            if (userData.status === 'PENDING') {
-                                router.replace('/approval-pending');
-                                return;
+                                if (userData.role === 'admin' || userData.role === 'ADMIN') {
+                                    router.replace('/admin-dashboard');
+                                } else if (userData.role === 'PARENT') {
+                                    if (userData.status === 'PENDING') router.replace('/approval-pending');
+                                    else router.replace('/parent-dashboard');
+                                } else {
+                                    // Student
+                                    if (userData.status === 'PENDING') router.replace('/approval-pending');
+                                    else router.replace('/grade');
+                                }
+                                return; // Stop here, we redirected
                             }
-                        }
-                    } catch (e) {
-                        console.error("Error fetching user status:", e);
-                    }
-
-                    if (currentUser) {
-                        const isDemo = storedUid && (storedUid.startsWith('demo_') || storedUid.startsWith('mock_'));
-                        if (!isDemo && storedUid !== currentUser.uid) {
-                            await AsyncStorage.setItem('user_uid', currentUser.uid);
+                        } catch (e) {
+                            console.error("Fetch profile failed", e);
                         }
                     }
-
-                    if (userRole === 'PARENT') {
-                        router.replace('/parent-dashboard');
-                    } else {
-                        router.replace('/grade');
-                    }
-                    return;
                 }
             }
 
-            if (storedUid) {
-                console.warn("Session invalid. Redirecting to Login.");
-                await AsyncStorage.removeItem('user_uid');
-            }
-
-            router.replace('/auth');
+            // Fallback to Auth Screen if no biometrics or failed
+            setTimeout(() => {
+                router.replace('/auth');
+            }, 1000);
         };
 
         checkAuth();

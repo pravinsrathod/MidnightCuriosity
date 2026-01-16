@@ -1,12 +1,14 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert, FlatList, Modal, TextInput } from 'react-native';
 import { useRouter } from 'expo-router';
-import { auth, db } from '../services/firebaseConfig';
+import { collection, query, where, onSnapshot, doc, updateDoc, deleteDoc, getDoc } from 'firebase/firestore';
+import * as ImagePicker from 'expo-image-picker';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { auth, db, storage } from '../services/firebaseConfig';
 import { useTheme } from '../context/ThemeContext';
 import { useTenant } from '../context/TenantContext';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { collection, query, where, onSnapshot, doc, updateDoc, deleteDoc, getDoc } from 'firebase/firestore';
 
 export default function AdminDashboard() {
     const router = useRouter();
@@ -25,6 +27,7 @@ export default function AdminDashboard() {
     }, [tenantId]);
     const styles = useMemo(() => makeStyles(colors), [colors]);
     const [activeTab, setActiveTab] = useState('STUDENTS'); // STUDENTS, HOMEWORK, ATTENDANCE
+    const [studentSubTab, setStudentSubTab] = useState('STUDENTS');
     const [selectedGradeFilter, setSelectedGradeFilter] = useState("All");
 
     const [students, setStudents] = useState<any[]>([]);
@@ -160,15 +163,56 @@ export default function AdminDashboard() {
 
     // HOMEWORK CREATE STATE
     const [createHomeworkVisible, setCreateHomeworkVisible] = useState(false);
-    const [newHomework, setNewHomework] = useState({ title: '', description: '', subject: '', grade: '', dueDate: new Date().toISOString().split('T')[0] });
+    const [newHomework, setNewHomework] = useState({ title: '', description: '', subject: '', grade: '', dueDate: new Date().toISOString().split('T')[0], file: null as string | null });
+    const [uploading, setUploading] = useState(false);
+    const [homeworkDateFilter, setHomeworkDateFilter] = useState(new Date().toISOString().split('T')[0]);
+
+    const pickAttachment = async () => {
+        let result = await ImagePicker.launchImageLibraryAsync({
+            mediaTypes: ImagePicker.MediaTypeOptions.Images,
+            allowsEditing: true,
+            quality: 1,
+        });
+
+        if (!result.canceled) {
+            setNewHomework({ ...newHomework, file: result.assets[0].uri });
+        }
+    };
+
+    const uploadFile = async (uri: string) => {
+        const response = await fetch(uri);
+        const blob = await response.blob();
+        const filename = uri.substring(uri.lastIndexOf('/') + 1);
+        const storageRef = ref(storage, `homework_attachments/${tenantId}/${filename}`);
+        await uploadBytes(storageRef, blob);
+        return await getDownloadURL(storageRef);
+    };
 
     const saveNewHomework = async () => {
         if (!newHomework.title || !newHomework.subject || !newHomework.grade) return Alert.alert("Error", "Fill required fields");
+
+        // Date check (Local Time Validation)
+        const today = new Date();
+        const offset = today.getTimezoneOffset();
+        const todayStr = new Date(today.getTime() - (offset * 60 * 1000)).toISOString().split('T')[0];
+
+        if (newHomework.dueDate < todayStr) {
+            return Alert.alert("Error", "Due date cannot be in the past");
+        }
+
         setLoading(true);
         try {
+            let fileUrl = null;
+            if (newHomework.file) {
+                setUploading(true);
+                fileUrl = await uploadFile(newHomework.file);
+                setUploading(false);
+            }
+
             await import('firebase/firestore').then(({ addDoc, collection, serverTimestamp }) => {
                 addDoc(collection(db, "homework"), {
                     ...newHomework,
+                    attachmentUrl: fileUrl,
                     tenantId,
                     createdAt: serverTimestamp(),
                     status: 'OPEN'
@@ -176,11 +220,12 @@ export default function AdminDashboard() {
             });
             Alert.alert("Success", "Homework Created!");
             setCreateHomeworkVisible(false);
-            setNewHomework({ title: '', description: '', subject: '', grade: '', dueDate: new Date().toISOString().split('T')[0] });
+            setNewHomework({ title: '', description: '', subject: '', grade: '', dueDate: new Date().toISOString().split('T')[0], file: null });
         } catch (e: any) {
             Alert.alert("Error", e.message);
         } finally {
             setLoading(false);
+            setUploading(false);
         }
     };
 
@@ -231,6 +276,7 @@ export default function AdminDashboard() {
         try {
             await auth.signOut();
             await AsyncStorage.removeItem('user_uid');
+            await AsyncStorage.removeItem('biometric_enabled');
             router.replace('/auth');
         } catch (e) {
             console.error(e);
@@ -441,24 +487,44 @@ export default function AdminDashboard() {
                 ) : (
                     <>
                         {activeTab === 'STUDENTS' && (
-                            <FlatList
-                                data={[...pendingStudents, ...activeStudents]}
-                                keyExtractor={item => item.id}
-                                renderItem={renderStudentItem}
-                                ListHeaderComponent={() => (
-                                    <View style={{ marginBottom: 10 }}>
-                                        <TouchableOpacity
-                                            style={[styles.saveBtn, { marginBottom: 15, flexDirection: 'row', justifyContent: 'center', gap: 10 }]}
-                                            onPress={() => setAddStudentVisible(true)}
-                                        >
-                                            <Ionicons name="person-add" size={20} color="#FFF" />
-                                            <Text style={styles.saveBtnText}>Add New Student</Text>
-                                        </TouchableOpacity>
-                                        {pendingStudents.length > 0 && <Text style={styles.sectionHeader}>Pending Approvals ({pendingStudents.length})</Text>}
-                                    </View>
-                                )}
-                                contentContainerStyle={{ paddingBottom: 20 }}
-                            />
+                            <>
+                                {/* Student/Parent Sub-tabs */}
+                                <View style={{ flexDirection: 'row', marginBottom: 10, paddingHorizontal: 5, gap: 10 }}>
+                                    <TouchableOpacity
+                                        style={[styles.subTab, studentSubTab === 'STUDENTS' && styles.activeSubTab]}
+                                        onPress={() => setStudentSubTab('STUDENTS')}>
+                                        <Text style={[styles.subTabText, studentSubTab === 'STUDENTS' && styles.activeSubTabText]}>Students</Text>
+                                    </TouchableOpacity>
+                                    <TouchableOpacity
+                                        style={[styles.subTab, studentSubTab === 'PARENTS' && styles.activeSubTab]}
+                                        onPress={() => setStudentSubTab('PARENTS')}>
+                                        <Text style={[styles.subTabText, studentSubTab === 'PARENTS' && styles.activeSubTabText]}>Parents</Text>
+                                    </TouchableOpacity>
+                                </View>
+
+                                <FlatList
+                                    data={
+                                        studentSubTab === 'STUDENTS'
+                                            ? [...pendingStudents, ...activeStudents].filter(s => !s.role || s.role === 'student' || s.role === 'STUDENT')
+                                            : students.filter(s => s.role === 'PARENT' || s.role === 'parent')
+                                    }
+                                    keyExtractor={item => item.id}
+                                    renderItem={renderStudentItem}
+                                    ListHeaderComponent={() => (
+                                        <View style={{ marginBottom: 10 }}>
+                                            <TouchableOpacity
+                                                style={[styles.saveBtn, { marginBottom: 15, flexDirection: 'row', justifyContent: 'center', gap: 10 }]}
+                                                onPress={() => setAddStudentVisible(true)}
+                                            >
+                                                <Ionicons name="person-add" size={20} color="#FFF" />
+                                                <Text style={styles.saveBtnText}>Add New {studentSubTab === 'STUDENTS' ? 'Student' : 'Parent'}</Text>
+                                            </TouchableOpacity>
+                                            {studentSubTab === 'STUDENTS' && pendingStudents.length > 0 && <Text style={styles.sectionHeader}>Pending Approvals ({pendingStudents.length})</Text>}
+                                        </View>
+                                    )}
+                                    contentContainerStyle={{ paddingBottom: 20 }}
+                                />
+                            </>
                         )}
 
                         {activeTab === 'HOMEWORK' && (
@@ -470,13 +536,30 @@ export default function AdminDashboard() {
                                     </TouchableOpacity>
                                 </View>
 
+                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+                                    <Text style={{ color: colors.textSecondary }}>Filter Date:</Text>
+                                    <TextInput
+                                        value={homeworkDateFilter}
+                                        onChangeText={setHomeworkDateFilter}
+                                        placeholder="YYYY-MM-DD"
+                                        placeholderTextColor={colors.textSecondary}
+                                        style={{ borderWidth: 1, borderColor: colors.border, padding: 5, borderRadius: 5, color: colors.text, width: 120, textAlign: 'center' }}
+                                    />
+                                    <TouchableOpacity onPress={() => setHomeworkDateFilter(new Date().toISOString().split('T')[0])}>
+                                        <Text style={{ color: colors.primary, fontSize: 12 }}>Today</Text>
+                                    </TouchableOpacity>
+                                </View>
+
                                 {assignments.length === 0 ? (
                                     <View style={styles.emptyState}>
                                         <Text style={{ color: colors.textSecondary }}>No assignments found.</Text>
                                     </View>
                                 ) : (
                                     <FlatList
-                                        data={selectedGradeFilter === 'All' ? assignments : assignments.filter(a => a.grade === selectedGradeFilter)}
+                                        data={
+                                            (selectedGradeFilter === 'All' ? assignments : assignments.filter(a => a.grade === selectedGradeFilter))
+                                                .filter(a => a.dueDate === homeworkDateFilter)
+                                        }
                                         keyExtractor={item => item.id}
                                         renderItem={({ item }) => {
                                             const expanded = expandedHomeworkId === item.id;
@@ -744,10 +827,15 @@ export default function AdminDashboard() {
                             placeholderTextColor={colors.textSecondary}
                             multiline
                             numberOfLines={3}
-                            style={{ borderWidth: 1, borderColor: colors.border, padding: 10, borderRadius: 8, color: colors.text, marginBottom: 20, height: 80 }}
+                            style={{ borderWidth: 1, borderColor: colors.border, padding: 10, borderRadius: 8, color: colors.text, marginBottom: 10, height: 80 }}
                             value={newHomework.description}
                             onChangeText={t => setNewHomework({ ...newHomework, description: t })}
                         />
+
+                        <TouchableOpacity onPress={pickAttachment} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 20, padding: 10, borderWidth: 1, borderColor: colors.border, borderRadius: 8, borderStyle: 'dashed' }}>
+                            <Ionicons name="attach" size={24} color={colors.primary} />
+                            <Text style={{ color: colors.textSecondary }}>{newHomework.file ? "File Attached" : "Attach Image (Optional)"}</Text>
+                        </TouchableOpacity>
                         <View style={{ flexDirection: 'row', gap: 10 }}>
                             <TouchableOpacity onPress={() => setCreateHomeworkVisible(false)} style={{ flex: 1, padding: 12, borderWidth: 1, borderColor: colors.border, borderRadius: 8, alignItems: 'center' }}>
                                 <Text style={{ color: colors.text }}>Cancel</Text>
@@ -819,6 +907,26 @@ const makeStyles = (colors: any) => StyleSheet.create({
     activeTabText: {
         color: colors.primary,
         fontWeight: 'bold',
+    },
+    subTab: {
+        paddingVertical: 6,
+        paddingHorizontal: 12,
+        borderRadius: 20,
+        borderWidth: 1,
+        borderColor: colors.border,
+        backgroundColor: 'transparent'
+    },
+    activeSubTab: {
+        backgroundColor: colors.primary + '20',
+        borderColor: colors.primary,
+    },
+    subTabText: {
+        fontSize: 12,
+        color: colors.textSecondary
+    },
+    activeSubTabText: {
+        color: colors.primary,
+        fontWeight: 'bold'
     },
     content: {
         flex: 1,

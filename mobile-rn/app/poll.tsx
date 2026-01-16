@@ -18,22 +18,34 @@ export default function PollScreen() {
     const [loading, setLoading] = useState(true);
     const [selectedOption, setSelectedOption] = useState<number | null>(null);
     const [currentUid, setCurrentUid] = useState<string | null>(null);
+    const [userGrade, setUserGrade] = useState<string | null>(null);
 
-    // Load User ID
+    // Load User ID & Grade
     useEffect(() => {
-        const loadUid = async () => {
-            const stored = await AsyncStorage.getItem('user_uid');
-            // FIX: If stored ID is a demo/mock user, prefer it over the auth.currentUser.uid (which is anonymous)
-            // This ensures we read the correct demo profile data while having a valid permission session.
+        const loadUser = async () => {
+            const storedUid = await AsyncStorage.getItem('user_uid');
+            // Check for demo/mock override first
             let finalUid = auth.currentUser?.uid;
-            if (stored && (stored.startsWith('demo_') || stored.startsWith('mock_'))) {
-                finalUid = stored;
-            } else if (!finalUid && stored) {
-                finalUid = stored;
+            if (storedUid && (storedUid.startsWith('demo_') || storedUid.startsWith('mock_'))) {
+                finalUid = storedUid;
+            } else if (!finalUid && storedUid) {
+                finalUid = storedUid;
             }
+
             setCurrentUid(finalUid || null);
+
+            if (finalUid) {
+                try {
+                    const userDoc = await import('firebase/firestore').then(({ getDoc, doc }) => getDoc(doc(db, "users", finalUid)));
+                    if (userDoc.exists()) {
+                        setUserGrade(userDoc.data().grade);
+                    }
+                } catch (e) {
+                    console.error("Error fetching user grade:", e);
+                }
+            }
         };
-        loadUid();
+        loadUser();
     }, []);
 
     // Listen for Active Polls & Check Vote Status
@@ -45,9 +57,14 @@ export default function PollScreen() {
             where("tenantId", "==", tenantId || "default")
         );
         const unsub = onSnapshot(q, async (snapshot) => {
-            // Filter locally for active polls to avoid composite index requirement
+            // Filter locally for active polls AND grade match
             const polls = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-            const activePolls = polls.filter((p: any) => p.active === true);
+
+            const activePolls = polls.filter((p: any) => {
+                const isActive = p.active === true;
+                const matchesGrade = !p.grade || p.grade === 'All' || p.grade === userGrade;
+                return isActive && matchesGrade;
+            });
 
             if (activePolls.length > 0) {
                 const pollData: any = activePolls[0];
@@ -75,7 +92,7 @@ export default function PollScreen() {
             setLoading(false);
         });
         return () => unsub();
-    }, [currentUid]);
+    }, [currentUid, userGrade]);
 
     const handleVote = async (optionIndex: number) => {
         if (!activePoll || selectedOption !== null || !currentUid) return;

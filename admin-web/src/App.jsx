@@ -138,6 +138,8 @@ function App() {
   // AI State
   const [aiLoading, setAiLoading] = useState(false);
   const [apiKey, setApiKeyLocal] = useState(getApiKey() || "");
+  const [studentSubTab, setStudentSubTab] = useState('students');
+
 
   // Form States
   const [formData, setFormData] = useState({
@@ -169,7 +171,8 @@ function App() {
     optionA: "",
     optionB: "",
     optionC: "",
-    optionD: ""
+    optionD: "",
+    grade: "All"
   });
 
   useEffect(() => {
@@ -213,11 +216,12 @@ function App() {
         options: options,
         active: true,
         tenantId: adminTenantId, // Multi-tenancy
+        grade: pollFormData.grade || "All",
         createdAt: serverTimestamp(),
         totalVotes: 0
       });
 
-      setPollFormData({ question: "", optionA: "", optionB: "", optionC: "", optionD: "" });
+      setPollFormData({ question: "", optionA: "", optionB: "", optionC: "", optionD: "", grade: "All" });
       customAlert("Poll Started Live! 🚀");
     } catch (e) {
       console.error(e);
@@ -250,7 +254,8 @@ function App() {
     date: "",
     duration: 60,
     questions: [],
-    status: "scheduled"
+    status: "scheduled",
+    grade: ""
   });
   const [examFile, setExamFile] = useState(null);
   const [isProcessingExam, setIsProcessingExam] = useState(false);
@@ -271,7 +276,14 @@ function App() {
   }, [adminTenantId]);
 
   const handleExamFileChange = (e) => {
-    if (e.target.files[0]) setExamFile(e.target.files[0]);
+    if (e.target.files[0]) {
+      if (e.target.files[0].type !== 'application/pdf') {
+        customAlert("Please upload a valid PDF file.");
+        e.target.value = "";
+        return;
+      }
+      setExamFile(e.target.files[0]);
+    }
   };
 
   const processExamPdf = async () => {
@@ -297,8 +309,14 @@ function App() {
   };
 
   const saveExam = async () => {
-    if (!examForm.title || !examForm.date || examForm.questions.length === 0) {
-      return customAlert("Please fill title, date and ensure questions are generated.");
+    const examDate = new Date(examForm.date);
+    const now = new Date();
+    if (examDate < now) {
+      return customAlert("Exam date cannot be in the past.");
+    }
+
+    if (!examForm.title || !examForm.date || !examForm.grade || examForm.questions.length === 0) {
+      return customAlert("Please fill Title, Date, Grade and ensure questions are generated.");
     }
 
     try {
@@ -308,8 +326,9 @@ function App() {
         tenantId: adminTenantId, // Multi-tenancy
         createdAt: serverTimestamp()
       });
-      setExamForm({ title: "", date: "", duration: 60, questions: [], status: "scheduled" });
+      setExamForm({ title: "", date: "", duration: 60, questions: [], status: "scheduled", grade: grades[0] || "" });
       setExamFile(null);
+      customAlert("Exam scheduled successfully!");
     } catch (e) {
       console.error(e);
       customAlert("Error saving exam.");
@@ -602,7 +621,12 @@ function App() {
   const handleAddStudent = async (e) => {
     e.preventDefault();
     if (!newStudentForm.name || !newStudentForm.phoneNumber || !newStudentForm.grade || !newStudentForm.password) {
-      customAlert("Please fill all fields including Password");
+      const missing = [];
+      if (!newStudentForm.name) missing.push("Name");
+      if (!newStudentForm.phoneNumber) missing.push("Phone");
+      if (!newStudentForm.grade) missing.push("Grade");
+      if (!newStudentForm.password) missing.push("Password");
+      customAlert(`Please fill the following fields: ${missing.join(', ')}`);
       return;
     }
 
@@ -612,7 +636,7 @@ function App() {
     try {
       // Dynamically import needed modules
       const { initializeApp } = await import("firebase/app");
-      const { getAuth, createUserWithEmailAndPassword, signOut } = await import("firebase/auth");
+      const { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut } = await import("firebase/auth");
       const { deleteApp } = await import("firebase/app");
 
       const firebaseConfig = auth.app.options;
@@ -622,15 +646,35 @@ function App() {
       secondaryApp = initializeApp(firebaseConfig, appName);
       const secondaryAuth = getAuth(secondaryApp);
 
-      // Create the user in Auth
-      const virtualEmail = `${newStudentForm.phoneNumber.replace(/[^0-9]/g, '')}@midnightcuriosity.com`;
-      const userCredential = await createUserWithEmailAndPassword(secondaryAuth, virtualEmail, newStudentForm.password);
-      const newUid = userCredential.user.uid;
+      const cleanPhone = newStudentForm.phoneNumber.replace(/[^0-9]/g, '');
+      const virtualEmail = `${cleanPhone}@midnightcuriosity.com`;
+
+      let newUid;
+
+      try {
+        // Create the user in Auth
+        const userCredential = await createUserWithEmailAndPassword(secondaryAuth, virtualEmail, newStudentForm.password);
+        newUid = userCredential.user.uid;
+      } catch (createError) {
+        if (createError.code === 'auth/email-already-in-use') {
+          // ATTEMPT RECOVERY: Try to sign in with provided password
+          try {
+            const userCredential = await signInWithEmailAndPassword(secondaryAuth, virtualEmail, newStudentForm.password);
+            newUid = userCredential.user.uid;
+            console.log("Recovered UID from existing auth:", newUid);
+            customAlert("Note: Student account existed (Auth). Restoring Profile...");
+          } catch (signinError) {
+            throw new Error("Student exists, but password mismatch. Cannot restore. Please contact support or reset password.");
+          }
+        } else {
+          throw createError;
+        }
+      }
 
       // Use the MAIN app's Firestore (db) to save the profile
       await setDoc(doc(db, "users", newUid), {
         name: newStudentForm.name,
-        phoneNumber: newStudentForm.phoneNumber.replace(/[^0-9]/g, ''),
+        phoneNumber: cleanPhone,
         grade: newStudentForm.grade,
         tenantId: adminTenantId,
         instituteCode: tenantData.code || adminTenantId,
@@ -662,6 +706,7 @@ Password: [Hidden]`);
       setLoading(false);
     }
   };
+
 
   const handleUpdateStudent = async (e) => {
     e.preventDefault();
@@ -718,7 +763,14 @@ Password: [Hidden]`);
 
   const handleFileChange = (e) => {
     if (e.target.files && e.target.files.length > 0) {
-      setFile(e.target.files[0]);
+      const selectedFile = e.target.files[0];
+      if (selectedFile.type !== 'video/mp4' && selectedFile.type !== 'video/webm' && !selectedFile.name.endsWith('.mp4')) {
+        customAlert("Invalid file format. Please upload an MP4 video.");
+        e.target.value = ""; // Reset input
+        setFile(null);
+        return;
+      }
+      setFile(selectedFile);
     }
   };
 
@@ -1183,43 +1235,7 @@ Password: [Hidden]`);
               </div>
 
               {/* Tenant Manager for Super Admins (or Debug) */}
-              <div className="card" style={{ marginTop: '20px' }}>
-                <h3>🌐 Multi-Tenant Manager</h3>
-                <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginBottom: '10px' }}>
-                  Create new institutes. (Switching requires re-login).
-                </p>
 
-                <div style={{ display: 'flex', gap: '10px', marginBottom: '10px' }}>
-                  <input id="newTenantName" placeholder="Institute Name" style={{ flex: 1, padding: '8px', borderRadius: '4px', border: '1px solid #334155', background: '#0f172a', color: 'white' }} />
-                  <input id="newTenantCode" placeholder="Code (e.g. sunrise)" style={{ width: '120px', padding: '8px', borderRadius: '4px', border: '1px solid #334155', background: '#0f172a', color: 'white' }} />
-                </div>
-                <button
-                  className="btn-primary"
-                  style={{ width: '100%' }}
-                  onClick={async () => {
-                    const name = document.getElementById('newTenantName').value;
-                    const code = document.getElementById('newTenantCode').value;
-                    if (!name || !code) return customAlert("Enter Name and Code");
-
-                    try {
-                      await setDoc(doc(db, "tenants", code), {
-                        name: name,
-                        code: code,
-                        createdAt: new Date().toISOString(),
-                        isActive: true
-                      });
-                      customAlert(`Tenant '${name}' created! Code: ${code}`);
-                      document.getElementById('newTenantName').value = '';
-                      document.getElementById('newTenantCode').value = '';
-                    } catch (e) {
-                      console.error(e);
-                      customAlert("Error creating tenant: " + e.message);
-                    }
-                  }}
-                >
-                  Create Tenant
-                </button>
-              </div>
             </div>
           </div>
         )}
@@ -1299,6 +1315,17 @@ Password: [Hidden]`);
               <h2 style={{ marginBottom: '20px' }}>Create Live Poll</h2>
               <form onSubmit={handleCreatePoll} style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
                 <div>
+                  <label className="label">Target Grade</label>
+                  <select
+                    value={pollFormData.grade}
+                    onChange={(e) => setPollFormData({ ...pollFormData, grade: e.target.value })}
+                    style={{ padding: '10px', borderRadius: '4px', border: '1px solid var(--border)', background: 'var(--bg-input)', color: 'white', width: '100%', marginBottom: '15px' }}
+                  >
+                    <option value="All">All Grades</option>
+                    {grades.map(g => <option key={g} value={g}>{g}</option>)}
+                  </select>
+                </div>
+                <div>
                   <label className="label">Question</label>
                   <input
                     type="text"
@@ -1329,6 +1356,7 @@ Password: [Hidden]`);
                       <div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
                           {poll.active && <span className="badge" style={{ background: 'var(--danger)', animation: 'pulse 2s infinite' }}>● LIVE</span>}
+                          <span style={{ fontSize: '0.8rem', background: 'var(--bg-tertiary)', padding: '2px 6px', borderRadius: '4px', color: 'var(--accent)' }}>{poll.grade || 'All'}</span>
                           <h4 style={{ margin: 0 }}>{poll.question}</h4>
                         </div>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -1370,7 +1398,14 @@ Password: [Hidden]`);
               <h2 style={{ marginBottom: '20px' }}>Schedule New Exam</h2>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '20px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '20px' }}>
+                  <div>
+                    <label className="label">Grade</label>
+                    <select value={examForm.grade} onChange={e => setExamForm(prev => ({ ...prev, grade: e.target.value }))}>
+                      <option value="">Select Grade</option>
+                      {grades.map(g => <option key={g} value={g}>{g}</option>)}
+                    </select>
+                  </div>
                   <div>
                     <label className="label">Exam Title</label>
                     <input type="text" value={examForm.title} onChange={e => setExamForm(prev => ({ ...prev, title: e.target.value }))} placeholder="e.g. Mid-Term Physics" />
@@ -1592,85 +1627,209 @@ Password: [Hidden]`);
                   </div>
                 )}
 
-                <h3>All Registered Students</h3>
-                <br />
-                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                  <thead>
-                    <tr style={{ borderBottom: '1px solid var(--border)', textAlign: 'left' }}>
-                      <th style={{ padding: '10px', color: 'var(--text-secondary)' }}>Name</th>
-                      <th style={{ padding: '10px', color: 'var(--text-secondary)' }}>Class</th>
-                      <th style={{ padding: '10px', color: 'var(--text-secondary)' }}>Status</th>
-                      <th style={{ padding: '10px', color: 'var(--text-secondary)' }}>Tenant ID</th>
-                      <th style={{ padding: '10px', color: 'var(--text-secondary)' }}>Device Binding</th>
-                      <th style={{ padding: '10px', color: 'var(--text-secondary)', textAlign: 'right' }}>Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {students.filter(s => selectedGradeFilter === 'All' || s.grade === selectedGradeFilter).map(s => (
-                      <tr key={s.id} style={{ borderBottom: '1px solid var(--border)', opacity: (s.status === 'REJECTED' || s.status === 'BLOCKED') ? 0.6 : 1 }}>
-                        <td style={{ padding: '15px 10px', fontWeight: 'bold' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                            <span style={{ width: '30px', height: '30px', borderRadius: '15px', background: s.status === 'ACTIVE' ? 'var(--success)' : 'var(--accent)', display: 'flex', justifyContent: 'center', alignItems: 'center', color: '#fff', fontSize: '0.8rem' }}>
-                              {s.name ? s.name.charAt(0).toUpperCase() : '?'}
-                            </span>
-                            <div>
-                              {s.name || "Anonymous"}
-                              <div style={{ fontSize: '0.75rem', fontWeight: 'normal', color: 'var(--text-secondary)' }}>{s.phoneNumber}</div>
-                            </div>
-                          </div>
-                        </td>
-                        <td style={{ padding: '10px' }}>
-                          <span style={{ background: 'var(--bg-tertiary)', padding: '4px 10px', borderRadius: '4px', fontSize: '0.85em' }}>
-                            {s.grade || "N/A"}
-                          </span>
-                        </td>
-                        <td style={{ padding: '10px' }}>
-                          <span style={{
-                            fontSize: '0.75rem',
-                            padding: '4px 8px',
-                            borderRadius: '12px',
-                            fontWeight: 'bold',
-                            background: s.status === 'ACTIVE' ? 'rgba(34, 197, 94, 0.1)' : 'rgba(245, 158, 11, 0.1)',
-                            color: s.status === 'ACTIVE' ? 'var(--success)' : 'var(--warning)'
-                          }}>
-                            {s.status || 'ACTIVE'}
-                          </span>
-                        </td>
-                        <td style={{ padding: '10px' }}>
-                          <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontFamily: 'monospace' }}>
-                            {s.tenantId || "None"}
-                          </span>
-                        </td>
-                        <td style={{ padding: '10px' }}>
-                          {s.deviceId ? (
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                              <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontFamily: 'monospace' }}>{s.deviceId.substring(0, 8)}...</span>
-                              <button onClick={() => handleResetDeviceLock(s.id)} style={{ padding: '2px 6px', fontSize: '0.7rem', border: '1px solid var(--warning)', color: 'var(--warning)', background: 'transparent', borderRadius: '4px', cursor: 'pointer' }}>Reset Lock</button>
-                            </div>
-                          ) : (
-                            <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>None</span>
-                          )}
-                        </td>
-                        <td style={{ padding: '10px', textAlign: 'right' }}>
-                          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
-                            <button
-                              onClick={() => handleEditStudent(s)}
-                              style={{ background: 'var(--accent)', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '0.85em' }}
-                            >
-                              Edit
-                            </button>
-                            <button
-                              onClick={() => handleDeleteStudent(s.id)}
-                              style={{ background: 'var(--danger)', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '0.85em' }}
-                            >
-                              Delete
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                {/* STUDENTS TAB START */}
+                <div style={{ display: 'flex', gap: '20px', marginBottom: '20px', borderBottom: '1px solid var(--border)' }}>
+                  <button
+                    onClick={() => setStudentSubTab('students')}
+                    style={{
+                      padding: '10px 20px',
+                      background: 'transparent',
+                      border: 'none',
+                      borderBottom: studentSubTab === 'students' ? '2px solid var(--accent)' : 'none',
+                      color: studentSubTab === 'students' ? 'var(--accent)' : 'var(--text-secondary)',
+                      cursor: 'pointer',
+                      fontWeight: 'bold'
+                    }}
+                  >
+                    Students
+                  </button>
+                  <button
+                    onClick={() => setStudentSubTab('parents')}
+                    style={{
+                      padding: '10px 20px',
+                      background: 'transparent',
+                      border: 'none',
+                      borderBottom: studentSubTab === 'parents' ? '2px solid var(--accent)' : 'none',
+                      color: studentSubTab === 'parents' ? 'var(--accent)' : 'var(--text-secondary)',
+                      cursor: 'pointer',
+                      fontWeight: 'bold'
+                    }}
+                  >
+                    Parents
+                  </button>
+                </div>
+
+                {studentSubTab === 'students' && (
+                  <>
+                    <h3>All Registered Students</h3>
+                    <br />
+                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                      <thead>
+                        <tr style={{ borderBottom: '1px solid var(--border)', textAlign: 'left' }}>
+                          <th style={{ padding: '10px', color: 'var(--text-secondary)' }}>Name</th>
+                          <th style={{ padding: '10px', color: 'var(--text-secondary)' }}>Class</th>
+                          <th style={{ padding: '10px', color: 'var(--text-secondary)' }}>Status</th>
+                          <th style={{ padding: '10px', color: 'var(--text-secondary)' }}>Tenant ID</th>
+                          <th style={{ padding: '10px', color: 'var(--text-secondary)' }}>Device Binding</th>
+                          <th style={{ padding: '10px', color: 'var(--text-secondary)', textAlign: 'right' }}>Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {students.filter(s => (selectedGradeFilter === 'All' || s.grade === selectedGradeFilter) && (!s.role || s.role === 'STUDENT' || s.role === 'student')).map(s => (
+                          <tr key={s.id} style={{ borderBottom: '1px solid var(--border)', opacity: (s.status === 'REJECTED' || s.status === 'BLOCKED') ? 0.6 : 1 }}>
+                            <td style={{ padding: '15px 10px', fontWeight: 'bold' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                <span style={{ width: '30px', height: '30px', borderRadius: '15px', background: s.status === 'ACTIVE' ? 'var(--success)' : 'var(--accent)', display: 'flex', justifyContent: 'center', alignItems: 'center', color: '#fff', fontSize: '0.8rem' }}>
+                                  {s.name ? s.name.charAt(0).toUpperCase() : '?'}
+                                </span>
+                                <div>
+                                  {s.name || "Anonymous"}
+                                  <div style={{ fontSize: '0.75rem', fontWeight: 'normal', color: 'var(--text-secondary)' }}>{s.phoneNumber}</div>
+                                </div>
+                              </div>
+                            </td>
+                            <td style={{ padding: '10px' }}>
+                              <span style={{ background: 'var(--bg-tertiary)', padding: '4px 10px', borderRadius: '4px', fontSize: '0.85em' }}>
+                                {s.grade || "N/A"}
+                              </span>
+
+                            </td>
+                            <td style={{ padding: '10px' }}>
+                              <span style={{
+                                fontSize: '0.75rem',
+                                padding: '4px 8px',
+                                borderRadius: '12px',
+                                fontWeight: 'bold',
+                                background: s.status === 'ACTIVE' ? 'rgba(34, 197, 94, 0.1)' : 'rgba(245, 158, 11, 0.1)',
+                                color: s.status === 'ACTIVE' ? 'var(--success)' : 'var(--warning)'
+                              }}>
+                                {s.status || 'ACTIVE'}
+                              </span>
+                            </td>
+                            <td style={{ padding: '10px' }}>
+                              <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontFamily: 'monospace' }}>
+                                {s.tenantId || "None"}
+                              </span>
+                            </td>
+                            <td style={{ padding: '10px' }}>
+                              {s.deviceId ? (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                  <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontFamily: 'monospace' }}>{s.deviceId.substring(0, 8)}...</span>
+                                  <button onClick={() => handleResetDeviceLock(s.id)} style={{ padding: '2px 6px', fontSize: '0.7rem', border: '1px solid var(--warning)', color: 'var(--warning)', background: 'transparent', borderRadius: '4px', cursor: 'pointer' }}>Reset Lock</button>
+                                </div>
+                              ) : (
+                                <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>None</span>
+                              )}
+                            </td>
+                            <td style={{ padding: '10px', textAlign: 'right' }}>
+                              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+                                <button
+                                  onClick={() => handleEditStudent(s)}
+                                  style={{ background: 'var(--accent)', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '0.85em' }}
+                                >
+                                  Edit
+                                </button>
+                                <button
+                                  onClick={() => handleDeleteStudent(s.id)}
+                                  style={{ background: 'var(--danger)', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '0.85em' }}
+                                >
+                                  Delete
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </>
+                )}
+
+                {studentSubTab === 'parents' && (
+                  <>
+                    <h3>All Registered Parents</h3>
+                    <br />
+                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                      <thead>
+                        <tr style={{ borderBottom: '1px solid var(--border)', textAlign: 'left' }}>
+                          <th style={{ padding: '10px', color: 'var(--text-secondary)' }}>Name</th>
+                          <th style={{ padding: '10px', color: 'var(--text-secondary)' }}>Linked Student</th>
+                          <th style={{ padding: '10px', color: 'var(--text-secondary)' }}>Status</th>
+                          <th style={{ padding: '10px', color: 'var(--text-secondary)' }}>Tenant ID</th>
+                          <th style={{ padding: '10px', color: 'var(--text-secondary)' }}>Device Binding</th>
+                          <th style={{ padding: '10px', color: 'var(--text-secondary)', textAlign: 'right' }}>Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {students.filter(p => p.role === 'PARENT').map(p => {
+                          // Find linked student name if possible
+                          const linkedStudent = students.find(s => s.phoneNumber === p.linkedStudentPhone);
+                          const linkedName = linkedStudent ? linkedStudent.name : p.linkedStudentPhone;
+
+                          return (
+                            <tr key={p.id} style={{ borderBottom: '1px solid var(--border)', opacity: (p.status === 'REJECTED' || p.status === 'BLOCKED') ? 0.6 : 1 }}>
+                              <td style={{ padding: '15px 10px', fontWeight: 'bold' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                  <span style={{ width: '30px', height: '30px', borderRadius: '15px', background: p.status === 'ACTIVE' ? 'var(--warning)' : 'var(--accent)', display: 'flex', justifyContent: 'center', alignItems: 'center', color: '#fff', fontSize: '0.8rem' }}>
+                                    {p.name ? p.name.charAt(0).toUpperCase() : '?'}
+                                  </span>
+                                  <div>
+                                    {p.name || "Anonymous"}
+                                    <div style={{ fontSize: '0.75rem', fontWeight: 'normal', color: 'var(--text-secondary)' }}>{p.phoneNumber}</div>
+                                  </div>
+                                </div>
+                              </td>
+                              <td style={{ padding: '10px' }}>
+                                <span style={{ background: 'var(--bg-tertiary)', padding: '4px 10px', borderRadius: '4px', fontSize: '0.85em' }}>
+                                  {linkedName || "N/A"}
+                                </span>
+                              </td>
+                              <td style={{ padding: '10px' }}>
+                                <span style={{
+                                  padding: '4px 10px', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 'bold',
+                                  background: p.status === 'ACTIVE' ? 'rgba(34, 197, 94, 0.2)' : (p.status === 'PENDING' ? 'rgba(234, 179, 8, 0.2)' : 'rgba(239, 68, 68, 0.2)'),
+                                  color: p.status === 'ACTIVE' ? '#22c55e' : (p.status === 'PENDING' ? '#eab308' : '#ef4444')
+                                }}>
+                                  {p.status}
+                                </span>
+                              </td>
+                              <td style={{ padding: '10px' }}>
+                                <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontFamily: 'monospace' }}>
+                                  {p.tenantId || "None"}
+                                </span>
+                              </td>
+                              <td style={{ padding: '10px' }}>
+                                {p.deviceId ? (
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontFamily: 'monospace' }}>{p.deviceId.substring(0, 8)}...</span>
+                                    <button onClick={() => handleResetDeviceLock(p.id)} style={{ padding: '2px 6px', fontSize: '0.7rem', border: '1px solid var(--warning)', color: 'var(--warning)', background: 'transparent', borderRadius: '4px', cursor: 'pointer' }}>Reset Lock</button>
+                                  </div>
+                                ) : (
+                                  <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>None</span>
+                                )}
+                              </td>
+                              <td style={{ padding: '10px', textAlign: 'right' }}>
+                                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+                                  <button
+                                    onClick={() => handleEditStudent(p)}
+                                    style={{ background: 'var(--accent)', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '0.85em' }}
+                                  >
+                                    Edit
+                                  </button>
+                                  <button
+                                    onClick={() => handleDeleteStudent(p.id)}
+                                    style={{ background: 'var(--danger)', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '0.85em' }}
+                                  >
+                                    Delete
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </>
+                )}
               </>
             )}
           </div>
@@ -1731,6 +1890,11 @@ Password: [Hidden]`);
                 <div className="form-group">
                   <label className="label">Video File (MP4)</label>
                   <input type="file" accept="video/*" onChange={handleFileChange} />
+                  {existingVideoUrl && !file && (
+                    <div style={{ marginTop: '5px', fontSize: '0.85em', color: 'var(--success)' }}>
+                      ✅ Video Attached. Upload new file to replace.
+                    </div>
+                  )}
                 </div>
 
                 {/* AI GENERATION SECTION */}
@@ -1910,19 +2074,7 @@ Password: [Hidden]`);
           </div>
         )}
       </main>
-      {/* Dev Toolbar */}
-      <div style={{ position: 'fixed', bottom: 10, right: 10, background: 'rgba(0,0,0,0.8)', padding: 10, borderRadius: 8, border: '1px solid red' }}>
-        <p style={{ color: 'red', margin: 0, fontSize: 10, textAlign: 'center' }}>⚠️ DEV ZONE</p>
-        <button
-          onClick={() => {
-            // Ensure we call the imported function directly
-            import('./wiper').then(module => module.wipeAllData());
-          }}
-          style={{ background: 'red', color: 'white', border: 'none', padding: '5px 10px', marginTop: 5, borderRadius: 5, cursor: 'pointer', fontSize: 12 }}
-        >
-          🔥 Wipe Database
-        </button>
-      </div>
+
       <ConfirmModal
         isOpen={modalState.isOpen}
         type={modalState.type}

@@ -46,6 +46,12 @@
             "backgroundColor": "#000000"
           }
         }
+      ],
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "Allow EduPro to use FaceID for faster login."
+        }
       ]
     ],
     "experiments": {

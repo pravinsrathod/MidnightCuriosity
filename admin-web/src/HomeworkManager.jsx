@@ -4,13 +4,14 @@ import { doc, getDoc, setDoc, updateDoc, arrayUnion, serverTimestamp, collection
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 
 const HomeworkManager = ({ students, tenantId, onAlert, grades: propGrades, filterGrade }) => {
-    const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+    const [selectedDate, setSelectedDate] = useState(new Date(new Date().getTime() - (new Date().getTimezoneOffset() * 60000)).toISOString().split('T')[0]);
     const [homeworkList, setHomeworkList] = useState([]);
     const [submissions, setSubmissions] = useState({}); // Map: homeworkId -> { studentId -> submissionData }
     const [loading, setLoading] = useState(false);
 
     // Create Homework State
     const [newHomework, setNewHomework] = useState({ title: "", description: "", grade: "", subject: "" });
+    const [homeworkFile, setHomeworkFile] = useState(null);
     const [creating, setCreating] = useState(false);
 
     // Review State
@@ -83,19 +84,33 @@ const HomeworkManager = ({ students, tenantId, onAlert, grades: propGrades, filt
 
     const handleCreateHomework = async (e) => {
         e.preventDefault();
+        const today = new Date();
+        const offset = today.getTimezoneOffset();
+        const todayStr = new Date(today.getTime() - (offset * 60 * 1000)).toISOString().split('T')[0];
+        if (selectedDate < todayStr) return onAlert("Due Date cannot be in the past.", "Error");
+
         if (!newHomework.title || !newHomework.grade || !newHomework.subject) return onAlert("Please fill all fields", "Error");
 
         setCreating(true);
         try {
+            let fileUrl = null;
+            if (homeworkFile) {
+                const storageRef = ref(storage, `homework_attachments/${tenantId}/${Date.now()}_${homeworkFile.name}`);
+                await uploadBytes(storageRef, homeworkFile);
+                fileUrl = await getDownloadURL(storageRef);
+            }
+
             await addDoc(collection(db, "homework"), {
                 ...newHomework,
                 dueDate: selectedDate,
                 tenantId,
+                attachmentUrl: fileUrl,
                 createdAt: serverTimestamp(),
                 status: 'OPEN'
             });
             onAlert("Homework Assigned Successfully! 📝", "Success");
             setNewHomework({ title: "", description: "", grade: "", subject: "" });
+            setHomeworkFile(null);
         } catch (error) {
             console.error(error);
             onAlert("Failed to assign homework: " + error.message, "Error");
@@ -153,142 +168,200 @@ const HomeworkManager = ({ students, tenantId, onAlert, grades: propGrades, filt
         }
     };
 
+    const [activeSubTab, setActiveSubTab] = useState('create');
+
     // Helper to filtered homework by date
     const filteredHomework = homeworkList.filter(hw => hw.dueDate === selectedDate && (!filterGrade || filterGrade === 'All' || hw.grade === filterGrade));
 
     return (
         <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
-            <div className="grid-2">
+            {/* SUB-MENU TABS */}
+            <div style={{ display: 'flex', gap: '20px', marginBottom: '20px', borderBottom: '1px solid var(--border)' }}>
+                <button
+                    onClick={() => { setActiveSubTab('create'); setSelectedDate(new Date(new Date().getTime() - (new Date().getTimezoneOffset() * 60000)).toISOString().split('T')[0]); }}
+                    style={{
+                        padding: '10px 20px',
+                        background: 'transparent',
+                        border: 'none',
+                        borderBottom: activeSubTab === 'create' ? '2px solid var(--accent)' : 'none',
+                        color: activeSubTab === 'create' ? 'var(--accent)' : 'var(--text-secondary)',
+                        cursor: 'pointer',
+                        fontWeight: 'bold'
+                    }}
+                >
+                    Create New Homework
+                </button>
+                <button
+                    onClick={() => { setActiveSubTab('assess'); setSelectedDate(new Date(new Date().getTime() - (new Date().getTimezoneOffset() * 60000)).toISOString().split('T')[0]); }}
+                    style={{
+                        padding: '10px 20px',
+                        background: 'transparent',
+                        border: 'none',
+                        borderBottom: activeSubTab === 'assess' ? '2px solid var(--accent)' : 'none',
+                        color: activeSubTab === 'assess' ? 'var(--accent)' : 'var(--text-secondary)',
+                        cursor: 'pointer',
+                        fontWeight: 'bold'
+                    }}
+                >
+                    Assess Homework
+                </button>
+            </div>
+
+            <div className="content-area">
                 {/* 1. Create Homework Section */}
-                <div className="card">
-                    <h3 style={{ marginBottom: '15px' }}>➕ Assign New Homework</h3>
-                    <form onSubmit={handleCreateHomework} style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-                        <div>
-                            <label className="label">Date</label>
+                {activeSubTab === 'create' && (
+                    <div className="card" style={{ maxWidth: '600px' }}>
+                        <h3 style={{ marginBottom: '15px' }}>➕ Assign New Homework</h3>
+                        <form onSubmit={handleCreateHomework} style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                            <div>
+                                <label className="label">Due Date (Today Onwards)</label>
+                                <input
+                                    type="date"
+                                    min={new Date(new Date().getTime() - (new Date().getTimezoneOffset() * 60000)).toISOString().split('T')[0]} // Min Today
+                                    value={selectedDate}
+                                    onChange={e => setSelectedDate(e.target.value)}
+                                    style={{ width: '100%', padding: '8px', background: 'var(--bg-input)', border: '1px solid var(--border)', color: '#fff', borderRadius: '4px' }}
+                                />
+                            </div>
+                            <div className="grid-2">
+                                <div>
+                                    <label className="label">Grade</label>
+                                    <select
+                                        value={newHomework.grade}
+                                        onChange={e => setNewHomework({ ...newHomework, grade: e.target.value })}
+                                        style={{ width: '100%', padding: '8px', background: 'var(--bg-input)', border: '1px solid var(--border)', color: '#fff', borderRadius: '4px' }}
+                                    >
+                                        <option value="">Select Grade</option>
+                                        {grades.map(g => <option key={g} value={g}>{g}</option>)}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="label">Subject</label>
+                                    <select
+                                        value={newHomework.subject}
+                                        onChange={e => setNewHomework({ ...newHomework, subject: e.target.value })}
+                                        style={{ width: '100%', padding: '8px', background: 'var(--bg-input)', border: '1px solid var(--border)', color: '#fff', borderRadius: '4px' }}
+                                    >
+                                        <option value="">Select Subject</option>
+                                        {subjects.map(s => <option key={s} value={s}>{s}</option>)}
+                                    </select>
+                                </div>
+                            </div>
+                            <div>
+                                <label className="label">Task Title</label>
+                                <input
+                                    placeholder="e.g. Algebra Exercise 4.1"
+                                    value={newHomework.title}
+                                    onChange={e => setNewHomework({ ...newHomework, title: e.target.value })}
+                                    style={{ width: '100%', padding: '8px', background: 'var(--bg-input)', border: '1px solid var(--border)', color: '#fff', borderRadius: '4px' }}
+                                />
+                            </div>
+                            <div>
+                                <label className="label">Description / Instructions</label>
+                                <textarea
+                                    placeholder="Solve Q1 to Q10 in notebook and upload photo."
+                                    value={newHomework.description}
+                                    onChange={e => setNewHomework({ ...newHomework, description: e.target.value })}
+                                    rows={3}
+                                    style={{ width: '100%', padding: '8px', background: 'var(--bg-input)', border: '1px solid var(--border)', color: '#fff', borderRadius: '4px' }}
+                                />
+                            </div>
+                            <div>
+                                <label className="label">Reference File (PDF/Image)</label>
+                                <input type="file" onChange={e => setHomeworkFile(e.target.files[0])} />
+                            </div>
+                            <button type="submit" className="btn-primary" disabled={creating}>
+                                {creating ? "Assigning..." : "Assign Homework"}
+                            </button>
+                        </form>
+                    </div>
+                )}
+
+                {/* 2. Assess Homework Section */}
+                {activeSubTab === 'assess' && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                        <div className="card" style={{ marginBottom: '10px', padding: '15px' }}>
+                            <label className="label">Filter by Due Date (Today & Previous)</label>
                             <input
                                 type="date"
+                                max={new Date(new Date().getTime() - (new Date().getTimezoneOffset() * 60000)).toISOString().split('T')[0]} // Max Today
                                 value={selectedDate}
                                 onChange={e => setSelectedDate(e.target.value)}
                                 style={{ width: '100%', padding: '8px', background: 'var(--bg-input)', border: '1px solid var(--border)', color: '#fff', borderRadius: '4px' }}
                             />
                         </div>
-                        <div className="grid-2">
-                            <div>
-                                <label className="label">Grade</label>
-                                <select
-                                    value={newHomework.grade}
-                                    onChange={e => setNewHomework({ ...newHomework, grade: e.target.value })}
-                                    style={{ width: '100%', padding: '8px', background: 'var(--bg-input)', border: '1px solid var(--border)', color: '#fff', borderRadius: '4px' }}
-                                >
-                                    <option value="">Select Grade</option>
-                                    {grades.map(g => <option key={g} value={g}>{g}</option>)}
-                                </select>
+
+                        {filteredHomework.length === 0 ? (
+                            <div className="card" style={{ textAlign: 'center', color: 'var(--text-secondary)' }}>
+                                No homework found for {selectedDate}.
                             </div>
-                            <div>
-                                <label className="label">Subject</label>
-                                <select
-                                    value={newHomework.subject}
-                                    onChange={e => setNewHomework({ ...newHomework, subject: e.target.value })}
-                                    style={{ width: '100%', padding: '8px', background: 'var(--bg-input)', border: '1px solid var(--border)', color: '#fff', borderRadius: '4px' }}
-                                >
-                                    <option value="">Select Subject</option>
-                                    {subjects.map(s => <option key={s} value={s}>{s}</option>)}
-                                </select>
-                            </div>
-                        </div>
-                        <div>
-                            <label className="label">Task Title</label>
-                            <input
-                                placeholder="e.g. Algebra Exercise 4.1"
-                                value={newHomework.title}
-                                onChange={e => setNewHomework({ ...newHomework, title: e.target.value })}
-                                style={{ width: '100%', padding: '8px', background: 'var(--bg-input)', border: '1px solid var(--border)', color: '#fff', borderRadius: '4px' }}
-                            />
-                        </div>
-                        <div>
-                            <label className="label">Description / Instructions</label>
-                            <textarea
-                                placeholder="Solve Q1 to Q10 in notebook and upload photo."
-                                value={newHomework.description}
-                                onChange={e => setNewHomework({ ...newHomework, description: e.target.value })}
-                                rows={3}
-                                style={{ width: '100%', padding: '8px', background: 'var(--bg-input)', border: '1px solid var(--border)', color: '#fff', borderRadius: '4px' }}
-                            />
-                        </div>
-                        <button type="submit" className="btn-primary" disabled={creating}>
-                            {creating ? "Assigning..." : "Assign Homework"}
-                        </button>
-                    </form>
-                </div>
+                        ) : (
+                            filteredHomework.map(hw => (
+                                <div key={hw.id} className="card" style={{ borderLeft: '4px solid var(--accent)' }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                        <h4>{hw.title}</h4>
+                                        <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Due: {hw.dueDate}</span>
+                                    </div>
+                                    <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '10px' }}>
+                                        {hw.grade} • {hw.subject}
+                                        {hw.attachmentUrl && <a href={hw.attachmentUrl} target="_blank" rel="noreferrer" style={{ marginLeft: '10px', color: 'var(--accent)' }}>[View Attachment]</a>}
+                                    </div>
+                                    <p style={{ fontSize: '0.9rem', marginBottom: '15px' }}>{hw.description}</p>
 
-                {/* 2. List of Homeworks for Date */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                    {filteredHomework.length === 0 ? (
-                        <div className="card" style={{ textAlign: 'center', color: 'var(--text-secondary)' }}>
-                            No homework assigned for {selectedDate}.
-                        </div>
-                    ) : (
-                        filteredHomework.map(hw => (
-                            <div key={hw.id} className="card" style={{ borderLeft: '4px solid var(--accent)' }}>
-                                <h4>{hw.title}</h4>
-                                <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '10px' }}>
-                                    {hw.grade} • {hw.subject}
-                                </div>
-                                <p style={{ fontSize: '0.9rem', marginBottom: '15px' }}>{hw.description}</p>
+                                    {/* Student Status List */}
+                                    <div style={{ background: 'var(--bg-secondary)', padding: '10px', borderRadius: '8px', maxHeight: '300px', overflowY: 'auto' }}>
+                                        <div style={{ fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '10px', color: 'var(--text-secondary)' }}> STUDENT SUBMISSIONS</div>
+                                        {students.filter(s => s.grade === hw.grade && s.status === 'ACTIVE' && (s.role === 'student' || s.role === 'STUDENT')).map(student => {
+                                            const sub = submissions[hw.id]?.[student.id];
+                                            const isChecked = sub?.status === 'CHECKED';
+                                            const isIncomplete = sub?.status === 'INCOMPLETE';
 
-                                {/* Student Status List */}
-                                <div style={{ background: 'var(--bg-secondary)', padding: '10px', borderRadius: '8px', maxHeight: '300px', overflowY: 'auto' }}>
-                                    <div style={{ fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '10px', color: 'var(--text-secondary)' }}> STUDENT SUBMISSIONS</div>
-                                    {students.filter(s => s.grade === hw.grade && s.status === 'ACTIVE' && (s.role === 'student' || s.role === 'STUDENT')).map(student => {
-                                        const sub = submissions[hw.id]?.[student.id];
-                                        const isChecked = sub?.status === 'CHECKED';
-                                        const isIncomplete = sub?.status === 'INCOMPLETE';
-
-                                        return (
-                                            <div key={student.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
-                                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                                    <span style={{
-                                                        width: '8px', height: '8px', borderRadius: '50%',
-                                                        background: sub ? (isChecked ? 'var(--success)' : (isIncomplete ? 'var(--danger)' : 'var(--warning)')) : 'var(--text-tertiary)'
-                                                    }}></span>
-                                                    <span>{student.name}</span>
-                                                    {sub && sub.fileUrl && (
-                                                        <a href={sub.fileUrl} target="_blank" rel="noreferrer" style={{ fontSize: '0.8rem', color: 'var(--accent)' }}>
-                                                            [View File]
-                                                        </a>
-                                                    )}
+                                            return (
+                                                <div key={student.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                        <span style={{
+                                                            width: '8px', height: '8px', borderRadius: '50%',
+                                                            background: sub ? (isChecked ? 'var(--success)' : (isIncomplete ? 'var(--danger)' : 'var(--warning)')) : 'var(--text-tertiary)'
+                                                        }}></span>
+                                                        <span>{student.name}</span>
+                                                        {sub && sub.fileUrl && (
+                                                            <a href={sub.fileUrl} target="_blank" rel="noreferrer" style={{ fontSize: '0.8rem', color: 'var(--accent)' }}>
+                                                                [View File]
+                                                            </a>
+                                                        )}
+                                                    </div>
+                                                    <button
+                                                        className="btn-ghost"
+                                                        style={{
+                                                            fontSize: '0.8rem', padding: '2px 8px',
+                                                            border: isChecked ? '1px solid var(--success)' : (isIncomplete ? '1px solid var(--danger)' : '1px solid var(--border)'),
+                                                            color: isChecked ? 'var(--success)' : (isIncomplete ? 'var(--danger)' : 'var(--text)')
+                                                        }}
+                                                        onClick={() => {
+                                                            setReviewingSubmission({
+                                                                homeworkId: hw.id,
+                                                                studentId: student.id,
+                                                                studentName: student.name,
+                                                                ...sub // Spread existing submission data if any
+                                                            });
+                                                            setReviewStatus(sub?.status || 'CHECKED');
+                                                            setTeacherComment(sub?.teacherComment || "");
+                                                        }}
+                                                    >
+                                                        {isChecked ? "✅ Verified" : (isIncomplete ? "❌ Incomplete" : (sub ? "Review" : "Mark manually"))}
+                                                    </button>
                                                 </div>
-                                                <button
-                                                    className="btn-ghost"
-                                                    style={{
-                                                        fontSize: '0.8rem', padding: '2px 8px',
-                                                        border: isChecked ? '1px solid var(--success)' : (isIncomplete ? '1px solid var(--danger)' : '1px solid var(--border)'),
-                                                        color: isChecked ? 'var(--success)' : (isIncomplete ? 'var(--danger)' : 'var(--text)')
-                                                    }}
-                                                    onClick={() => {
-                                                        setReviewingSubmission({
-                                                            homeworkId: hw.id,
-                                                            studentId: student.id,
-                                                            studentName: student.name,
-                                                            ...sub // Spread existing submission data if any
-                                                        });
-                                                        setReviewStatus(sub?.status || 'CHECKED');
-                                                        setTeacherComment(sub?.teacherComment || "");
-                                                    }}
-                                                >
-                                                    {isChecked ? "✅ Verified" : (isIncomplete ? "❌ Incomplete" : (sub ? "Review" : "Mark manually"))}
-                                                </button>
-                                            </div>
-                                        )
-                                    })}
-                                    {students.filter(s => s.grade === hw.grade && s.status === 'ACTIVE' && (s.role === 'student' || s.role === 'STUDENT')).length === 0 && (
-                                        <div style={{ fontSize: '0.8rem', color: 'var(--text-tertiary)' }}>No students found in {hw.grade}</div>
-                                    )}
+                                            )
+                                        })}
+                                        {students.filter(s => s.grade === hw.grade && s.status === 'ACTIVE' && (s.role === 'student' || s.role === 'STUDENT')).length === 0 && (
+                                            <div style={{ fontSize: '0.8rem', color: 'var(--text-tertiary)' }}>No students found in {hw.grade}</div>
+                                        )}
+                                    </div>
                                 </div>
-                            </div>
-                        ))
-                    )}
-                </div>
+                            ))
+                        )}
+                    </div>
+                )}
             </div>
 
             {/* REVIEW MODAL */}

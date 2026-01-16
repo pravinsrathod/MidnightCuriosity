@@ -4,7 +4,11 @@
 
 const API_KEY_STORAGE_KEY = 'gemini_api_key';
 
-export const getApiKey = () => localStorage.getItem(API_KEY_STORAGE_KEY);
+export const getApiKey = () => {
+    const envKey = import.meta.env.VITE_GEMINI_API_KEY;
+    if (envKey) return envKey;
+    return localStorage.getItem(API_KEY_STORAGE_KEY);
+};
 export const setApiKey = (key) => localStorage.setItem(API_KEY_STORAGE_KEY, key);
 
 // Helper to upload file to Gemini File API (supports larger files)
