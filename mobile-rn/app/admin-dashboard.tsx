@@ -1,7 +1,8 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert, FlatList, Modal, TextInput, Image } from 'react-native';
 import { useRouter } from 'expo-router';
-import { collection, query, where, onSnapshot, doc, updateDoc, deleteDoc, getDoc } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, doc, updateDoc, deleteDoc, getDoc, getDocs } from 'firebase/firestore';
+import { sendPushNotification } from '../services/notificationService';
 import * as ImagePicker from 'expo-image-picker';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { auth, db, storage } from '../services/firebaseConfig';
@@ -83,6 +84,41 @@ export default function AdminDashboard() {
                     });
                 });
             }
+
+            // --- Send Push Notifications to Parent ---
+            try {
+                const studentDoc = await getDoc(doc(db, "users", studentId));
+                if (studentDoc.exists()) {
+                    const studentData = studentDoc.data();
+                    const studentPhone = studentData.phoneNumber;
+
+                    if (studentPhone) {
+                        const cleanStudentPhone = studentPhone.replace(/[^0-9]/g, '');
+                        const parentQuery = query(collection(db, "users"), where("tenantId", "==", tenantId), where("role", "==", "PARENT"));
+                        const parentSnaps = await getDocs(parentQuery);
+
+                        const tokens = parentSnaps.docs
+                            .map(d => d.data())
+                            .filter(p => p.pushToken && (p.linkedStudentPhone || '').replace(/[^0-9]/g, '') === cleanStudentPhone)
+                            .map(p => p.pushToken);
+
+                        if (tokens.length > 0) {
+                            const statusLabel = status === 'CHECKED' ? 'Verified ✅' : 'Incomplete / Redo ❌';
+                            await sendPushNotification(
+                                tokens,
+                                `📝 Homework Reviewed: ${studentData.name || 'Student'}`,
+                                `Homework status: ${statusLabel}.`,
+                                {
+                                    screen: 'homework/[id]',
+                                    params: { id: homeworkId }
+                                }
+                            );
+                        }
+                    }
+                }
+            } catch (notifyErr) {
+                console.warn("Review notification failed", notifyErr);
+            }
         } catch (e) {
             Alert.alert("Error", "Failed to update status");
         }
@@ -102,7 +138,8 @@ export default function AdminDashboard() {
             await import('firebase/firestore').then(({ addDoc, collection, serverTimestamp }) => {
                 addDoc(collection(db, "users"), {
                     ...newStudent,
-                    role: 'student', // Strict role
+                    phoneNumber: newStudent.phoneNumber.replace(/[^0-9]/g, ''),
+                    role: 'STUDENT', // Strict role
                     tenantId,
                     status: 'ACTIVE',
                     createdAt: serverTimestamp(),
@@ -112,7 +149,7 @@ export default function AdminDashboard() {
             setAddStudentVisible(false);
             setNewStudent({ name: '', phoneNumber: '', grade: '', password: '' });
         } catch (e: any) {
-            Alert.alert("Error", e.message);
+            Alert.alert("Error", "Failed to add student. Please check the details.");
         } finally {
             setLoading(false);
         }
@@ -133,7 +170,7 @@ export default function AdminDashboard() {
         try {
             const updates: any = {
                 name: editingStudent.name || '',
-                phoneNumber: editingStudent.phoneNumber || '',
+                phoneNumber: (editingStudent.phoneNumber || '').replace(/[^0-9]/g, ''),
                 grade: editingStudent.grade || ''
             };
             if (editingStudent.password) updates.password = editingStudent.password;
@@ -142,7 +179,7 @@ export default function AdminDashboard() {
             Alert.alert("Success", "Student Updated");
             setEditStudentVisible(false);
         } catch (e: any) {
-            Alert.alert("Error", e.message);
+            Alert.alert("Error", "Failed to update student profile.");
         } finally {
             setLoading(false);
         }
@@ -209,8 +246,8 @@ export default function AdminDashboard() {
                 setUploading(false);
             }
 
-            await import('firebase/firestore').then(({ addDoc, collection, serverTimestamp }) => {
-                addDoc(collection(db, "homework"), {
+            const hwRef = await import('firebase/firestore').then(({ addDoc, collection, serverTimestamp }) => {
+                return addDoc(collection(db, "homework"), {
                     ...newHomework,
                     attachmentUrl: fileUrl,
                     tenantId,
@@ -218,11 +255,46 @@ export default function AdminDashboard() {
                     status: 'OPEN'
                 });
             });
+
+            // --- Send Push Notifications to Parents ---
+            try {
+                // 1. Get all students in this grade
+                const studentsQuery = query(collection(db, "users"), where("tenantId", "==", tenantId), where("grade", "==", newHomework.grade));
+                const studentSnaps = await getDocs(studentsQuery);
+                const studentPhones = studentSnaps.docs.map(d => d.data().phoneNumber).filter(Boolean);
+
+                if (studentPhones.length > 0) {
+                    // 2. Get all parents for this tenant
+                    const parentsQuery = query(collection(db, "users"), where("tenantId", "==", tenantId), where("role", "==", "PARENT"));
+                    const parentSnaps = await getDocs(parentsQuery);
+
+                    // 3. Filter parents linked to these students and get tokens
+                    const tokens = parentSnaps.docs
+                        .map(d => d.data())
+                        .filter(p => p.pushToken && studentPhones.includes(p.linkedStudentPhone))
+                        .map(p => p.pushToken);
+
+                    if (tokens.length > 0) {
+                        await sendPushNotification(
+                            tokens,
+                            `📚 New Homework: ${newHomework.subject}`,
+                            `${newHomework.title} assigned for ${newHomework.grade}.`,
+                            {
+                                screen: 'homework/[id]',
+                                params: { id: hwRef.id }
+                            }
+                        );
+                    }
+                }
+            } catch (notifyErr) {
+                console.warn("Notification failed, but homework was saved", notifyErr);
+            }
+
             Alert.alert("Success", "Homework Created!");
             setCreateHomeworkVisible(false);
             setNewHomework({ title: '', description: '', subject: '', grade: '', dueDate: new Date().toISOString().split('T')[0], file: null });
         } catch (e: any) {
-            Alert.alert("Error", e.message);
+            Alert.alert("Error", "Failed to create homework. Please try again.");
         } finally {
             setLoading(false);
             setUploading(false);
@@ -347,9 +419,46 @@ export default function AdminDashboard() {
                 });
             });
 
+            // --- Send Attendance Notifications ---
+            try {
+                const affectedStudentIds = Object.keys(records).filter(id => records[id] === 'ABSENT' || records[id] === 'LATE');
+                if (affectedStudentIds.length > 0) {
+                    const parentsQuery = query(collection(db, "users"), where("tenantId", "==", tenantId), where("role", "==", "PARENT"));
+                    const parentSnaps = await getDocs(parentsQuery);
+
+                    const studentsQuery = query(collection(db, "users"), where("tenantId", "==", tenantId));
+                    const studentSnaps = await getDocs(studentsQuery);
+                    const studentMap = Object.fromEntries(studentSnaps.docs.map(d => [d.id, d.data()]));
+
+                    for (const parentDoc of parentSnaps.docs) {
+                        const parent = parentDoc.data();
+                        if (parent.pushToken && parent.linkedStudentPhone) {
+                            // Find the student this parent is linked to
+                            const studentEntry = Object.entries(studentMap).find(([id, s]: [string, any]) => {
+                                const cleanStudentPhone = (s.phoneNumber || '').replace(/[^0-9]/g, '');
+                                const cleanParentLink = (parent.linkedStudentPhone || '').replace(/[^0-9]/g, '');
+                                return cleanStudentPhone === cleanParentLink && affectedStudentIds.includes(id);
+                            });
+                            if (studentEntry) {
+                                const [sId, sData] = studentEntry;
+                                const status = records[sId];
+                                await sendPushNotification(
+                                    parent.pushToken,
+                                    `⚠️ Attendance Alert: ${sData.name}`,
+                                    `${sData.name} was marked ${status} today (${dateStr}).`,
+                                    { screen: 'parent-dashboard' }
+                                );
+                            }
+                        }
+                    }
+                }
+            } catch (notifyErr) {
+                console.warn("Attendance notifications failed", notifyErr);
+            }
+
             Alert.alert("Success", "Attendance Saved!");
         } catch (e: any) {
-            Alert.alert("Error", e.message);
+            Alert.alert("Error", "Failed to save attendance record.");
         } finally {
             setSaving(false);
         }

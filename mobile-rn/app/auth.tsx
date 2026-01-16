@@ -4,6 +4,7 @@ import { useRouter } from 'expo-router';
 import { auth, db } from '../services/firebaseConfig';
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile, signInAnonymously } from "firebase/auth";
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { registerForPushNotificationsAsync, savePushTokenToUser } from '../services/notificationService';
 import { useTheme } from '../context/ThemeContext';
 import { useTenant } from '../context/TenantContext';
 import { Ionicons } from '@expo/vector-icons';
@@ -59,7 +60,7 @@ export default function AuthScreen() {
             }
         } catch (e: any) {
             console.error("Validation Error:", e);
-            Alert.alert('Error', `Failed to validate code: ${e.message}`);
+            Alert.alert('Error', 'Failed to validate code. Please try again.');
         } finally {
             setLoading(false);
         }
@@ -90,7 +91,9 @@ export default function AuthScreen() {
                     await auth.signOut();
                 }
             } catch (e: any) {
-                Alert.alert("Login Failed", e.message);
+                let msg = "Check your email and password.";
+                if (e.code === 'auth/invalid-credential') msg = "Invalid credentials.";
+                Alert.alert("Login Failed", msg);
             } finally {
                 setLoading(false);
             }
@@ -149,7 +152,7 @@ export default function AuthScreen() {
 
                 if (isParent) {
                     profileData.role = 'PARENT';
-                    profileData.linkedStudentPhone = linkedStudentPhone;
+                    profileData.linkedStudentPhone = linkedStudentPhone.replace(/[^0-9]/g, '');
                 } else {
                     profileData.role = 'STUDENT';
                     profileData.grade = selectedGrade;
@@ -281,13 +284,23 @@ export default function AuthScreen() {
             if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password' || error.code === 'auth/invalid-credential') msg = "Invalid Mobile or Password.";
             if (error.code === 'auth/email-already-in-use') msg = "This mobile number is already registered. Please Login.";
             if (error.code === 'auth/weak-password') msg = "Password must be at least 6 characters.";
-            Alert.alert("Authentication Failed", msg);
+            Alert.alert("Authentication Failed", msg || "Something went wrong.");
         } finally {
             setLoading(false);
         }
     };
 
-    const handleNavigation = (userData: any) => {
+    const handleNavigation = async (userData: any) => {
+        // --- Setup Push Notifications ---
+        try {
+            const currentUid = auth.currentUser?.uid || userData.id;
+            if (currentUid) {
+                registerForPushNotificationsAsync().then(token => {
+                    if (token) savePushTokenToUser(currentUid, token);
+                });
+            }
+        } catch (e) { console.warn("Push token setup failed", e); }
+
         if (userData.role === 'PARENT') {
             if (userData.status === 'PENDING') router.replace('/approval-pending');
             else router.replace('/parent-dashboard');

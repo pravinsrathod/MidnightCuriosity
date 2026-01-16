@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { db } from './firebase';
-import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc, setDoc, serverTimestamp, collection, query, where, getDocs } from 'firebase/firestore';
+import { sendPushNotification } from './notificationService';
 
 const AttendanceManager = ({ students, tenantId, onAlert, filterGrade }) => {
     const [selectedDate, setSelectedDate] = useState(new Date(new Date().getTime() - (new Date().getTimezoneOffset() * 60000)).toISOString().split('T')[0]);
@@ -99,6 +100,57 @@ const AttendanceManager = ({ students, tenantId, onAlert, filterGrade }) => {
                 absentCount: Object.values(attendanceMap).filter(v => v === 'ABSENT').length,
                 updatedAt: serverTimestamp()
             });
+
+            // --- Send Attendance Notifications ---
+            try {
+                const affectedStudentIds = Object.keys(attendanceMap).filter(id => attendanceMap[id] === 'ABSENT' || attendanceMap[id] === 'LATE');
+                if (affectedStudentIds.length > 0) {
+                    const parentsQuery = query(collection(db, "users"), where("tenantId", "==", tenantId), where("role", "==", "PARENT"));
+                    const parentSnaps = await getDocs(parentsQuery);
+                    console.log(`Found ${parentSnaps.size} parents in tenant ${tenantId}`);
+
+                    const studentsQuery = query(collection(db, "users"), where("tenantId", "==", tenantId));
+                    const studentSnaps = await getDocs(studentsQuery);
+                    console.log(`Found ${studentSnaps.size} students for mapping`);
+                    const studentMap = Object.fromEntries(studentSnaps.docs.map(d => [d.id, { id: d.id, ...d.data() }]));
+
+                    for (const parentDoc of parentSnaps.docs) {
+                        const parent = parentDoc.data();
+                        console.log(`Checking Parent: ${parent.name}, Token: ${parent.pushToken}, LinkedPhone: ${parent.linkedStudentPhone}`);
+                        if (parent.pushToken && parent.linkedStudentPhone) {
+                            // Find the student this parent is linked to
+                            const studentEntry = Object.entries(studentMap).find(([id, s]) => {
+                                const cleanStudentPhone = (s.phoneNumber || '').replace(/[^0-9]/g, '');
+                                const cleanParentLink = (parent.linkedStudentPhone || '').replace(/[^0-9]/g, '');
+                                const phoneMatch = cleanStudentPhone === cleanParentLink;
+                                const isAffected = affectedStudentIds.includes(id);
+                                if (phoneMatch && !isAffected) console.log(`Phone matched for ${s.name} but they are NOT absent/late.`);
+                                if (!phoneMatch && isAffected) console.log(`Student ${s.name} is absent/late but phone ${cleanStudentPhone} != parent's link ${cleanParentLink}`);
+                                return phoneMatch && isAffected;
+                            });
+
+                            if (studentEntry) {
+                                const [sId, sData] = studentEntry;
+                                const status = attendanceMap[sId];
+                                console.log(`Triggering notification for parent ${parent.name} regarding student ${sData.name}`);
+                                await sendPushNotification(
+                                    parent.pushToken,
+                                    `⚠️ Attendance Alert: ${sData.name}`,
+                                    `${sData.name} was marked ${status} today (${selectedDate}).`,
+                                    { screen: 'parent-dashboard' }
+                                );
+                            } else {
+                                console.log(`No student match found for parent ${parent.name}`);
+                            }
+                        } else {
+                            console.log(`Parent ${parent.name} missing pushToken or linkedStudentPhone`);
+                        }
+                    }
+                }
+            } catch (notifyErr) {
+                console.warn("Attendance notifications failed", notifyErr);
+            }
+
             onAlert("Attendance Saved Successfully! ✅", "Success");
         } catch (e) {
             console.error("Error saving attendance:", e);

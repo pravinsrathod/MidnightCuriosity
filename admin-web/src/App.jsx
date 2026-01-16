@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { db, storage, auth } from "./firebase";
-import { collection, addDoc, serverTimestamp, query, orderBy, limit, onSnapshot, doc, deleteDoc, updateDoc, arrayUnion, arrayRemove, setDoc, getDoc, getDocs, where } from "firebase/firestore";
+import { collection, query, where, onSnapshot, addDoc, serverTimestamp, doc, updateDoc, deleteDoc, getDocs, orderBy, limit, arrayUnion, arrayRemove, setDoc, getDoc } from "firebase/firestore";
+import { sendPushNotification } from "./notificationService";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import AdminLogin from "./AdminLogin";
@@ -24,7 +25,7 @@ function App() {
   const [authLoading, setAuthLoading] = useState(true);
 
   // Admin Tenant State
-  const [adminTenantId, setAdminTenantId] = useState('default');
+  const [adminTenantId, setAdminTenantId] = useState(null);
   const [tenantData, setTenantData] = useState({ name: "", code: "" });
   const [isEditingTenant, setIsEditingTenant] = useState(false);
   const [tenantEditForm, setTenantEditForm] = useState({ name: "", code: "" });
@@ -96,7 +97,7 @@ function App() {
           console.error("Failed to fetch admin tenant", e);
         }
       } else {
-        setAdminTenantId('default');
+        setAdminTenantId(null);
         setTenantData({ name: "", code: "" });
       }
       setAuthLoading(false);
@@ -221,6 +222,20 @@ function App() {
         totalVotes: 0
       });
 
+      // --- Push Notifications ---
+      try {
+        const studentQuery = pollFormData.grade === "All"
+          ? query(collection(db, "users"), where("tenantId", "==", adminTenantId))
+          : query(collection(db, "users"), where("tenantId", "==", adminTenantId), where("grade", "==", pollFormData.grade));
+
+        const snaps = await getDocs(studentQuery);
+        const tokens = snaps.docs.map(d => d.data().pushToken).filter(Boolean);
+
+        if (tokens.length > 0) {
+          await sendPushNotification(tokens, "📊 New Live Poll!", pollFormData.question, { screen: 'poll' });
+        }
+      } catch (e) { console.warn("Poll notification failed", e); }
+
       setPollFormData({ question: "", optionA: "", optionB: "", optionC: "", optionD: "", grade: "All" });
       customAlert("Poll Started Live! 🚀");
     } catch (e) {
@@ -326,6 +341,18 @@ function App() {
         tenantId: adminTenantId, // Multi-tenancy
         createdAt: serverTimestamp()
       });
+
+      // --- Push Notifications ---
+      try {
+        const studentQuery = query(collection(db, "users"), where("tenantId", "==", adminTenantId), where("grade", "==", examForm.grade));
+        const snaps = await getDocs(studentQuery);
+        const tokens = snaps.docs.map(d => d.data().pushToken).filter(Boolean);
+
+        if (tokens.length > 0) {
+          await sendPushNotification(tokens, "✍️ New Exam Scheduled", `${examForm.title} for ${examForm.grade} on ${examForm.date}.`, { screen: 'exam' });
+        }
+      } catch (e) { console.warn("Exam notification failed", e); }
+
       setExamForm({ title: "", date: "", duration: 60, questions: [], status: "scheduled", grade: grades[0] || "" });
       setExamFile(null);
       customAlert("Exam scheduled successfully!");
@@ -484,7 +511,7 @@ function App() {
       } else {
         // Initialize Defaults if first run
         const defaults = {
-          grades: Array.from({ length: 12 }, (_, i) => `Grade ${i + 1}`),
+          grades: Array.from({ length: 12 }, (_, i) => `Grade ${i + 1} `),
           subjects: ["Maths", "Physics", "Chemistry", "Biology", "English", "History"],
           topics: ["Algebra", "Geometry", "Calculus"]
         };
@@ -626,7 +653,7 @@ function App() {
       if (!newStudentForm.phoneNumber) missing.push("Phone");
       if (!newStudentForm.grade) missing.push("Grade");
       if (!newStudentForm.password) missing.push("Password");
-      customAlert(`Please fill the following fields: ${missing.join(', ')}`);
+      customAlert(`Please fill the following fields: ${missing.join(', ')} `);
       return;
     }
 
@@ -647,7 +674,7 @@ function App() {
       const secondaryAuth = getAuth(secondaryApp);
 
       const cleanPhone = newStudentForm.phoneNumber.replace(/[^0-9]/g, '');
-      const virtualEmail = `${cleanPhone}@midnightcuriosity.com`;
+      const virtualEmail = `${cleanPhone} @midnightcuriosity.com`;
 
       let newUid;
 
@@ -689,7 +716,7 @@ function App() {
 
       setNewStudentForm({ name: "", phoneNumber: "", grade: "", password: "" });
       setShowAddStudentModal(false);
-      customAlert(`Student '${newStudentForm.name}' added successfully! 
+      customAlert(`Student '${newStudentForm.name}' added successfully!
 Phone: ${newStudentForm.phoneNumber}
 Password: [Hidden]`);
 
@@ -856,7 +883,7 @@ Password: [Hidden]`);
         updatedAt: new Date()
       }));
 
-      customAlert(`Institute Profile Updated Successfully! ${isCodeChanged ? `\nNew Code: '${formData.code}'` : ''}`);
+      customAlert(`Institute Profile Updated Successfully! ${isCodeChanged ? `\nNew Code: '${formData.code}'` : ''} `);
       setIsEditingTenant(false);
     } catch (e) {
       console.error(e);
@@ -881,7 +908,7 @@ Password: [Hidden]`);
         const checkSnap = await getDocs(q);
 
         if (!checkSnap.empty) {
-          customAlert(`The code '${tenantEditForm.code}' is already taken. Please choose another.`);
+          customAlert(`The code '${tenantEditForm.code}' is already taken.Please choose another.`);
           setLoading(false);
           return;
         }
@@ -889,7 +916,7 @@ Password: [Hidden]`);
 
       // 2. LOGO UPLOAD
       if (file) {
-        const storageRef = ref(storage, `logos/${adminTenantId}/logo_${Date.now()}.png`);
+        const storageRef = ref(storage, `logos / ${adminTenantId}/logo_${Date.now()}.png`);
         await uploadBytes(storageRef, file);
         newLogoUrl = await getDownloadURL(storageRef);
       }

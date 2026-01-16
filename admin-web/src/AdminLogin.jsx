@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { auth } from './firebase';
-import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword, sendPasswordResetEmail } from 'firebase/auth';
 import { db } from './firebase';
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 
@@ -8,13 +8,45 @@ export default function AdminLogin() {
     const [identifier, setIdentifier] = useState(''); // Email or Phone
     const [password, setPassword] = useState('');
     const [error, setError] = useState('');
+    const [success, setSuccess] = useState('');
     const [loading, setLoading] = useState(false);
     const [isSignUp, setIsSignUp] = useState(false);
+
+    const handleForgotPassword = async () => {
+        if (!identifier) {
+            setError("Please enter your email or phone number first.");
+            return;
+        }
+
+        setLoading(true);
+        setError('');
+        setSuccess('');
+
+        // Determine if input is Phone or Email
+        const isPhone = /^\+?[0-9\s]+$/.test(identifier) && !identifier.includes('@');
+        let emailToUse = identifier;
+
+        if (isPhone) {
+            const cleanPhone = identifier.replace(/[^0-9]/g, '');
+            emailToUse = `${cleanPhone}@midnightcuriosity.com`;
+        }
+
+        try {
+            await sendPasswordResetEmail(auth, emailToUse);
+            setSuccess("Password reset email sent! Please check your inbox.");
+        } catch (err) {
+            console.error(err);
+            setError("Failed to send reset email: " + err.message);
+        } finally {
+            setLoading(false);
+        }
+    };
 
     const handleAuth = async (e) => {
         e.preventDefault();
         setLoading(true);
         setError('');
+        setSuccess('');
 
         // Determine if input is Phone or Email
         const isPhone = /^\+?[0-9\s]+$/.test(identifier) && !identifier.includes('@');
@@ -82,6 +114,7 @@ export default function AdminLogin() {
                 <p style={styles.subtitle}>{isSignUp ? 'Register a new admin account' : 'Please sign in to continue'}</p>
 
                 {error && <div style={styles.error}>{error}</div>}
+                {success && <div style={styles.success}>{success}</div>}
 
                 <form onSubmit={handleAuth} style={styles.form}>
                     <div style={styles.inputGroup}>
@@ -97,14 +130,25 @@ export default function AdminLogin() {
                     </div>
 
                     <div style={styles.inputGroup}>
-                        <label style={styles.label}>Password</label>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <label style={styles.label}>Password</label>
+                            {!isSignUp && (
+                                <button
+                                    type="button"
+                                    onClick={handleForgotPassword}
+                                    style={{ background: 'none', border: 'none', color: '#3b82f6', cursor: 'pointer', fontSize: '0.8rem' }}
+                                >
+                                    Forgot Password?
+                                </button>
+                            )}
+                        </div>
                         <input
                             type="password"
                             value={password}
                             onChange={(e) => setPassword(e.target.value)}
                             style={styles.input}
                             placeholder="••••••••"
-                            required
+                            required={!loading}
                         />
                     </div>
 
@@ -203,6 +247,15 @@ const styles = {
     error: {
         background: 'rgba(239, 68, 68, 0.1)',
         color: '#ef4444',
+        padding: '12px',
+        borderRadius: '8px',
+        marginBottom: '20px',
+        textAlign: 'center',
+        fontSize: '0.9rem'
+    },
+    success: {
+        background: 'rgba(34, 197, 94, 0.1)',
+        color: '#22c55e',
         padding: '12px',
         borderRadius: '8px',
         marginBottom: '20px',
