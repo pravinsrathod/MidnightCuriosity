@@ -217,8 +217,8 @@ export default function AuthScreen() {
                 await AsyncStorage.setItem('user_uid', userUid);
                 await setTenantId(userData.tenantId);
 
-                if (isParent) {
-                    userData.role = 'PARENT'; // Ensure role context
+                if (isParent || userData.role?.toUpperCase() === 'PARENT') {
+                    userData.role = 'PARENT'; // Standardize
                 }
 
                 // CHECK BIOMETRICS
@@ -301,9 +301,12 @@ export default function AuthScreen() {
             }
         } catch (e) { console.warn("Push token setup failed", e); }
 
-        if (userData.role === 'PARENT') {
+        const role = userData.role?.toUpperCase();
+        if (role === 'PARENT') {
             if (userData.status === 'PENDING') router.replace('/approval-pending');
             else router.replace('/parent-dashboard');
+        } else if (role === 'ADMIN') {
+            router.replace('/admin-dashboard');
         } else {
             if (userData.status === 'PENDING') router.replace('/approval-pending');
             else router.replace('/grade');
@@ -400,16 +403,16 @@ export default function AuthScreen() {
                                 <Text style={[styles.toggleText, isSignUp && !isParent && styles.toggleTextActive]}>Student Join</Text>
                             </TouchableOpacity>
                             <TouchableOpacity
-                                style={[styles.toggleButton, !isSignUp && !isParent && styles.toggleButtonActive]}
-                                onPress={() => { setIsSignUp(false); setIsParent(false); setAuthStage('FORM'); }}
-                            >
-                                <Text style={[styles.toggleText, !isSignUp && !isParent && styles.toggleTextActive]}>Login</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity
                                 style={[styles.toggleButton, isSignUp && isParent && styles.toggleButtonActive]}
                                 onPress={() => { setIsSignUp(true); setIsParent(true); setAuthStage('TENANT'); }}
                             >
                                 <Text style={[styles.toggleText, isSignUp && isParent && styles.toggleTextActive]}>Parent Join</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                style={[styles.toggleButton, !isSignUp && styles.toggleButtonActive]}
+                                onPress={() => { setIsSignUp(false); setAuthStage('FORM'); }}
+                            >
+                                <Text style={[styles.toggleText, !isSignUp && styles.toggleTextActive]}>Login</Text>
                             </TouchableOpacity>
                         </View>
                     )}

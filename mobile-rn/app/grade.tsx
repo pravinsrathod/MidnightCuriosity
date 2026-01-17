@@ -115,6 +115,11 @@ export default function GradeSelectionScreen() {
                     // Rank Logic
                     const calculatedRank = Math.max(1, 100 - (completedCount * 12));
                     setRank(calculatedRank);
+
+                    // Self-Healing Redirection: If a parent somehow lands here, send them to Parent Dashboard
+                    if (data.role?.toUpperCase() === 'PARENT') {
+                        router.replace('/parent-dashboard');
+                    }
                 } else {
                     // Doc doesn't exist? Create it automatically (Self-Healing)
                     // Only attempt if we have a valid authenticated user to avoid permission errors
