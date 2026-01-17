@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { db, storage } from './firebase'; // Ensure storage is imported
-import { doc, getDoc, setDoc, updateDoc, arrayUnion, serverTimestamp, collection, query, where, onSnapshot, addDoc, orderBy } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc, arrayUnion, serverTimestamp, collection, query, where, onSnapshot, addDoc, orderBy, getDocs } from 'firebase/firestore';
+import { sendPushNotification } from './notificationService';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 
 const HomeworkManager = ({ students, tenantId, onAlert, grades: propGrades, filterGrade }) => {
@@ -100,7 +101,7 @@ const HomeworkManager = ({ students, tenantId, onAlert, grades: propGrades, filt
                 fileUrl = await getDownloadURL(storageRef);
             }
 
-            await addDoc(collection(db, "homework"), {
+            const docRef = await addDoc(collection(db, "homework"), {
                 ...newHomework,
                 dueDate: selectedDate,
                 tenantId,
@@ -108,6 +109,45 @@ const HomeworkManager = ({ students, tenantId, onAlert, grades: propGrades, filt
                 createdAt: serverTimestamp(),
                 status: 'OPEN'
             });
+
+            // --- Send Push Notifications to Parents ---
+            try {
+                // 1. Get all students in this grade
+                const studentsQuery = query(collection(db, "users"), where("tenantId", "==", tenantId), where("grade", "==", newHomework.grade));
+                const studentSnaps = await getDocs(studentsQuery);
+                const studentPhones = studentSnaps.docs.map(d => d.data().phoneNumber).filter(Boolean);
+
+                if (studentPhones.length > 0) {
+                    // 2. Get all parents for this tenant
+                    const parentsQuery = query(collection(db, "users"), where("tenantId", "==", tenantId), where("role", "==", "PARENT"));
+                    const parentSnaps = await getDocs(parentsQuery);
+
+                    // 3. Filter parents linked to these students and get tokens
+                    const tokens = parentSnaps.docs
+                        .map(d => d.data())
+                        .filter(p => {
+                            if (!p.pushToken || !p.linkedStudentPhone) return false;
+                            const cleanParentLink = p.linkedStudentPhone.replace(/[^0-9]/g, '');
+                            return studentPhones.some(sp => sp.replace(/[^0-9]/g, '') === cleanParentLink);
+                        })
+                        .map(p => p.pushToken);
+
+                    if (tokens.length > 0) {
+                        await sendPushNotification(
+                            tokens,
+                            `📚 New Homework: ${newHomework.subject}`,
+                            `${newHomework.title} assigned for ${newHomework.grade}.`,
+                            {
+                                screen: 'homework/[id]',
+                                params: { id: docRef.id }
+                            }
+                        );
+                    }
+                }
+            } catch (notifyErr) {
+                console.warn("Notification failed, but homework was saved", notifyErr);
+            }
+
             onAlert("Homework Assigned Successfully! 📝", "Success");
             setNewHomework({ title: "", description: "", grade: "", subject: "" });
             setHomeworkFile(null);
@@ -154,6 +194,43 @@ const HomeworkManager = ({ students, tenantId, onAlert, grades: propGrades, filt
                     checkedAt: serverTimestamp(),
                     submittedAt: null // Explicitly null as student didn't submit
                 });
+            }
+
+            // --- Send Push Notifications to Parent ---
+            try {
+                // 1. Get the student's data to find their phone
+                const studentDoc = await getDoc(doc(db, "users", reviewingSubmission.studentId));
+                if (studentDoc.exists()) {
+                    const studentData = studentDoc.data();
+                    const studentPhone = studentData.phoneNumber;
+
+                    if (studentPhone) {
+                        const cleanStudentPhone = studentPhone.replace(/[^0-9]/g, '');
+                        // 2. Find the parent linked to this phone (fetching all parents of tenant for robust matching)
+                        const parentQuery = query(collection(db, "users"), where("tenantId", "==", tenantId), where("role", "==", "PARENT"));
+                        const parentSnaps = await getDocs(parentQuery);
+
+                        const tokens = parentSnaps.docs
+                            .map(d => d.data())
+                            .filter(p => p.pushToken && (p.linkedStudentPhone || '').replace(/[^0-9]/g, '') === cleanStudentPhone)
+                            .map(p => p.pushToken);
+
+                        if (tokens.length > 0) {
+                            const statusLabel = reviewStatus === 'CHECKED' ? 'Verified ✅' : 'Incomplete / Redo ❌';
+                            await sendPushNotification(
+                                tokens,
+                                `📝 Homework Reviewed: ${reviewingSubmission.studentName}`,
+                                `Homework status: ${statusLabel}. Click for details.`,
+                                {
+                                    screen: 'homework/[id]',
+                                    params: { id: reviewingSubmission.homeworkId }
+                                }
+                            );
+                        }
+                    }
+                }
+            } catch (notifyErr) {
+                console.warn("Review notification failed", notifyErr);
             }
 
             onAlert(`Homework Marked as ${reviewStatus}! ✅`, "Success");

@@ -14,7 +14,7 @@ import { useTenant } from '../context/TenantContext';
 export default function GradeSelectionScreen() {
     const router = useRouter();
     const { colors, toggleTheme, isDark } = useTheme();
-    const { tenantId } = useTenant();
+    const { tenantId, tenantName, tenantLogo } = useTenant();
     const styles = useMemo(() => makeStyles(colors), [colors]);
 
     const [userName, setUserName] = useState("Student");
@@ -115,6 +115,11 @@ export default function GradeSelectionScreen() {
                     // Rank Logic
                     const calculatedRank = Math.max(1, 100 - (completedCount * 12));
                     setRank(calculatedRank);
+
+                    // Self-Healing Redirection: If a parent somehow lands here, send them to Parent Dashboard
+                    if (data.role?.toUpperCase() === 'PARENT') {
+                        router.replace('/parent-dashboard');
+                    }
                 } else {
                     // Doc doesn't exist? Create it automatically (Self-Healing)
                     // Only attempt if we have a valid authenticated user to avoid permission errors
@@ -212,7 +217,14 @@ export default function GradeSelectionScreen() {
             <View style={styles.content}>
                 {/* Header */}
                 <View style={styles.header}>
-                    <Text style={styles.brand}>EduPro</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                        {tenantLogo ? (
+                            <Image source={{ uri: tenantLogo }} style={{ width: 30, height: 30, borderRadius: 6 }} />
+                        ) : (
+                            <Text style={{ fontSize: 20 }}>🚀</Text>
+                        )}
+                        <Text style={styles.brand}>{tenantName || "EduPro"}</Text>
+                    </View>
                     <View style={{ flexDirection: 'row', gap: 16, alignItems: 'center' }}>
                         <TouchableOpacity onPress={toggleTheme}>
                             <Ionicons name={isDark ? "sunny-outline" : "moon-outline"} size={24} color={colors.text} />

@@ -1,9 +1,10 @@
 import React, { useState, useMemo } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Keyboard, ScrollView } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Keyboard, ScrollView, Image } from 'react-native';
 import { useRouter } from 'expo-router';
 import { auth, db } from '../services/firebaseConfig';
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile, signInAnonymously } from "firebase/auth";
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { registerForPushNotificationsAsync, savePushTokenToUser } from '../services/notificationService';
 import { useTheme } from '../context/ThemeContext';
 import { useTenant } from '../context/TenantContext';
 import { Ionicons } from '@expo/vector-icons';
@@ -15,7 +16,7 @@ import * as LocalAuthentication from 'expo-local-authentication';
 export default function AuthScreen() {
     const router = useRouter();
     const { colors, toggleTheme, isDark } = useTheme();
-    const { setTenantId } = useTenant();
+    const { tenantId, setTenantId, tenantName, tenantLogo } = useTenant();
     const styles = useMemo(() => makeStyles(colors), [colors]);
 
     const [isSignUp, setIsSignUp] = useState(true);
@@ -59,7 +60,7 @@ export default function AuthScreen() {
             }
         } catch (e: any) {
             console.error("Validation Error:", e);
-            Alert.alert('Error', `Failed to validate code: ${e.message}`);
+            Alert.alert('Error', 'Failed to validate code. Please try again.');
         } finally {
             setLoading(false);
         }
@@ -90,7 +91,9 @@ export default function AuthScreen() {
                     await auth.signOut();
                 }
             } catch (e: any) {
-                Alert.alert("Login Failed", e.message);
+                let msg = "Check your email and password.";
+                if (e.code === 'auth/invalid-credential') msg = "Invalid credentials.";
+                Alert.alert("Login Failed", msg);
             } finally {
                 setLoading(false);
             }
@@ -149,7 +152,7 @@ export default function AuthScreen() {
 
                 if (isParent) {
                     profileData.role = 'PARENT';
-                    profileData.linkedStudentPhone = linkedStudentPhone;
+                    profileData.linkedStudentPhone = linkedStudentPhone.replace(/[^0-9]/g, '');
                 } else {
                     profileData.role = 'STUDENT';
                     profileData.grade = selectedGrade;
@@ -214,8 +217,8 @@ export default function AuthScreen() {
                 await AsyncStorage.setItem('user_uid', userUid);
                 await setTenantId(userData.tenantId);
 
-                if (isParent) {
-                    userData.role = 'PARENT'; // Ensure role context
+                if (isParent || userData.role?.toUpperCase() === 'PARENT') {
+                    userData.role = 'PARENT'; // Standardize
                 }
 
                 // CHECK BIOMETRICS
@@ -281,16 +284,29 @@ export default function AuthScreen() {
             if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password' || error.code === 'auth/invalid-credential') msg = "Invalid Mobile or Password.";
             if (error.code === 'auth/email-already-in-use') msg = "This mobile number is already registered. Please Login.";
             if (error.code === 'auth/weak-password') msg = "Password must be at least 6 characters.";
-            Alert.alert("Authentication Failed", msg);
+            Alert.alert("Authentication Failed", msg || "Something went wrong.");
         } finally {
             setLoading(false);
         }
     };
 
-    const handleNavigation = (userData: any) => {
-        if (userData.role === 'PARENT') {
+    const handleNavigation = async (userData: any) => {
+        // --- Setup Push Notifications ---
+        try {
+            const currentUid = auth.currentUser?.uid || userData.id;
+            if (currentUid) {
+                registerForPushNotificationsAsync().then(token => {
+                    if (token) savePushTokenToUser(currentUid, token);
+                });
+            }
+        } catch (e) { console.warn("Push token setup failed", e); }
+
+        const role = userData.role?.toUpperCase();
+        if (role === 'PARENT') {
             if (userData.status === 'PENDING') router.replace('/approval-pending');
             else router.replace('/parent-dashboard');
+        } else if (role === 'ADMIN') {
+            router.replace('/admin-dashboard');
         } else {
             if (userData.status === 'PENDING') router.replace('/approval-pending');
             else router.replace('/grade');
@@ -369,8 +385,12 @@ export default function AuthScreen() {
                 <View style={styles.headerSpacer} />
 
                 <View style={styles.logoContainer}>
-                    <Text style={styles.brandEmoji}>🚀</Text>
-                    <Text style={styles.brandTitle}>EduPro</Text>
+                    {tenantLogo ? (
+                        <Image source={{ uri: tenantLogo }} style={{ width: 80, height: 80, borderRadius: 16, marginBottom: 10 }} />
+                    ) : (
+                        <Text style={styles.brandEmoji}>🚀</Text>
+                    )}
+                    <Text style={styles.brandTitle}>{tenantName || "EduPro"}</Text>
                 </View>
 
                 <View style={styles.card}>
@@ -383,16 +403,16 @@ export default function AuthScreen() {
                                 <Text style={[styles.toggleText, isSignUp && !isParent && styles.toggleTextActive]}>Student Join</Text>
                             </TouchableOpacity>
                             <TouchableOpacity
-                                style={[styles.toggleButton, !isSignUp && !isParent && styles.toggleButtonActive]}
-                                onPress={() => { setIsSignUp(false); setIsParent(false); setAuthStage('FORM'); }}
-                            >
-                                <Text style={[styles.toggleText, !isSignUp && !isParent && styles.toggleTextActive]}>Login</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity
                                 style={[styles.toggleButton, isSignUp && isParent && styles.toggleButtonActive]}
                                 onPress={() => { setIsSignUp(true); setIsParent(true); setAuthStage('TENANT'); }}
                             >
                                 <Text style={[styles.toggleText, isSignUp && isParent && styles.toggleTextActive]}>Parent Join</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                style={[styles.toggleButton, !isSignUp && styles.toggleButtonActive]}
+                                onPress={() => { setIsSignUp(false); setAuthStage('FORM'); }}
+                            >
+                                <Text style={[styles.toggleText, !isSignUp && styles.toggleTextActive]}>Login</Text>
                             </TouchableOpacity>
                         </View>
                     )}

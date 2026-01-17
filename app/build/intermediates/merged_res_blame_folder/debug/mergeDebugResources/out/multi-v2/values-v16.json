@@ -1,10 +1,10 @@
 {
     "logs": [
         {
-            "outputFile": "com.midnightcuriosity.app-mergeDebugResources-63:/values-v16/values-v16.xml",
+            "outputFile": "com.midnightcuriosity.app-mergeDebugResources-3:/values-v16/values-v16.xml",
             "map": [
                 {
-                    "source": "/Users/pravinrathod/.gradle/caches/transforms-3/10b58b5fcc9263a0ec1167224ae94064/transformed/core-1.12.0/res/values-v16/values-v16.xml",
+                    "source": "/opt/homebrew/Cellar/openjdk@17/17.0.15/bin/caches/transforms-3/10b58b5fcc9263a0ec1167224ae94064/transformed/core-1.12.0/res/values-v16/values-v16.xml",
                     "from": {
                         "startLines": "2",
                         "startColumns": "4",

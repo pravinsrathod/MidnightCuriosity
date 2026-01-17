@@ -1,0 +1,19 @@
+{
+    "logs": [
+        {
+            "outputFile": "com.midnightcuriosity.test.app-mergeDebugAndroidTestResources-1:/values-v16/values-v16.xml",
+            "map": [
+                {
+                    "source": "/opt/homebrew/Cellar/openjdk@17/17.0.15/bin/caches/transforms-3/10b58b5fcc9263a0ec1167224ae94064/transformed/core-1.12.0/res/values-v16/values-v16.xml",
+                    "from": {
+                        "startLines": "2",
+                        "startColumns": "4",
+                        "startOffsets": "55",
+                        "endColumns": "65",
+                        "endOffsets": "116"
+                    }
+                }
+            ]
+        }
+    ]
+}

@@ -1,15 +1,17 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { View, Text, StyleSheet, ScrollView, ActivityIndicator, TouchableOpacity, RefreshControl } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, ActivityIndicator, TouchableOpacity, RefreshControl, Image } from 'react-native';
 import { useRouter } from 'expo-router';
 import { auth, db } from '../services/firebaseConfig';
 import { collection, query, where, getDocs, doc, getDoc, orderBy, limit, onSnapshot } from 'firebase/firestore';
 import { useTheme } from '../context/ThemeContext';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useTenant } from '../context/TenantContext';
 
 export default function ParentDashboard() {
     const router = useRouter();
     const { colors, isDark, toggleTheme } = useTheme();
+    const { tenantName, tenantLogo } = useTenant();
     const styles = useMemo(() => makeStyles(colors), [colors]);
 
     const [loading, setLoading] = useState(true);
@@ -267,9 +269,16 @@ export default function ParentDashboard() {
         <View style={styles.container}>
             {/* Header */}
             <View style={styles.header}>
-                <View>
-                    <Text style={styles.headerTitle}>Parent Portal</Text>
-                    <Text style={styles.headerSubtitle}>Viewing: {studentName}</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                    {tenantLogo ? (
+                        <Image source={{ uri: tenantLogo }} style={{ width: 40, height: 40, borderRadius: 8 }} />
+                    ) : (
+                        <Text style={{ fontSize: 24 }}>🚀</Text>
+                    )}
+                    <View>
+                        <Text style={styles.headerTitle}>{tenantName || "Parent Portal"}</Text>
+                        <Text style={styles.headerSubtitle}>Viewing: {studentName}</Text>
+                    </View>
                 </View>
                 <TouchableOpacity onPress={handleLogout} style={styles.logoutButton}>
                     <Ionicons name="log-out-outline" size={24} color={colors.danger} />

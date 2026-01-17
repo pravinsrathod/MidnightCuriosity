@@ -1,0 +1,7 @@
+#Fri Jan 16 17:44:36 MYT 2026
+base.0=/Users/pravinrathod/Documents/Personal/AI/Coaching/New/app/build/intermediates/dex/debugAndroidTest/mergeExtDexDebugAndroidTest/classes.dex
+base.1=/Users/pravinrathod/Documents/Personal/AI/Coaching/New/app/build/intermediates/dex/debugAndroidTest/mergeProjectDexDebugAndroidTest/0/classes.dex
+path.0=classes.dex
+path.1=0/classes.dex
+renamed.0=classes.dex
+renamed.1=classes2.dex
