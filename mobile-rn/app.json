@@ -14,14 +14,14 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.pravinsrathod.edupro"
+      "bundleIdentifier": "com.prowin.edupro"
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/android-icon-foreground.png",
         "backgroundColor": "#ffffff"
       },
-      "package": "com.pravinsrathod.edupro"
+      "package": "com.prowin.edupro"
     },
     "web": {
       "favicon": "./assets/images/favicon.png",
