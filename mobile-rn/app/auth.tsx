@@ -1,6 +1,6 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Keyboard, ScrollView, Image } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { auth, db } from '../services/firebaseConfig';
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile, signInAnonymously } from "firebase/auth";
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -32,7 +32,9 @@ export default function AuthScreen() {
     const [selectedGrade, setSelectedGrade] = useState("");
     const [otpCode, setOtpCode] = useState('');
     const [loading, setLoading] = useState(false);
-    const [isAdminMode, setIsAdminMode] = useState(false); // NEW: Admin Mode
+    const [isAdminMode, setIsAdminMode] = useState(false);
+    const [isBiometricSupported, setIsBiometricSupported] = useState(false);
+    const params = useLocalSearchParams();
 
     const validateTenant = async () => {
         if (!inputTenantId) { console.warn('Please enter an Institute Code'); return; }
@@ -289,6 +291,45 @@ export default function AuthScreen() {
             setLoading(false);
         }
     };
+    useEffect(() => {
+        const checkSupport = async () => {
+            const hasHardware = await LocalAuthentication.hasHardwareAsync();
+            const isEnrolled = await LocalAuthentication.isEnrolledAsync();
+            const bioEnabled = await AsyncStorage.getItem('biometric_enabled');
+            setIsBiometricSupported(hasHardware && isEnrolled && bioEnabled === 'true');
+
+            if (params.autoauth === 'true' && hasHardware && isEnrolled && bioEnabled === 'true' && auth.currentUser) {
+                performBiometricAuth();
+            }
+        };
+        checkSupport();
+    }, [params.autoauth]);
+
+    const performBiometricAuth = async () => {
+        try {
+            const result = await LocalAuthentication.authenticateAsync({
+                promptMessage: 'Login to Erudite',
+                fallbackLabel: 'Use Password',
+            });
+
+            if (result.success) {
+                if (auth.currentUser) {
+                    setLoading(true);
+                    const userDoc = await getDoc(doc(db, "users", auth.currentUser.uid));
+                    if (userDoc.exists()) {
+                        handleNavigation(userDoc.data());
+                    } else {
+                        Alert.alert("Error", "User profile not found.");
+                        setAuthStage('FORM'); // Show login if profile missing
+                    }
+                    setLoading(false);
+                }
+            }
+        } catch (e) {
+            console.error("Biometric auth error:", e);
+        }
+    };
+
 
     const handleNavigation = async (userData: any) => {
         // --- Setup Push Notifications ---
@@ -544,6 +585,18 @@ export default function AuthScreen() {
                             </Text>
                         )}
                     </TouchableOpacity>
+
+                    {isBiometricSupported && !isSignUp && authStage === 'FORM' && (
+                        <TouchableOpacity
+                            style={[styles.mainButton, { backgroundColor: 'transparent', borderWidth: 1, borderColor: colors.primary, marginTop: 0 }]}
+                            onPress={performBiometricAuth}
+                        >
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                                <Ionicons name="finger-print" size={24} color={colors.primary} />
+                                <Text style={[styles.mainButtonText, { color: colors.primary }]}>Login with Biometrics</Text>
+                            </View>
+                        </TouchableOpacity>
+                    )}
 
                     {authStage !== 'TENANT' && !isAdminMode && (
                         <TouchableOpacity onPress={() => { setAuthStage('TENANT'); setPassword(''); }}>

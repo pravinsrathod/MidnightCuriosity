@@ -16,7 +16,7 @@ export default ({ config }) => {
             splash: {
                 image: process.env.APP_SPLASH || `${brandingPath}/splash.png`,
                 resizeMode: "contain",
-                backgroundColor: "#2d5a6a"
+                backgroundColor: process.env.APP_SPLASH_COLOR || "#FFFFFF"
             },
             ios: {
                 supportsTablet: true,
@@ -38,7 +38,7 @@ export default ({ config }) => {
                 [
                     "expo-local-authentication",
                     {
-                        "faceIDPermission": "Allow EduPro to use FaceID for faster login."
+                        "faceIDPermission": `Allow ${process.env.APP_NAME || "this app"} to use FaceID for faster login.`
                     }
                 ]
             ],
