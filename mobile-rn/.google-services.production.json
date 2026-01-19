@@ -1,0 +1,29 @@
+{
+    "project_info": {
+        "project_number": "259510471140",
+        "project_id": "midnightcuriosity-prod",
+        "storage_bucket": "midnightcuriosity-prod.firebasestorage.app"
+    },
+    "client": [
+        {
+            "client_info": {
+                "mobilesdk_app_id": "1:259510471140:android:db6125b4371d42a3529ff1",
+                "android_client_info": {
+                    "package_name": "com.prowin.edupro"
+                }
+            },
+            "oauth_client": [],
+            "api_key": [
+                {
+                    "current_key": "AIzaSyCXxC1I2KtdROPdoUFspP4pWZibvL-pdWI"
+                }
+            ],
+            "services": {
+                "appinvite_service": {
+                    "other_platform_oauth_client": []
+                }
+            }
+        }
+    ],
+    "configuration_version": "1"
+}

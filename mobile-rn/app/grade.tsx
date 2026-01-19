@@ -129,6 +129,7 @@ export default function GradeSelectionScreen() {
                             await setDoc(userRef, {
                                 name: "New Student",
                                 grade: "Grade 10",
+                                tenantId: tenantId || "default", // Ensure tenant alignment
                                 completedTopics: [],
                                 createdAt: new Date().toISOString()
                             }, { merge: true });

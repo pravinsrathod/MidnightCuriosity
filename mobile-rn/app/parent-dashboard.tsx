@@ -53,7 +53,11 @@ export default function ParentDashboard() {
             let primaryStudent: any = null;
 
             if (userData.role === 'PARENT' && userData.linkedStudentPhone) {
-                const studentQ = query(collection(db, "users"), where("phoneNumber", "==", userData.linkedStudentPhone));
+                const studentQ = query(
+                    collection(db, "users"),
+                    where("phoneNumber", "==", userData.linkedStudentPhone),
+                    where("tenantId", "==", userData.tenantId)
+                );
                 const studentSnap = await getDocs(studentQ);
 
                 const foundStudents = [];

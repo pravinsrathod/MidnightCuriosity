@@ -772,11 +772,11 @@ Password: [Hidden]`);
     if (confirmation !== "DELETE") return;
 
     try {
-      const q = query(collection(db, collectionName));
+      const q = query(collection(db, collectionName), where("tenantId", "==", adminTenantId));
       const snapshot = await getDocs(q);
       const deletePromises = snapshot.docs.map(d => deleteDoc(doc(db, collectionName, d.id)));
       await Promise.all(deletePromises);
-      customAlert(`All ${collectionName} deleted successfully.`);
+      customAlert(`All ${collectionName} for your institute deleted successfully.`);
     } catch (e) {
       console.error("Error clearing data:", e);
       customAlert("Failed to delete data. Check console.");

@@ -1,0 +1,17 @@
+{
+    "name": "edupro-monorepo",
+    "version": "1.0.0",
+    "private": true,
+    "scripts": {
+        "env:dev": "node scripts/switch-env.mjs development",
+        "env:prod": "node scripts/switch-env.mjs production",
+        "deploy:rules:dev": "./scripts/deploy-config.sh default",
+        "deploy:rules:prod": "./scripts/deploy-config.sh production",
+        "web:dev": "cd admin-web && npm run dev",
+        "mobile:dev": "cd mobile-rn && npx expo start",
+        "seed": "node scripts/seed-db.mjs"
+    },
+    "dependencies": {
+        "firebase": "^12.8.0"
+    }
+}
