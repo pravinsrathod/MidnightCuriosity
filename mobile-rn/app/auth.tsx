@@ -332,7 +332,7 @@ export default function AuthScreen() {
     const performBiometricAuth = async () => {
         try {
             const result = await LocalAuthentication.authenticateAsync({
-                promptMessage: 'Login to Erudite',
+                promptMessage: `Login to ${process.env.EXPO_PUBLIC_APP_NAME || "EduPro"}`,
                 fallbackLabel: 'Use Password',
             });
 
