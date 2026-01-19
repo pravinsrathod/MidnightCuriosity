@@ -61,7 +61,7 @@ export default function SplashScreen() {
 
     return (
         <View style={styles.container}>
-            <Text style={styles.title}>Erudite</Text>
+            <Text style={styles.title}>{process.env.EXPO_PUBLIC_APP_NAME || "EduPro"}</Text>
             <Text style={styles.subtitle}>Booting system...</Text>
         </View>
     );

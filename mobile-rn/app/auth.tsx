@@ -10,7 +10,7 @@ import { useTenant } from '../context/TenantContext';
 import { Ionicons } from '@expo/vector-icons';
 import * as Application from 'expo-application';
 import * as Device from 'expo-device';
-import { doc, setDoc, query, collection, where, getDocs, getDoc, deleteDoc } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc, getDoc, updateDoc, setDoc, limit } from 'firebase/firestore';
 import * as LocalAuthentication from 'expo-local-authentication';
 
 export default function AuthScreen() {
@@ -37,10 +37,14 @@ export default function AuthScreen() {
     const params = useLocalSearchParams();
 
     const validateTenant = async () => {
-        if (!inputTenantId) { console.warn('Please enter an Institute Code'); return; }
+        const trimmedCode = inputTenantId.trim();
+        if (!trimmedCode) { Alert.alert('Error', 'Please enter an Institute Code'); return; }
         setLoading(true);
         try {
-            const q = query(collection(db, "tenants"), where("code", "==", inputTenantId));
+            // DEBUG ALERT - REMOVE LATER
+            // Alert.alert('DEBUG', `Project: ${db.app.options.projectId}\nSearching for: "${trimmedCode}"`);
+
+            const q = query(collection(db, "tenants"), where("code", "==", trimmedCode));
             const snapshot = await getDocs(q);
 
             if (!snapshot.empty) {
@@ -58,11 +62,31 @@ export default function AuthScreen() {
 
                 setAuthStage('FORM');
             } else {
-                Alert.alert('Invalid Code', 'No institute found with this code.');
+                // FETCH ALL CODES FOR DEBUGGING
+                let debugCodes = "";
+                let directText = "";
+                try {
+                    const allQ = query(collection(db, "tenants"), limit(5));
+                    const allSnap = await getDocs(allQ);
+                    debugCodes = allSnap.docs.map(d => d.data().code || d.id).join(", ");
+
+                    // Try direct ID lookup
+                    const directSnap = await getDoc(doc(db, "tenants", "inst_3abw0"));
+                    directText = directSnap.exists() ? `Direct ID (inst_3abw0) FOUND: ${directSnap.data().code}` : "Direct ID (inst_3abw0) NOT FOUND";
+                } catch (err: any) {
+                    debugCodes = "Error: " + err.message;
+                }
+
+                Alert.alert('Invalid Code',
+                    `No institute found with code: "${trimmedCode}"\n\n` +
+                    `Project: ${db.app.options.projectId}\n` +
+                    `Direct Check: ${directText}\n` +
+                    `Available: ${debugCodes || "NONE"}`
+                );
             }
         } catch (e: any) {
             console.error("Validation Error:", e);
-            Alert.alert('Error', 'Failed to validate code. Please try again.');
+            Alert.alert('Error', 'Failed to validate code: ' + e.message);
         } finally {
             setLoading(false);
         }
@@ -308,7 +332,7 @@ export default function AuthScreen() {
     const performBiometricAuth = async () => {
         try {
             const result = await LocalAuthentication.authenticateAsync({
-                promptMessage: 'Login to Erudite',
+                promptMessage: `Login to ${process.env.EXPO_PUBLIC_APP_NAME || "EduPro"}`,
                 fallbackLabel: 'Use Password',
             });
 
