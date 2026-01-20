@@ -7,6 +7,9 @@ type TenantContextType = {
     tenantId: string;
     tenantName: string;
     tenantLogo: string | null;
+    grades: string[];
+    subjects: string[];
+    topics: string[];
     setTenantId: (id: string) => void;
     loading: boolean;
 };
@@ -15,6 +18,9 @@ const TenantContext = createContext<TenantContextType>({
     tenantId: 'default',
     tenantName: 'EduPro',
     tenantLogo: null,
+    grades: [],
+    subjects: [],
+    topics: [],
     setTenantId: () => { },
     loading: true,
 });
@@ -25,12 +31,18 @@ export const TenantProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     const [tenantId, setTenantIdState] = useState('default');
     const [tenantName, setTenantName] = useState('EduPro');
     const [tenantLogo, setTenantLogo] = useState<string | null>(null);
+    const [grades, setGrades] = useState<string[]>([]);
+    const [subjects, setSubjects] = useState<string[]>([]);
+    const [topics, setTopics] = useState<string[]>([]);
     const [loading, setLoading] = useState(true);
 
     const fetchTenantMetadata = async (id: string) => {
         if (id === 'default') {
             setTenantName('EduPro');
             setTenantLogo(null);
+            setGrades([]);
+            setSubjects([]);
+            setTopics([]);
             return;
         }
         try {
@@ -39,6 +51,15 @@ export const TenantProvider: React.FC<{ children: React.ReactNode }> = ({ childr
                 const data = tenantDoc.data();
                 setTenantName(data.name || 'EduPro');
                 setTenantLogo(data.logoUrl || null);
+            }
+
+            // Fetch Lists
+            const listSnap = await getDoc(doc(db, "tenants", id, "metadata", "lists"));
+            if (listSnap.exists()) {
+                const listData = listSnap.data();
+                setGrades(listData.grades || []);
+                setSubjects(listData.subjects || []);
+                setTopics(listData.topics || []);
             }
         } catch (e) {
             console.error("Error fetching tenant metadata:", e);
@@ -73,7 +94,16 @@ export const TenantProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     };
 
     return (
-        <TenantContext.Provider value={{ tenantId, tenantName, tenantLogo, setTenantId, loading }}>
+        <TenantContext.Provider value={{
+            tenantId,
+            tenantName,
+            tenantLogo,
+            grades,
+            subjects,
+            topics,
+            setTenantId,
+            loading
+        }}>
             {children}
         </TenantContext.Provider>
     );

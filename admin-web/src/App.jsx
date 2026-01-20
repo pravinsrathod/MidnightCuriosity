@@ -270,7 +270,9 @@ function App() {
     duration: 60,
     questions: [],
     status: "scheduled",
-    grade: ""
+    grade: "",
+    subject: "",
+    topic: ""
   });
   const [examFile, setExamFile] = useState(null);
   const [isProcessingExam, setIsProcessingExam] = useState(false);
@@ -353,7 +355,7 @@ function App() {
         }
       } catch (e) { console.warn("Exam notification failed", e); }
 
-      setExamForm({ title: "", date: "", duration: 60, questions: [], status: "scheduled", grade: grades[0] || "" });
+      setExamForm({ title: "", date: "", duration: 60, questions: [], status: "scheduled", grade: grades[0] || "", subject: subjects[0] || "", topic: topics[0] || "" });
       setExamFile(null);
       customAlert("Exam scheduled successfully!");
     } catch (e) {
@@ -674,7 +676,7 @@ function App() {
       const secondaryAuth = getAuth(secondaryApp);
 
       const cleanPhone = newStudentForm.phoneNumber.replace(/[^0-9]/g, '');
-      const virtualEmail = `${cleanPhone} @midnightcuriosity.com`;
+      const virtualEmail = `${cleanPhone}@midnightcuriosity.com`;
 
       let newUid;
 
@@ -1486,6 +1488,23 @@ Password: [Hidden]`);
                   </div>
                 </div>
 
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+                  <div>
+                    <label className="label">Subject</label>
+                    <select value={examForm.subject} onChange={e => setExamForm(prev => ({ ...prev, subject: e.target.value }))}>
+                      <option value="">Select Subject</option>
+                      {subjects.map(s => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="label">Topic (Optional)</label>
+                    <select value={examForm.topic} onChange={e => setExamForm(prev => ({ ...prev, topic: e.target.value }))}>
+                      <option value="">Select Topic</option>
+                      {topics.map(t => <option key={t} value={t}>{t}</option>)}
+                    </select>
+                  </div>
+                </div>
+
                 <div style={{ border: '2px dashed var(--border)', padding: '20px', borderRadius: '10px', textAlign: 'center' }}>
                   <p style={{ marginBottom: '10px' }}>Upload Question Paper (PDF)</p>
                   <input type="file" accept="application/pdf" onChange={handleExamFileChange} />
@@ -1907,7 +1926,7 @@ Password: [Hidden]`);
         )}
 
         {activeTab === 'homework' && (
-          <HomeworkManager filterGrade={selectedGradeFilter} grades={grades} students={students} tenantId={adminTenantId} onAlert={customAlert} />
+          <HomeworkManager filterGrade={selectedGradeFilter} grades={grades} subjects={subjects} topics={topics} students={students} tenantId={adminTenantId} onAlert={customAlert} />
         )}
 
         {activeTab === 'lectures' && (
