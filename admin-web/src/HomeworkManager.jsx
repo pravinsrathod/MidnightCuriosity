@@ -4,14 +4,14 @@ import { doc, getDoc, setDoc, updateDoc, arrayUnion, serverTimestamp, collection
 import { sendPushNotification } from './notificationService';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 
-const HomeworkManager = ({ students, tenantId, onAlert, grades: propGrades, filterGrade }) => {
+const HomeworkManager = ({ students, tenantId, onAlert, grades: propGrades, subjects: propSubjects, topics: propTopics, filterGrade }) => {
     const [selectedDate, setSelectedDate] = useState(new Date(new Date().getTime() - (new Date().getTimezoneOffset() * 60000)).toISOString().split('T')[0]);
     const [homeworkList, setHomeworkList] = useState([]);
     const [submissions, setSubmissions] = useState({}); // Map: homeworkId -> { studentId -> submissionData }
     const [loading, setLoading] = useState(false);
 
     // Create Homework State
-    const [newHomework, setNewHomework] = useState({ title: "", description: "", grade: "", subject: "" });
+    const [newHomework, setNewHomework] = useState({ title: "", description: "", grade: "", subject: "", topic: "" });
     const [homeworkFile, setHomeworkFile] = useState(null);
     const [creating, setCreating] = useState(false);
 
@@ -23,7 +23,8 @@ const HomeworkManager = ({ students, tenantId, onAlert, grades: propGrades, filt
 
     // Config options
     const grades = propGrades && propGrades.length > 0 ? propGrades : Array.from({ length: 12 }, (_, i) => "Grade " + (i + 1));
-    const subjects = ["Maths", "Physics", "Chemistry", "Biology"];
+    const subjects = propSubjects && propSubjects.length > 0 ? propSubjects : ["Maths", "Physics", "Chemistry", "Biology"];
+    const topics = propTopics && propTopics.length > 0 ? propTopics : ["General"];
 
     useEffect(() => {
         if (!tenantId) return;
@@ -149,7 +150,7 @@ const HomeworkManager = ({ students, tenantId, onAlert, grades: propGrades, filt
             }
 
             onAlert("Homework Assigned Successfully! 📝", "Success");
-            setNewHomework({ title: "", description: "", grade: "", subject: "" });
+            setNewHomework({ title: "", description: "", grade: "", subject: "", topic: "" });
             setHomeworkFile(null);
         } catch (error) {
             console.error(error);
@@ -323,6 +324,17 @@ const HomeworkManager = ({ students, tenantId, onAlert, grades: propGrades, filt
                                         {subjects.map(s => <option key={s} value={s}>{s}</option>)}
                                     </select>
                                 </div>
+                            </div>
+                            <div>
+                                <label className="label">Topic (Optional)</label>
+                                <select
+                                    value={newHomework.topic}
+                                    onChange={e => setNewHomework({ ...newHomework, topic: e.target.value })}
+                                    style={{ width: '100%', padding: '8px', background: 'var(--bg-input)', border: '1px solid var(--border)', color: '#fff', borderRadius: '4px' }}
+                                >
+                                    <option value="">Select Topic</option>
+                                    {topics.map(t => <option key={t} value={t}>{t}</option>)}
+                                </select>
                             </div>
                             <div>
                                 <label className="label">Task Title</label>

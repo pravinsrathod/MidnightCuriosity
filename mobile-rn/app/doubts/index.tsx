@@ -32,14 +32,20 @@ interface Doubt {
 export default function DoubtsScreen() {
     const router = useRouter();
     const { colors } = useTheme();
-    const { tenantId } = useTenant();
+    const { tenantId, subjects } = useTenant();
     const styles = useMemo(() => makeStyles(colors), [colors]);
 
     const [doubts, setDoubts] = useState<Doubt[]>([]);
     const [loading, setLoading] = useState(true);
     const [modalVisible, setModalVisible] = useState(false);
     const [newQuestion, setNewQuestion] = useState("");
-    const [selectedSubject, setSelectedSubject] = useState("General");
+    const [selectedSubject, setSelectedSubject] = useState(subjects[0] || "General");
+
+    useEffect(() => {
+        if (subjects.length > 0 && selectedSubject === "General" && !subjects.includes("General")) {
+            setSelectedSubject(subjects[0]);
+        }
+    }, [subjects]);
 
     // For replying
     const [replyingTo, setReplyingTo] = useState<string | null>(null);
@@ -271,7 +277,7 @@ export default function DoubtsScreen() {
                         <Text style={styles.modalTitle}>Ask a Doubt</Text>
 
                         <View style={styles.subjectRow}>
-                            {['Maths', 'Physics', 'Chemistry'].map(subj => (
+                            {subjects.map(subj => (
                                 <TouchableOpacity
                                     key={subj}
                                     style={[styles.subjectChip, selectedSubject === subj && styles.selectedChip]}
@@ -282,6 +288,7 @@ export default function DoubtsScreen() {
                                     </Text>
                                 </TouchableOpacity>
                             ))}
+                            {subjects.length === 0 && <Text style={{ color: colors.textSecondary }}>Loading subjects...</Text>}
                         </View>
 
                         <TextInput
