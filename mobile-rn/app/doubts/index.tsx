@@ -101,6 +101,9 @@ export default function DoubtsScreen() {
 
             setDoubts(sorted);
             setLoading(false);
+        }, (error) => {
+            console.error("Doubts snapshot error:", error);
+            setLoading(false);
         });
 
         return () => unsubscribe();

@@ -1846,8 +1846,11 @@ Password: [Hidden]`);
                       </thead>
                       <tbody>
                         {students.filter(p => p.role === 'PARENT').map(p => {
-                          // Find ALL linked student names
-                          const linkedStudents = students.filter(s => s.phoneNumber === p.linkedStudentPhone && s.role !== 'PARENT');
+                          // Find ALL linked student names (check both single phone and array)
+                          const linkedPhones = [p.linkedStudentPhone, ...(p.linkedStudentPhones || [])].filter(Boolean);
+                          const linkedStudents = students.filter(s =>
+                            linkedPhones.includes(s.phoneNumber?.replace(/[^0-9]/g, '')) && s.role !== 'PARENT'
+                          );
                           const linkedNames = linkedStudents.length > 0
                             ? linkedStudents.map(s => s.name).join(', ')
                             : p.linkedStudentPhone;

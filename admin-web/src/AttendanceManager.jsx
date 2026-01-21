@@ -116,13 +116,17 @@ const AttendanceManager = ({ students, tenantId, onAlert, filterGrade }) => {
 
                     for (const parentDoc of parentSnaps.docs) {
                         const parent = parentDoc.data();
-                        console.log(`Checking Parent: ${parent.name}, Token: ${parent.pushToken}, LinkedPhone: ${parent.linkedStudentPhone}`);
-                        if (parent.pushToken && parent.linkedStudentPhone) {
+                        const linkedPhones = [parent.linkedStudentPhone, ...(parent.linkedStudentPhones || [])]
+                            .filter(Boolean)
+                            .map(ph => ph.replace(/[^0-9]/g, ''));
+
+                        console.log(`Checking Parent: ${parent.name}, Token: ${parent.pushToken}, LinkedPhones: ${linkedPhones.join(', ')}`);
+
+                        if (parent.pushToken && linkedPhones.length > 0) {
                             // Find ALL students this parent is linked to who are also affected
                             const matchedAffectedStudents = Object.values(studentMap).filter(s => {
                                 const cleanStudentPhone = (s.phoneNumber || '').replace(/[^0-9]/g, '');
-                                const cleanParentLink = (parent.linkedStudentPhone || '').replace(/[^0-9]/g, '');
-                                return cleanStudentPhone === cleanParentLink && affectedStudentIds.includes(s.id);
+                                return linkedPhones.includes(cleanStudentPhone) && affectedStudentIds.includes(s.id);
                             });
 
                             for (const sData of matchedAffectedStudents) {
@@ -136,7 +140,7 @@ const AttendanceManager = ({ students, tenantId, onAlert, filterGrade }) => {
                                 );
                             }
                         } else {
-                            console.log(`Parent ${parent.name} missing pushToken or linkedStudentPhone`);
+                            console.log(`Parent ${parent.name} missing pushToken or linked students`);
                         }
                     }
                 }
