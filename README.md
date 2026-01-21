@@ -1,39 +1,55 @@
-# Midnight Curiosity - Native Android (Kotlin + Jetpack Compose)
+# Midnight Curiosity (EduPro)
 
-This is a pure **Native Android** application built with **Kotlin** and **Jetpack Compose**, implementing the "First 5 Minutes" user flow with high-fidelity UI and animations.
+A multi-tenant educational platform featuring a Student/Parent Mobile App and an Admin Web Portal.
 
-## Project Structure
+## Architecture Overview
+The platform uses a serverless architecture powered by **Firebase**:
+- **Authentication**: Firebase Auth (Phone/Email mapping)
+- **Database**: Cloud Firestore (Multi-tenant structure)
+- **Storage**: Firebase Storage (Homework, Exams, Avatars)
+- **Frontend (Admin)**: React.js
+- **Mobile (Student/Parent)**: React Native (Expo)
 
-*   **Language**: Kotlin
-*   **UI Toolkit**: Jetpack Compose (Modern, Declarative UI)
-*   **Navigation**: Jetpack Compose Navigation
-*   **Build System**: Gradle (Kotlin DSL)
+---
 
-## Directory Layout
+## 💻 Admin Portal (`admin-web/`)
+The Admin Portal is a React-based web application for institute administrators.
 
-*   `app/src/main/java/com/midnightcuriosity/`
-    *   `MainActivity.kt`: The single Activity entry point and Navigation Host.
-    *   `components/`: Composable screens matching the prototype flow.
-        *   `SplashScreen.kt`
-        *   `GradeSelectionScreen.kt`
-        *   `VideoPlayerScreen.kt`
-        *   `QuizScreen.kt`
-        *   `RewardScreen.kt`
-        *   `AuthGateScreen.kt`
-    *   `ui/theme/`: Theme definitions (Typography, Colors).
+### Core Features:
+- **Tenant Management**: Create and configure institute identities.
+- **User Management**: Approve/Reject student and parent registrations.
+- **Content Creation**: Upload lectures, homework, and schedule exams.
+- **AI Integration**: Automatically generate exams from PDF uploads.
+- **Analytics**: Track student progress, attendance, and leaderboard.
 
-## How to Run
+### Local Setup:
+1. Navigate to `admin-web/`
+2. Run `npm install`
+3. Run `npm run dev`
 
-Since this is a native Android Studio project, you cannot run it directly from the terminal without the Android SDK environment set up.
+---
 
-1.  **Open Android Studio**.
-2.  Select **"Open"** and navigate to this folder: `/Users/pravinrathod/Documents/Personal/AI/Coaching/New`.
-3.  Wait for Gradle to sync (Internet connection required).
-4.  Connect an Android device or start an Emulator.
-5.  Click the Green **Run** (Play) button in the toolbar.
+## 📱 Mobile App (`mobile-rn/`)
+The Mobile App is a React Native application built with Expo for students and parents.
 
-## Features Implemented
-*   **Dark Theme**: Custom color palette matching the web prototype (`#030014` background).
-*   **Animations**: Start-up scaling, fade-ins, and spring animations for rewards using Compose Animation APIs.
-*   **Navigation**: Seamless transition between screens.
-*   **Components**: Fully native re-implementation of the Video Player (UI only), Quiz, and Auth forms.
+### Core Features:
+- **Knowledge Graph**: Personalized learning paths and topic mapping.
+- **Homework & Submissions**: View and upload homework directly via camera.
+- **Real-time Polls**: Participate in live classroom interactions.
+- **Doubt Solver**: Ask questions and get assistance.
+- **Gamification**: Earn rewards, maintain streaks, and view leanboard rankings.
+- **Parent View**: Specific dashboard for parents to track child progress.
+
+### Local Setup:
+1. Navigate to `mobile-rn/`
+2. Run `npm install`
+3. Run `npx expo start`
+
+---
+
+## 📂 Project Structure
+- `admin-web/`: React frontend for administrators.
+- `mobile-rn/`: React Native (Expo) frontend for students/parents.
+- `scripts/`: Utility scripts for database migrations and maintenance.
+- `firestore.rules`: Security configuration for the database.
+- `storage.rules`: Security configuration for storage buckets.

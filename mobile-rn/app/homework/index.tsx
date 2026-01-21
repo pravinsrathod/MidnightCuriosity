@@ -51,11 +51,16 @@ export default function HomeworkListScreen() {
                             const list = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
                             setHomework(list);
                             setLoading(false);
+                        }, (error) => {
+                            console.error("Homework snapshot error:", error);
+                            setLoading(false);
                         });
                     } else {
+                        console.warn("User missing tenantId or grade", userData);
                         setLoading(false);
                     }
                 } else {
+                    console.warn("User document not found for uid:", uid);
                     setLoading(false);
                 }
             } catch (e) {
@@ -117,7 +122,7 @@ export default function HomeworkListScreen() {
             ) : homework.length === 0 ? (
                 <View style={styles.emptyState}>
                     <Ionicons name="library-outline" size={64} color={colors.border} />
-                    <Text style={styles.emptyText}>No homework assigned.</Text>
+                    <Text style={styles.emptyText}>No homework available</Text>
                     <Text style={styles.emptySubText}>Enjoy your free time!</Text>
                 </View>
             ) : (

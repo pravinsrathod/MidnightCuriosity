@@ -1,8 +1,8 @@
 import React, { useState, useCallback, useEffect, useMemo } from 'react'; // v2
-import { View, Text, TouchableOpacity, StyleSheet, SafeAreaView, Image, ActivityIndicator, Platform } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, StyleSheet, SafeAreaView, Image, ActivityIndicator, Platform } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { auth, db, storage } from '../services/firebaseConfig';
-import { doc, getDoc, updateDoc, setDoc, collection, query, where, onSnapshot } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, setDoc, collection, query, where, onSnapshot, orderBy, limit } from 'firebase/firestore';
 import { onAuthStateChanged } from 'firebase/auth';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -29,6 +29,10 @@ export default function GradeSelectionScreen() {
     const [activePoll, setActivePoll] = useState<any>(null);
     const [hasVoted, setHasVoted] = useState(false);
 
+    // Homework State
+    const [recentHomework, setRecentHomework] = useState<any[]>([]);
+    const [hwLoading, setHwLoading] = useState(true);
+
     // Listen for Active Polls
     // Listen for Active Polls (Multi-tenant)
     useEffect(() => {
@@ -46,9 +50,33 @@ export default function GradeSelectionScreen() {
             } else {
                 setActivePoll(null);
             }
+        }, (err) => {
+            console.error("Poll snapshot error", err);
         });
         return () => unsub();
-    }, []);
+    }, [tenantId]);
+
+    // Listen for Recent Homework
+    useEffect(() => {
+        if (!tenantId || !userGrade) return;
+        setHwLoading(true);
+        const q = query(
+            collection(db, "homework"),
+            where("tenantId", "==", tenantId),
+            where("grade", "==", userGrade),
+            orderBy("dueDate", "desc"),
+            limit(2)
+        );
+        const unsub = onSnapshot(q, (snapshot) => {
+            const list = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+            setRecentHomework(list);
+            setHwLoading(false);
+        }, (error) => {
+            console.error("Homework snapshot error", error);
+            setHwLoading(false);
+        });
+        return () => unsub();
+    }, [tenantId, userGrade]);
 
     const handleVote = async (optionIndex: number) => {
         if (!activePoll) return;
@@ -215,7 +243,10 @@ export default function GradeSelectionScreen() {
 
     return (
         <SafeAreaView style={styles.container}>
-            <View style={styles.content}>
+            <ScrollView
+                contentContainerStyle={styles.scrollContent}
+                showsVerticalScrollIndicator={false}
+            >
                 {/* Header */}
                 <View style={styles.header}>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
@@ -313,6 +344,39 @@ export default function GradeSelectionScreen() {
                     </TouchableOpacity>
                 )}
 
+                {/* Homework Section */}
+                <View style={styles.homeworkSection}>
+                    <View style={styles.sectionHeader}>
+                        <Text style={styles.sectionTitle}>Recent Homework</Text>
+                        <TouchableOpacity onPress={() => router.push('/homework')}>
+                            <Text style={styles.viewAllText}>View All</Text>
+                        </TouchableOpacity>
+                    </View>
+
+                    {hwLoading ? (
+                        <ActivityIndicator color={colors.primary} style={{ marginVertical: 20 }} />
+                    ) : recentHomework.length === 0 ? (
+                        <View style={styles.emptyHwCard}>
+                            <Ionicons name="book-outline" size={24} color={colors.textSecondary} />
+                            <Text style={styles.emptyHwText}>No homework available</Text>
+                        </View>
+                    ) : (
+                        recentHomework.map((hw) => (
+                            <TouchableOpacity
+                                key={hw.id}
+                                style={styles.hwCard}
+                                onPress={() => router.push({ pathname: '/homework/[id]', params: { id: hw.id, title: hw.title } })}
+                            >
+                                <View style={styles.hwInfo}>
+                                    <Text style={styles.hwTitle} numberOfLines={1}>{hw.title}</Text>
+                                    <Text style={styles.hwSubject}>{hw.subject} • Due: {hw.dueDate}</Text>
+                                </View>
+                                <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
+                            </TouchableOpacity>
+                        ))
+                    )}
+                </View>
+
                 {/* Quick Actions Grid */}
                 <View style={styles.quickActionsContainer}>
                     <Text style={styles.sectionTitle}>Quick Actions</Text>
@@ -368,8 +432,6 @@ export default function GradeSelectionScreen() {
                     </View>
                 </View>
 
-                <View style={{ flex: 1 }} />
-
                 {/* Main CTA */}
                 <TouchableOpacity
                     style={styles.button}
@@ -378,7 +440,7 @@ export default function GradeSelectionScreen() {
                     <Text style={styles.buttonText}>Continue Learning</Text>
                     <Ionicons name="arrow-forward" size={20} color="#FFF" />
                 </TouchableOpacity>
-            </View>
+            </ScrollView>
         </SafeAreaView >
     );
 }
@@ -387,6 +449,9 @@ const makeStyles = (colors: any) => StyleSheet.create({
     container: {
         flex: 1,
         backgroundColor: colors.background,
+    },
+    scrollContent: {
+        padding: 24,
     },
     content: {
         flex: 1,
@@ -521,6 +586,59 @@ const makeStyles = (colors: any) => StyleSheet.create({
     },
     quickActionsContainer: {
         marginTop: 0,
+        marginBottom: 20,
+    },
+    homeworkSection: {
+        marginBottom: 24,
+    },
+    sectionHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 12,
+    },
+    viewAllText: {
+        color: colors.primary,
+        fontSize: 14,
+        fontWeight: 'bold',
+    },
+    hwCard: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: colors.card,
+        padding: 16,
+        borderRadius: 16,
+        marginBottom: 10,
+        borderWidth: 1,
+        borderColor: colors.border,
+    },
+    hwInfo: {
+        flex: 1,
+    },
+    hwTitle: {
+        fontSize: 16,
+        fontWeight: 'bold',
+        color: colors.text,
+        marginBottom: 2,
+    },
+    hwSubject: {
+        fontSize: 12,
+        color: colors.textSecondary,
+    },
+    emptyHwCard: {
+        backgroundColor: colors.card,
+        padding: 24,
+        borderRadius: 16,
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderStyle: 'dashed',
+        borderWidth: 1,
+        borderColor: colors.border,
+    },
+    emptyHwText: {
+        marginTop: 8,
+        fontSize: 14,
+        color: colors.textSecondary,
     },
     sectionTitle: {
         fontSize: 18,

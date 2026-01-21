@@ -1846,9 +1846,14 @@ Password: [Hidden]`);
                       </thead>
                       <tbody>
                         {students.filter(p => p.role === 'PARENT').map(p => {
-                          // Find linked student name if possible
-                          const linkedStudent = students.find(s => s.phoneNumber === p.linkedStudentPhone);
-                          const linkedName = linkedStudent ? linkedStudent.name : p.linkedStudentPhone;
+                          // Find ALL linked student names (check both single phone and array)
+                          const linkedPhones = [p.linkedStudentPhone, ...(p.linkedStudentPhones || [])].filter(Boolean);
+                          const linkedStudents = students.filter(s =>
+                            linkedPhones.includes(s.phoneNumber?.replace(/[^0-9]/g, '')) && s.role !== 'PARENT'
+                          );
+                          const linkedNames = linkedStudents.length > 0
+                            ? linkedStudents.map(s => s.name).join(', ')
+                            : p.linkedStudentPhone;
 
                           return (
                             <tr key={p.id} style={{ borderBottom: '1px solid var(--border)', opacity: (p.status === 'REJECTED' || p.status === 'BLOCKED') ? 0.6 : 1 }}>
@@ -1864,9 +1869,13 @@ Password: [Hidden]`);
                                 </div>
                               </td>
                               <td style={{ padding: '10px' }}>
-                                <span style={{ background: 'var(--bg-tertiary)', padding: '4px 10px', borderRadius: '4px', fontSize: '0.85em' }}>
-                                  {linkedName || "N/A"}
-                                </span>
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                                  {linkedStudents.length > 0 ? linkedStudents.map(ls => (
+                                    <span key={ls.id} style={{ background: 'rgba(59, 130, 246, 0.1)', color: 'var(--accent)', padding: '2px 8px', borderRadius: '4px', fontSize: '0.75em', border: '1px solid rgba(59, 130, 246, 0.2)' }}>
+                                      {ls.name} ({ls.grade})
+                                    </span>
+                                  )) : <span style={{ color: 'var(--text-secondary)', fontSize: '0.85em' }}>{p.linkedStudentPhone}</span>}
+                                </div>
                               </td>
                               <td style={{ padding: '10px' }}>
                                 <span style={{

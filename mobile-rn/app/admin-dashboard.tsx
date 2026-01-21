@@ -17,6 +17,28 @@ export default function AdminDashboard() {
     const { tenantId, tenantName, tenantLogo } = useTenant();
     const [grades, setGrades] = useState(Array.from({ length: 12 }, (_, i) => "Grade " + (i + 1)));
 
+    // Role Guard: Ensure only admins can access
+    useEffect(() => {
+        const checkAdmin = async () => {
+            const uid = auth.currentUser?.uid || (await AsyncStorage.getItem('user_uid'));
+            if (!uid) {
+                router.replace('/auth');
+                return;
+            }
+
+            const docSnap = await getDoc(doc(db, "users", uid));
+            if (docSnap.exists()) {
+                const role = docSnap.data().role?.toUpperCase();
+                if (role !== 'ADMIN') {
+                    router.replace('/auth');
+                }
+            } else {
+                router.replace('/auth');
+            }
+        };
+        checkAdmin();
+    }, []);
+
     // Fetch Institute Config
     useEffect(() => {
         if (!tenantId) return;
@@ -433,14 +455,15 @@ export default function AdminDashboard() {
                     for (const parentDoc of parentSnaps.docs) {
                         const parent = parentDoc.data();
                         if (parent.pushToken && parent.linkedStudentPhone) {
-                            // Find the student this parent is linked to
-                            const studentEntry = Object.entries(studentMap).find(([id, s]: [string, any]) => {
-                                const cleanStudentPhone = (s.phoneNumber || '').replace(/[^0-9]/g, '');
-                                const cleanParentLink = (parent.linkedStudentPhone || '').replace(/[^0-9]/g, '');
-                                return cleanStudentPhone === cleanParentLink && affectedStudentIds.includes(id);
-                            });
-                            if (studentEntry) {
-                                const [sId, sData] = studentEntry;
+                            // Find ALL students this parent is linked to who are also affected
+                            const matchedAffectedStudents = Object.entries(studentMap)
+                                .filter(([id, s]: [string, any]) => {
+                                    const cleanStudentPhone = (s.phoneNumber || '').replace(/[^0-9]/g, '');
+                                    const cleanParentLink = (parent.linkedStudentPhone || '').replace(/[^0-9]/g, '');
+                                    return cleanStudentPhone === cleanParentLink && affectedStudentIds.includes(id);
+                                });
+
+                            for (const [sId, sData] of matchedAffectedStudents) {
                                 const status = records[sId];
                                 await sendPushNotification(
                                     parent.pushToken,

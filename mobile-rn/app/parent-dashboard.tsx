@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { View, Text, StyleSheet, ScrollView, ActivityIndicator, TouchableOpacity, RefreshControl, Image } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, ActivityIndicator, TouchableOpacity, RefreshControl, Image, Alert, Modal, TextInput } from 'react-native';
 import { useRouter } from 'expo-router';
 import { auth, db } from '../services/firebaseConfig';
 import { collection, query, where, getDocs, doc, getDoc, orderBy, limit, onSnapshot } from 'firebase/firestore';
@@ -28,6 +28,14 @@ export default function ParentDashboard() {
     const [rawHomeworks, setRawHomeworks] = useState<any[]>([]);
     const [rawSubmissions, setRawSubmissions] = useState<any>({});
 
+    // Multi-Student Support
+    const [children, setChildren] = useState<any[]>([]);
+    const [selectedChildId, setSelectedChildId] = useState<string | null>(null);
+    const [isLinkingModalVisible, setIsLinkingModalVisible] = useState(false);
+    const [isSelectionModalVisible, setIsSelectionModalVisible] = useState(false);
+    const [linkPhone, setLinkPhone] = useState('');
+    const [isLinking, setIsLinking] = useState(false);
+
     const fetchIdentity = async () => {
         try {
             const user = auth.currentUser;
@@ -44,65 +52,78 @@ export default function ParentDashboard() {
 
             // 1. Get Parent Profile
             const userDoc = await getDoc(doc(db, "users", uid));
-            if (!userDoc.exists()) return;
+            if (!userDoc.exists()) {
+                setLoading(false);
+                return;
+            }
 
             const userData = userDoc.data();
-            let studentUid = uid;
-            let studentNameDisplay = userData.name || 'Student';
-            let allStudentIds: string[] = [];
-            let primaryStudent: any = null;
+            const role = userData.role?.toUpperCase();
 
-            if (userData.role === 'PARENT' && userData.linkedStudentPhone) {
+            // ROLE GUARD: If not parent, kick them back to student dashboard
+            if (role !== 'PARENT') {
+                router.replace('/grade');
+                return;
+            }
+
+            // 2. Find Linked Students
+            const foundStudents: any[] = [];
+            const phonesToQuery = new Set<string>();
+
+            if (userData.linkedStudentPhone) phonesToQuery.add(userData.linkedStudentPhone);
+            if (userData.linkedStudentPhones && Array.isArray(userData.linkedStudentPhones)) {
+                userData.linkedStudentPhones.forEach((p: string) => phonesToQuery.add(p));
+            }
+
+            if (phonesToQuery.size > 0) {
                 const studentQ = query(
                     collection(db, "users"),
-                    where("phoneNumber", "==", userData.linkedStudentPhone),
+                    where("phoneNumber", "in", Array.from(phonesToQuery)),
                     where("tenantId", "==", userData.tenantId)
                 );
                 const studentSnap = await getDocs(studentQ);
-
-                const foundStudents = [];
                 if (!studentSnap.empty) {
                     const snapshotDocs = studentSnap.docs.map(d => ({ id: d.id, ...d.data() } as any));
                     const candidates = snapshotDocs.filter(c => c.id !== uid && c.role !== 'PARENT');
                     foundStudents.push(...candidates);
                 }
+            }
 
-                if (foundStudents.length > 0) {
-                    primaryStudent = foundStudents[0];
-                    studentUid = primaryStudent.id;
-                    studentNameDisplay = primaryStudent.name || 'Your Child';
-
-                    allStudentIds = foundStudents.map(s => s.id);
-                    foundStudents.forEach(s => {
-                        if (s.legacyUid) allStudentIds.push(s.legacyUid);
-                    });
-                } else {
-                    setStudentName("Student Not Found");
-                    setLoading(false);
-                    return;
+            setChildren(foundStudents);
+            if (foundStudents.length > 0) {
+                if (!selectedChildId) {
+                    setSelectedChildId(foundStudents[0].id);
                 }
             } else {
-                // Determine IDs for non-parent view (if used implicitly)
-                const studentDataFull = (await getDoc(doc(db, "users", studentUid))).data();
-                primaryStudent = { id: uid, ...studentDataFull };
-                allStudentIds = [uid, studentDataFull?.legacyUid].filter(Boolean);
+                setStudentName("No children linked");
             }
-
-            setStudentName(studentNameDisplay);
-            const tenantId = userData.tenantId;
-            const grade = primaryStudent?.grade;
-
-            if (tenantId && grade) {
-                setStudentContext({ tenantId, grade, allStudentIds, studentUid });
-            } else {
-                setLoading(false);
-            }
+            setLoading(false);
 
         } catch (e) {
             console.error("Error fetching identity", e);
             setLoading(false);
         }
     };
+
+    // Update Context when selection changes
+    useEffect(() => {
+        if (children.length === 0 || !selectedChildId) return;
+
+        const child = children.find(c => c.id === selectedChildId);
+        if (!child) return;
+
+        setStudentName(child.name || 'Your Child');
+
+        const allStudentIds = [child.id];
+        if (child.legacyUid) allStudentIds.push(child.legacyUid);
+
+        setStudentContext({
+            tenantId: child.tenantId,
+            grade: child.grade,
+            allStudentIds,
+            studentUid: child.id
+        });
+    }, [selectedChildId, children]);
 
     // Initial Load
     useEffect(() => {
@@ -114,6 +135,51 @@ export default function ParentDashboard() {
         fetchIdentity().then(() => setRefreshing(false));
     };
 
+    const handleLinkAnother = () => {
+        setLinkPhone('');
+        setIsLinkingModalVisible(true);
+    };
+
+    const confirmLinking = async () => {
+        if (!linkPhone) return;
+        const clean = linkPhone.replace(/[^0-9]/g, '');
+        if (clean.length < 10) {
+            Alert.alert("Invalid Phone", "Please enter a valid 10-digit mobile number.");
+            return;
+        }
+
+        try {
+            setIsLinking(true);
+            const uid = auth.currentUser?.uid || await AsyncStorage.getItem('user_uid');
+            if (!uid) return;
+
+            const userRef = doc(db, "users", uid);
+            const userSnap = await getDoc(userRef);
+            const data = userSnap.data();
+
+            const existing = data?.linkedStudentPhones || [];
+            if (existing.includes(clean) || data?.linkedStudentPhone === clean) {
+                Alert.alert("Already Linked", "This student is already linked to your account.");
+                setIsLinking(false);
+                return;
+            }
+
+            // Update Firestore
+            const { arrayUnion, updateDoc } = await import('firebase/firestore');
+            await updateDoc(userRef, {
+                linkedStudentPhones: arrayUnion(clean)
+            });
+
+            Alert.alert("Success", "Linking requested! Pull down to refresh and see the new child switcher.");
+            setIsLinkingModalVisible(false);
+            fetchIdentity();
+        } catch (err) {
+            console.error(err);
+            Alert.alert("Error", "Could not link student at this time.");
+        } finally {
+            setIsLinking(false);
+        }
+    };
 
     // Real-time Listeners
     useEffect(() => {
@@ -156,6 +222,9 @@ export default function ParentDashboard() {
 
             setStats({ present: p, absent: a, late: l, total: history.length });
             setAttendanceHistory(history.slice(0, 30));
+        }, (err) => {
+            console.error("Attendance snapshot error:", err);
+            setLoading(false);
         });
 
 
@@ -164,6 +233,9 @@ export default function ParentDashboard() {
         const unsubHw = onSnapshot(qHw, (snapshot) => {
             const list = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
             setRawHomeworks(list);
+        }, (err) => {
+            console.error("Homework snapshot error:", err);
+            setLoading(false);
         });
 
         // 3. Submissions Listener
@@ -210,6 +282,9 @@ export default function ParentDashboard() {
             });
             console.log("Processed Submissions Map:", Object.keys(map).length);
             setRawSubmissions(map);
+        }, (err) => {
+            console.error("Submissions snapshot error:", err);
+            setLoading(false);
         });
 
         setLoading(false);
@@ -284,15 +359,23 @@ export default function ParentDashboard() {
                         <Text style={styles.headerSubtitle}>Viewing: {studentName}</Text>
                     </View>
                 </View>
-                <TouchableOpacity onPress={handleLogout} style={styles.logoutButton}>
-                    <Ionicons name="log-out-outline" size={24} color={colors.danger} />
-                </TouchableOpacity>
+                <View style={{ flexDirection: 'row', gap: 12 }}>
+                    <TouchableOpacity onPress={() => setIsSelectionModalVisible(true)} style={styles.logoutButton}>
+                        <Ionicons name="people-outline" size={24} color={colors.primary} />
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={handleLogout} style={styles.logoutButton}>
+                        <Ionicons name="log-out-outline" size={24} color={colors.danger} />
+                    </TouchableOpacity>
+                </View>
             </View>
+
 
             <ScrollView
                 contentContainerStyle={styles.content}
                 refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
             >
+
+
                 {/* Stats Cards */}
                 <View style={styles.statsContainer}>
                     <View style={[styles.statCard, { backgroundColor: colors.success + '15', borderColor: colors.success }]}>
@@ -369,15 +452,166 @@ export default function ParentDashboard() {
                         ))}
                     </View>
                 )}
-
-
-
             </ScrollView>
+
+            {/* Selection Modal (Switch Student) */}
+            <Modal
+                visible={isSelectionModalVisible}
+                transparent
+                animationType="slide"
+                onRequestClose={() => setIsSelectionModalVisible(false)}
+            >
+                <View style={styles.modalOverlay}>
+                    <View style={[styles.modalContent, { maxHeight: '80%' }]}>
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+                            <Text style={styles.modalTitle}>Choose Student</Text>
+                            <TouchableOpacity onPress={() => setIsSelectionModalVisible(false)}>
+                                <Ionicons name="close" size={24} color={colors.textSecondary} />
+                            </TouchableOpacity>
+                        </View>
+
+                        <ScrollView style={{ marginBottom: 20 }}>
+                            {children.map(child => (
+                                <TouchableOpacity
+                                    key={child.id}
+                                    style={[
+                                        styles.selectionItem,
+                                        selectedChildId === child.id && { borderColor: colors.primary, backgroundColor: colors.primary + '10' }
+                                    ]}
+                                    onPress={() => {
+                                        setSelectedChildId(child.id);
+                                        setIsSelectionModalVisible(false);
+                                    }}
+                                >
+                                    <View>
+                                        <Text style={[styles.selectionName, selectedChildId === child.id && { color: colors.primary }]}>{child.name}</Text>
+                                        <Text style={styles.selectionGrade}>{child.grade}</Text>
+                                    </View>
+                                    {selectedChildId === child.id && (
+                                        <Ionicons name="checkmark-circle" size={24} color={colors.primary} />
+                                    )}
+                                </TouchableOpacity>
+                            ))}
+                        </ScrollView>
+
+                        <TouchableOpacity
+                            style={styles.addStudentBtn}
+                            onPress={() => {
+                                setIsSelectionModalVisible(false);
+                                handleLinkAnother();
+                            }}
+                        >
+                            <Ionicons name="add-circle-outline" size={20} color={colors.primary} />
+                            <Text style={styles.addStudentText}>Link Another Student</Text>
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            </Modal>
+
+            {/* Link Student Modal */}
+            <Modal
+                visible={isLinkingModalVisible}
+                transparent
+                animationType="fade"
+                onRequestClose={() => setIsLinkingModalVisible(false)}
+            >
+                <View style={styles.modalOverlay}>
+                    <View style={styles.modalContent}>
+                        <Text style={styles.modalTitle}>Link Another Student</Text>
+                        <Text style={styles.modalSubtitle}>Enter the mobile number of your other child to merge their dashboard.</Text>
+
+                        <TextInput
+                            style={styles.modalInput}
+                            placeholder="Mobile Number"
+                            placeholderTextColor={colors.textSecondary}
+                            keyboardType="phone-pad"
+                            value={linkPhone}
+                            onChangeText={setLinkPhone}
+                            maxLength={10}
+                        />
+
+                        <View style={styles.modalButtons}>
+                            <TouchableOpacity
+                                style={[styles.modalBtn, { backgroundColor: colors.border }]}
+                                onPress={() => setIsLinkingModalVisible(false)}
+                            >
+                                <Text style={[styles.modalBtnText, { color: colors.text }]}>Cancel</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                style={[styles.modalBtn, { backgroundColor: colors.primary }]}
+                                onPress={confirmLinking}
+                                disabled={isLinking}
+                            >
+                                {isLinking ? (
+                                    <ActivityIndicator size="small" color="#FFF" />
+                                ) : (
+                                    <Text style={[styles.modalBtnText, { color: '#FFF' }]}>Link Student</Text>
+                                )}
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
+            </Modal>
         </View>
     );
 }
 
 const makeStyles = (colors: any) => StyleSheet.create({
+    modalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.5)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: 20
+    },
+    modalContent: {
+        width: '100%',
+        backgroundColor: colors.card,
+        borderRadius: 20,
+        padding: 24,
+        borderWidth: 1,
+        borderColor: colors.border,
+        elevation: 5,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.25,
+        shadowRadius: 3.84,
+    },
+    modalTitle: {
+        fontSize: 20,
+        fontWeight: 'bold',
+        color: colors.text,
+        marginBottom: 8,
+    },
+    modalSubtitle: {
+        fontSize: 14,
+        color: colors.textSecondary,
+        marginBottom: 20,
+        lineHeight: 20,
+    },
+    modalInput: {
+        backgroundColor: colors.background,
+        borderWidth: 1,
+        borderColor: colors.border,
+        borderRadius: 8,
+        padding: 12,
+        color: colors.text,
+        fontSize: 16,
+        marginBottom: 20,
+    },
+    modalButtons: {
+        flexDirection: 'row',
+        gap: 12,
+    },
+    modalBtn: {
+        flex: 1,
+        paddingVertical: 12,
+        borderRadius: 8,
+        alignItems: 'center',
+    },
+    modalBtnText: {
+        fontWeight: '600',
+    },
     container: {
         flex: 1,
         backgroundColor: colors.background,
@@ -511,5 +745,64 @@ const makeStyles = (colors: any) => StyleSheet.create({
     switchModeText: {
         color: colors.textSecondary,
         fontSize: 14,
+    },
+    childSelector: {
+        marginBottom: 20,
+    },
+    childChip: {
+        paddingVertical: 8,
+        paddingHorizontal: 16,
+        borderRadius: 20,
+        backgroundColor: colors.card,
+        borderWidth: 1,
+        borderColor: colors.border,
+    },
+    activeChildChip: {
+        backgroundColor: colors.primary,
+        borderColor: colors.primary,
+    },
+    childChipText: {
+        color: colors.textSecondary,
+        fontSize: 14,
+        fontWeight: '600',
+    },
+    activeChildChipText: {
+        color: '#FFFFFF',
+    },
+    selectionItem: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        padding: 16,
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: colors.border,
+        marginBottom: 10,
+        backgroundColor: colors.background,
+    },
+    selectionName: {
+        fontSize: 16,
+        fontWeight: 'bold',
+        color: colors.text,
+    },
+    selectionGrade: {
+        fontSize: 12,
+        color: colors.textSecondary,
+        marginTop: 2,
+    },
+    addStudentBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 8,
+        padding: 16,
+        borderRadius: 12,
+        borderWidth: 1,
+        borderStyle: 'dashed',
+        borderColor: colors.primary,
+    },
+    addStudentText: {
+        color: colors.primary,
+        fontWeight: '600',
     }
 });

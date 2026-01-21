@@ -86,7 +86,9 @@ export default function AuthScreen() {
             }
         } catch (e: any) {
             console.error("Validation Error:", e);
-            Alert.alert('Error', 'Failed to validate code: ' + e.message);
+            let msg = 'Could not connect to the server. Please check your internet.';
+            if (e.message.includes('permission-denied')) msg = 'Access denied while validating institute.';
+            Alert.alert('Institute Validation Failed', msg);
         } finally {
             setLoading(false);
         }
@@ -117,9 +119,11 @@ export default function AuthScreen() {
                     await auth.signOut();
                 }
             } catch (e: any) {
+                console.error("Admin Login Error:", e);
                 let msg = "Check your email and password.";
-                if (e.code === 'auth/invalid-credential') msg = "Invalid credentials.";
-                Alert.alert("Login Failed", msg);
+                if (e.code === 'auth/invalid-email') msg = "Invalid email format.";
+                if (e.code === 'auth/invalid-credential' || e.code === 'auth/wrong-password' || e.code === 'auth/user-not-found') msg = "Invalid admin email or password.";
+                Alert.alert("Admin Login Failed", msg);
             } finally {
                 setLoading(false);
             }
@@ -256,6 +260,11 @@ export default function AuthScreen() {
             // FALLBACK: Manual Firestore Password Check (For Admin-created users or Updated passwords)
             if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password' || error.code === 'auth/invalid-credential') {
                 try {
+                    // Sign in anonymously first so Firestore rules allow the read
+                    if (!auth.currentUser) {
+                        await signInAnonymously(auth);
+                    }
+
                     const q = query(collection(db, "users"), where("phoneNumber", "==", cleanPhone));
                     const snapshot = await getDocs(q);
 
@@ -265,7 +274,6 @@ export default function AuthScreen() {
                         // Verify Password
                         if (userData.password && userData.password === password) {
                             console.log("Logged in via Firestore Password Fallback");
-                            await signInAnonymously(auth);
 
                             const userUid = userDoc.id;
 
@@ -305,12 +313,14 @@ export default function AuthScreen() {
                 }
             }
 
-            let msg = error.message;
-            if (error.code === 'auth/invalid-email') msg = "Invalid Phone Number.";
-            if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password' || error.code === 'auth/invalid-credential') msg = "Invalid Mobile or Password.";
-            if (error.code === 'auth/email-already-in-use') msg = "This mobile number is already registered. Please Login.";
-            if (error.code === 'auth/weak-password') msg = "Password must be at least 6 characters.";
-            Alert.alert("Authentication Failed", msg || "Something went wrong.");
+            let msg = "Check your mobile number and password.";
+            if (error.code === 'auth/invalid-email') msg = "Invalid phone number format.";
+            if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password' || error.code === 'auth/invalid-credential') msg = "Incorrect mobile number or password.";
+            if (error.code === 'auth/email-already-in-use') msg = "This mobile number is already registered. Try logging in instead.";
+            if (error.code === 'auth/weak-password') msg = "Password is too weak. Please use at least 6 characters.";
+            if (error.code === 'auth/network-request-failed') msg = "Network error. Please check your connection.";
+
+            Alert.alert("Authentication Failed", msg);
         } finally {
             setLoading(false);
         }
