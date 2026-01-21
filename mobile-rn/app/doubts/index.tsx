@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput, SafeAreaView, ActivityIndicator, Image, Modal } from 'react-native';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput, SafeAreaView, ActivityIndicator, Image, Modal, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { auth, db } from '../../services/firebaseConfig';
@@ -107,7 +107,10 @@ export default function DoubtsScreen() {
     }, []);
 
     const postDoubt = async () => {
-        if (!newQuestion.trim()) return;
+        if (!newQuestion.trim()) {
+            Alert.alert("Empty Question", "Please type your doubt before posting.");
+            return;
+        }
 
         try {
             // Use the fetched currentUserName
@@ -132,7 +135,10 @@ export default function DoubtsScreen() {
     };
 
     const postReply = async (doubtId: string) => {
-        if (!replyText.trim()) return;
+        if (!replyText.trim()) {
+            Alert.alert("Empty Answer", "Please type your answer before sending.");
+            return;
+        }
 
         const reply: Reply = {
             id: Date.now().toString(),
