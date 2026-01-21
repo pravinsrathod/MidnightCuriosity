@@ -118,20 +118,15 @@ const AttendanceManager = ({ students, tenantId, onAlert, filterGrade }) => {
                         const parent = parentDoc.data();
                         console.log(`Checking Parent: ${parent.name}, Token: ${parent.pushToken}, LinkedPhone: ${parent.linkedStudentPhone}`);
                         if (parent.pushToken && parent.linkedStudentPhone) {
-                            // Find the student this parent is linked to
-                            const studentEntry = Object.entries(studentMap).find(([id, s]) => {
+                            // Find ALL students this parent is linked to who are also affected
+                            const matchedAffectedStudents = Object.values(studentMap).filter(s => {
                                 const cleanStudentPhone = (s.phoneNumber || '').replace(/[^0-9]/g, '');
                                 const cleanParentLink = (parent.linkedStudentPhone || '').replace(/[^0-9]/g, '');
-                                const phoneMatch = cleanStudentPhone === cleanParentLink;
-                                const isAffected = affectedStudentIds.includes(id);
-                                if (phoneMatch && !isAffected) console.log(`Phone matched for ${s.name} but they are NOT absent/late.`);
-                                if (!phoneMatch && isAffected) console.log(`Student ${s.name} is absent/late but phone ${cleanStudentPhone} != parent's link ${cleanParentLink}`);
-                                return phoneMatch && isAffected;
+                                return cleanStudentPhone === cleanParentLink && affectedStudentIds.includes(s.id);
                             });
 
-                            if (studentEntry) {
-                                const [sId, sData] = studentEntry;
-                                const status = attendanceMap[sId];
+                            for (const sData of matchedAffectedStudents) {
+                                const status = attendanceMap[sData.id];
                                 console.log(`Triggering notification for parent ${parent.name} regarding student ${sData.name}`);
                                 await sendPushNotification(
                                     parent.pushToken,
@@ -139,8 +134,6 @@ const AttendanceManager = ({ students, tenantId, onAlert, filterGrade }) => {
                                     `${sData.name} was marked ${status} today (${selectedDate}).`,
                                     { screen: 'parent-dashboard' }
                                 );
-                            } else {
-                                console.log(`No student match found for parent ${parent.name}`);
                             }
                         } else {
                             console.log(`Parent ${parent.name} missing pushToken or linkedStudentPhone`);
