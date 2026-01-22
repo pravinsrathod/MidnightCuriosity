@@ -10,9 +10,23 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="202e1f87-e37a-40a8-b4fa-d2d33d5c0a7d" name="Changes" comment="">
+      <change afterPath="$PROJECT_DIR$/functions/index.js" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/functions/package-lock.json" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/functions/package.json" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.firebase/hosting.YWRtaW4td2ViL2Rpc3Q.cache" beforeDir="false" afterPath="$PROJECT_DIR$/.firebase/hosting.YWRtaW4td2ViL2Rpc3Q.cache" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/admin-web/.firebase/hosting.ZGlzdA.cache" beforeDir="false" afterPath="$PROJECT_DIR$/admin-web/.firebase/hosting.ZGlzdA.cache" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/mobile-rn/app/doubts/index.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/mobile-rn/app/doubts/index.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/mobile-rn/emulator_screen.png" beforeDir="false" afterPath="$PROJECT_DIR$/mobile-rn/emulator_screen.png" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/admin-web/src/AttendanceManager.jsx" beforeDir="false" afterPath="$PROJECT_DIR$/admin-web/src/AttendanceManager.jsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/admin-web/src/firebase.js" beforeDir="false" afterPath="$PROJECT_DIR$/admin-web/src/firebase.js" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/admin-web/src/notificationService.js" beforeDir="false" afterPath="$PROJECT_DIR$/admin-web/src/notificationService.js" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/firebase.json" beforeDir="false" afterPath="$PROJECT_DIR$/firebase.json" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/mobile-rn/EduPro-Student.apk" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/mobile-rn/app.config.js" beforeDir="false" afterPath="$PROJECT_DIR$/mobile-rn/app.config.js" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/mobile-rn/app/parent-dashboard.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/mobile-rn/app/parent-dashboard.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/mobile-rn/emulator_screen.png" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/mobile-rn/emulator_screen_2.png" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/mobile-rn/installed_app.png" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/mobile-rn/services/notificationService.ts" beforeDir="false" afterPath="$PROJECT_DIR$/mobile-rn/services/notificationService.ts" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -22,7 +36,7 @@
   <component name="ClangdSettings">
     <option name="formatViaClangd" value="false" />
   </component>
-  <component name="ExecutionTargetManager" SELECTED_TARGET="device_and_snapshot_combo_box_target[/Users/pravinrathod/.android/avd/pixal_4.avd]" />
+  <component name="ExecutionTargetManager" SELECTED_TARGET="device_and_snapshot_combo_box_target[10ADCA0YXS001AF]" />
   <component name="ExternalProjectsData">
     <projectState path="$PROJECT_DIR$">
       <ProjectState />

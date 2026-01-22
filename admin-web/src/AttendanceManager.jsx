@@ -107,11 +107,9 @@ const AttendanceManager = ({ students, tenantId, onAlert, filterGrade }) => {
                 if (affectedStudentIds.length > 0) {
                     const parentsQuery = query(collection(db, "users"), where("tenantId", "==", tenantId), where("role", "==", "PARENT"));
                     const parentSnaps = await getDocs(parentsQuery);
-                    console.log(`Found ${parentSnaps.size} parents in tenant ${tenantId}`);
 
                     const studentsQuery = query(collection(db, "users"), where("tenantId", "==", tenantId));
                     const studentSnaps = await getDocs(studentsQuery);
-                    console.log(`Found ${studentSnaps.size} students for mapping`);
                     const studentMap = Object.fromEntries(studentSnaps.docs.map(d => [d.id, { id: d.id, ...d.data() }]));
 
                     for (const parentDoc of parentSnaps.docs) {
@@ -120,13 +118,12 @@ const AttendanceManager = ({ students, tenantId, onAlert, filterGrade }) => {
                             .filter(Boolean)
                             .map(ph => ph.replace(/[^0-9]/g, ''));
 
-                        console.log(`Checking Parent: ${parent.name}, Token: ${parent.pushToken}, LinkedPhones: ${linkedPhones.join(', ')}`);
-
                         if (parent.pushToken && linkedPhones.length > 0) {
-                            // Find ALL students this parent is linked to who are also affected
                             const matchedAffectedStudents = Object.values(studentMap).filter(s => {
                                 const cleanStudentPhone = (s.phoneNumber || '').replace(/[^0-9]/g, '');
-                                return linkedPhones.includes(cleanStudentPhone) && affectedStudentIds.includes(s.id);
+                                const isLinked = linkedPhones.includes(cleanStudentPhone);
+                                const isAffected = affectedStudentIds.includes(s.id);
+                                return isLinked && isAffected;
                             });
 
                             for (const sData of matchedAffectedStudents) {
@@ -139,8 +136,6 @@ const AttendanceManager = ({ students, tenantId, onAlert, filterGrade }) => {
                                     { screen: 'parent-dashboard' }
                                 );
                             }
-                        } else {
-                            console.log(`Parent ${parent.name} missing pushToken or linked students`);
                         }
                     }
                 }

@@ -7,6 +7,7 @@ import { useTheme } from '../context/ThemeContext';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTenant } from '../context/TenantContext';
+import { registerForPushNotificationsAsync, savePushTokenToUser } from '../services/notificationService';
 
 export default function ParentDashboard() {
     const router = useRouter();
@@ -97,6 +98,18 @@ export default function ParentDashboard() {
             } else {
                 setStudentName("No children linked");
             }
+
+            // 3. Register for Push Notifications (Ensure token is always fresh)
+            try {
+                registerForPushNotificationsAsync().then(token => {
+                    if (token) {
+                        savePushTokenToUser(uid, token);
+                    }
+                });
+            } catch (err) {
+                console.warn("Dashboard push setup failed:", err);
+            }
+
             setLoading(false);
 
         } catch (e) {
