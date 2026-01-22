@@ -8,7 +8,7 @@ export default ({ config }) => {
             ...config.expo,
             name: process.env.APP_NAME || "EduPro",
             slug: "mobile-rn",
-            version: "1.0.0",
+            version: "1.2.0",
             orientation: "portrait",
             icon: process.env.APP_ICON || `${brandingPath}/icon.png`,
             userInterfaceStyle: "light",
@@ -23,11 +23,15 @@ export default ({ config }) => {
                 bundleIdentifier: process.env.APP_PACKAGE || "com.prowin.edupro"
             },
             android: {
+                versionCode: 3,
                 adaptiveIcon: {
                     foregroundImage: process.env.APP_ADAPTIVE_ICON || `${brandingPath}/adaptive-icon.png`,
                     backgroundColor: "#ffffff"
                 },
-                package: process.env.APP_PACKAGE || "com.prowin.edupro"
+                package: process.env.APP_PACKAGE || "com.prowin.edupro",
+                googleServicesFile: process.env.EXPO_PUBLIC_APP_ENV === 'production'
+                    ? './.google-services.production.json'
+                    : './.google-services.development.json'
             },
             web: {
                 favicon: `${brandingPath}/favicon.png`,

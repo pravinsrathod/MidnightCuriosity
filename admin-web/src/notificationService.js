@@ -1,27 +1,22 @@
-export async function sendPushNotification(to, title, body, data = {}) {
-    const message = {
-        to,
-        sound: 'default',
-        title,
-        body,
-        data,
-        priority: 'high',
-    };
+import { functions } from './firebase';
+import { httpsCallable } from 'firebase/functions';
 
-    console.log('Sending Notification:', message);
+export async function sendPushNotification(to, title, body, data = {}) {
+    console.log('Sending Notification via Cloud Function:', { to, title });
 
     try {
-        const response = await fetch('https://corsproxy.io/?' + encodeURIComponent('https://exp.host/--/api/v2/push/send'), {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(message),
+        const sendPush = httpsCallable(functions, 'sendPushNotification');
+        const result = await sendPush({
+            to,
+            title,
+            body,
+            data
         });
-        const result = await response.json();
-        console.log('Notification result:', result);
-        return result;
+
+        console.log('Notification result:', result.data);
+        return result.data;
     } catch (error) {
-        console.error('Error sending push notification:', error);
+        console.error('Error sending push notification via Cloud Function:', error);
+        return { success: false, error: error.message };
     }
 }

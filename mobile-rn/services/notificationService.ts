@@ -1,7 +1,7 @@
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import Constants from 'expo-constants';
-import { Platform } from 'react-native';
+import { Platform, Alert } from 'react-native';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from './firebaseConfig';
 
@@ -32,9 +32,10 @@ export async function registerForPushNotificationsAsync() {
     const projectId = Constants?.expoConfig?.extra?.eas?.projectId ?? Constants?.easConfig?.projectId;
 
     try {
-        token = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
+        const result = await Notifications.getExpoPushTokenAsync({ projectId });
+        token = result.data;
         console.log('Expo Push Token:', token);
-    } catch (e) {
+    } catch (e: any) {
         console.warn('Could not get push token:', e);
     }
 
