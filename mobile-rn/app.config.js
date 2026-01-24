@@ -44,7 +44,8 @@ export default ({ config }) => {
                     {
                         "faceIDPermission": `Allow ${process.env.APP_NAME || "this app"} to use FaceID for faster login.`
                     }
-                ]
+                ],
+                "expo-notifications"
             ],
             experiments: {
                 typedRoutes: true

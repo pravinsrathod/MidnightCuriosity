@@ -8,6 +8,7 @@ import { useEffect } from 'react';
 import { useRouter } from 'expo-router';
 import * as Notifications from 'expo-notifications';
 import { ThemeProvider as AppThemeProvider, useTheme } from '../context/ThemeContext';
+import { TenantProvider } from '../context/TenantContext';
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -18,8 +19,6 @@ Notifications.setNotificationHandler({
     shouldShowList: true,
   }),
 });
-
-import { TenantProvider } from '../context/TenantContext';
 
 function RootLayoutNav() {
   const router = useRouter();
@@ -78,7 +77,6 @@ function RootLayoutNav() {
     );
   }
 }
-
 
 export default function RootLayout() {
   return (
