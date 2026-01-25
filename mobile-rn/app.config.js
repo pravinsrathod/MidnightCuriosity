@@ -8,6 +8,7 @@ export default ({ config }) => {
             ...config.expo,
             name: process.env.APP_NAME || "EduPro",
             slug: "mobile-rn",
+            scheme: "com.prowin.edupro",
             version: "1.2.0",
             orientation: "portrait",
             icon: process.env.APP_ICON || `${brandingPath}/icon.png`,
@@ -20,7 +21,11 @@ export default ({ config }) => {
             },
             ios: {
                 supportsTablet: true,
-                bundleIdentifier: process.env.APP_PACKAGE || "com.prowin.edupro"
+                bundleIdentifier: process.env.APP_PACKAGE || "com.prowin.edupro",
+                buildNumber: process.env.EAS_BUILD_NUMBER || "1",
+                googleServicesFile: process.env.EXPO_PUBLIC_APP_ENV === 'production'
+                    ? './GoogleService-Info.production.plist'
+                    : './GoogleService-Info.development.plist'
             },
             android: {
                 versionCode: 3,
@@ -45,7 +50,16 @@ export default ({ config }) => {
                         "faceIDPermission": `Allow ${process.env.APP_NAME || "this app"} to use FaceID for faster login.`
                     }
                 ],
-                "expo-notifications"
+                "expo-notifications",
+                [
+                    "expo-image-picker",
+                    {
+                        "photosPermission": "Allow $(PRODUCT_NAME) to access your photos",
+                        "cameraPermission": "Allow $(PRODUCT_NAME) to access your camera"
+                    }
+                ],
+                "expo-av",
+                "expo-updates"
             ],
             experiments: {
                 typedRoutes: true
