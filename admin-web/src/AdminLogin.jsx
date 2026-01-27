@@ -11,6 +11,7 @@ export default function AdminLogin() {
     const [success, setSuccess] = useState('');
     const [loading, setLoading] = useState(false);
     const [isSignUp, setIsSignUp] = useState(false);
+    const [instituteName, setInstituteName] = useState('');
 
     const handleForgotPassword = async () => {
         if (!identifier) {
@@ -64,6 +65,12 @@ export default function AdminLogin() {
 
         try {
             if (isSignUp) {
+                if (!instituteName) {
+                    setError("Please enter the Institute Name.");
+                    setLoading(false);
+                    return;
+                }
+
                 const userCredential = await createUserWithEmailAndPassword(auth, identifier.includes('@') ? identifier : emailToUse, password);
                 const user = userCredential.user;
 
@@ -75,6 +82,7 @@ export default function AdminLogin() {
                     email: identifier.includes('@') ? identifier : emailToUse,
                     role: 'admin',
                     tenantId: generatedTenantId,
+                    status: 'PENDING_APPROVAL',
                     createdAt: serverTimestamp()
                 };
                 if (isPhone) userData.phoneNumber = identifier.replace(/[^0-9]/g, '');
@@ -83,12 +91,15 @@ export default function AdminLogin() {
 
                 // 2. Create Tenant Document
                 await setDoc(doc(db, "tenants", generatedTenantId), {
-                    name: "My New Institute",
+                    name: instituteName || "My New Institute",
                     code: generatedTenantId,
                     adminUid: user.uid,
                     createdAt: serverTimestamp(),
-                    isActive: true
+                    isActive: false, // Default to false until approved
+                    status: 'PENDING_APPROVAL'
                 });
+
+                setSuccess("Signup successful! Your institute is pending approval by the Super Admin.");
             } else {
                 await signInWithEmailAndPassword(auth, identifier.includes('@') ? identifier : emailToUse, password);
             }
@@ -117,6 +128,20 @@ export default function AdminLogin() {
                 {success && <div style={styles.success}>{success}</div>}
 
                 <form onSubmit={handleAuth} style={styles.form}>
+                    {isSignUp && (
+                        <div style={styles.inputGroup}>
+                            <label style={styles.label}>Institute Name</label>
+                            <input
+                                type="text"
+                                value={instituteName}
+                                onChange={(e) => setInstituteName(e.target.value)}
+                                style={styles.input}
+                                placeholder="e.g. Curiosity High School"
+                                required
+                            />
+                        </div>
+                    )}
+
                     <div style={styles.inputGroup}>
                         <label style={styles.label}>Mobile Number OR Email</label>
                         <input

@@ -29,6 +29,9 @@ function App() {
   const [tenantData, setTenantData] = useState({ name: "", code: "" });
   const [isEditingTenant, setIsEditingTenant] = useState(false);
   const [tenantEditForm, setTenantEditForm] = useState({ name: "", code: "" });
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
+  const [allTenants, setAllTenants] = useState([]);
+  const [pendingUserStatus, setPendingUserStatus] = useState(null); // 'PENDING_APPROVAL', 'APPROVED', etc.
 
   // Custom Modal State (Promise-based)
   const [modalState, setModalState] = useState({
@@ -90,8 +93,15 @@ function App() {
         // Fetch Admin Tenant ID Profile
         try {
           const userDoc = await getDoc(doc(db, "users", currentUser.uid));
-          if (userDoc.exists() && userDoc.data().tenantId) {
-            setAdminTenantId(userDoc.data().tenantId);
+          if (userDoc.exists()) {
+            const userData = userDoc.data();
+            setAdminTenantId(userData.tenantId);
+            setPendingUserStatus(userData.status || 'APPROVED');
+
+            // SUPER ADMIN CHECK
+            if (currentUser.email === 'prowintechs@gmail.com') {
+              setIsSuperAdmin(true);
+            }
           }
         } catch (e) {
           console.error("Failed to fetch admin tenant", e);
@@ -99,6 +109,8 @@ function App() {
       } else {
         setAdminTenantId(null);
         setTenantData({ name: "", code: "" });
+        setIsSuperAdmin(false);
+        setPendingUserStatus(null);
       }
       setAuthLoading(false);
     });
@@ -108,15 +120,25 @@ function App() {
   // Sync Tenant Profile Data
   useEffect(() => {
     if (!adminTenantId || adminTenantId === 'default') return;
-    const unsub = onSnapshot(doc(db, "tenants", adminTenantId), (doc) => {
-      if (doc.exists()) {
-        const data = doc.data();
+    const unsub = onSnapshot(doc(db, "tenants", adminTenantId), (snap) => {
+      if (snap.exists()) {
+        const data = snap.data();
         setTenantData({ name: data.name, code: data.code, logoUrl: data.logoUrl });
         setTenantEditForm({ name: data.name, code: data.code, logoUrl: data.logoUrl });
       }
     });
     return () => unsub();
   }, [adminTenantId]);
+
+  // Super Admin: Fetch all tenants
+  useEffect(() => {
+    if (!isSuperAdmin) return;
+    const unsub = onSnapshot(collection(db, "tenants"), (snapshot) => {
+      const tenants = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setAllTenants(tenants);
+    });
+    return () => unsub();
+  }, [isSuperAdmin]);
 
   // Config States
   const [grades, setGrades] = useState([]);
@@ -942,6 +964,35 @@ Password: [Hidden]`);
       customAlert("Update Failed: " + e.message);
     }
   };
+  const handleApproveTenant = async (tenant) => {
+    if (!await customConfirm(`Approve institute '${tenant.name}'?`)) return;
+    setLoading(true);
+    try {
+      await updateDoc(doc(db, "tenants", tenant.id), { status: 'APPROVED', isActive: true });
+      if (tenant.adminUid) await updateDoc(doc(db, "users", tenant.adminUid), { status: 'APPROVED' });
+      customAlert(`Institute '${tenant.name}' approved successfully!`);
+    } catch (e) {
+      console.error(e);
+      customAlert("Failed to approve institute.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRejectTenant = async (tenant) => {
+    if (!await customConfirm(`Reject institute '${tenant.name}'?`, "Confirm Rejection", true)) return;
+    setLoading(true);
+    try {
+      await updateDoc(doc(db, "tenants", tenant.id), { status: 'REJECTED', isActive: false });
+      if (tenant.adminUid) await updateDoc(doc(db, "users", tenant.adminUid), { status: 'REJECTED' });
+      customAlert(`Institute '${tenant.name}' rejected.`);
+    } catch (e) {
+      console.error(e);
+      customAlert("Failed to reject institute.");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleUpload = async (e) => {
     e.preventDefault();
@@ -1087,6 +1138,11 @@ Password: [Hidden]`);
         <button className={`nav-item ${activeTab === 'settings' ? 'active' : ''}`} onClick={() => { setActiveTab('settings'); cancelEdit(); }}>
           <span>⚙️</span> Settings
         </button>
+        {isSuperAdmin && (
+          <button className={`nav-item ${activeTab === 'superadmin' ? 'active' : ''}`} onClick={() => { setActiveTab('superadmin'); cancelEdit(); }}>
+            <span>🛂</span> Super Admin {allTenants.filter(t => t.status === 'PENDING_APPROVAL').length > 0 && <span className="badge">{allTenants.filter(t => t.status === 'PENDING_APPROVAL').length}</span>}
+          </button>
+        )}
       </nav>
       <button
         className="nav-item"
@@ -1125,8 +1181,96 @@ Password: [Hidden]`);
     </div>
   );
 
+  const SuperAdminView = () => (
+    <div style={{ maxWidth: '1000px', margin: '0 auto' }}>
+      <div className="card" style={{ marginBottom: '30px' }}>
+        <h2>Pending Approval Requests</h2>
+        <p style={{ color: 'var(--text-secondary)', marginBottom: '20px' }}>
+          New institutes waiting for your verification.
+        </p>
+
+        {allTenants.filter(t => t.status === 'PENDING_APPROVAL').length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '20px', color: 'var(--text-tertiary)' }}>
+            No pending requests at the moment.
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+            {allTenants.filter(t => t.status === 'PENDING_APPROVAL').map(tenant => (
+              <div key={tenant.id} className="card" style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                  <h3 style={{ margin: 0 }}>{tenant.name}</h3>
+                  <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '5px' }}>
+                    Code: <strong>{tenant.code}</strong> • Admin UID: {tenant.adminUid}
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: '10px' }}>
+                  <button className="btn-primary" onClick={() => handleApproveTenant(tenant)}>Approve</button>
+                  <button className="btn-ghost" style={{ color: 'var(--danger)' }} onClick={() => handleRejectTenant(tenant)}>Reject</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="card">
+        <h2>All Active Institutes</h2>
+        <div style={{ marginTop: '20px', overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr style={{ textAlign: 'left', borderBottom: '1px solid var(--border)' }}>
+                <th style={{ padding: '12px' }}>Name</th>
+                <th style={{ padding: '12px' }}>Code</th>
+                <th style={{ padding: '12px' }}>Status</th>
+                <th style={{ padding: '12px' }}>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {allTenants.filter(t => t.status !== 'PENDING_APPROVAL').map(tenant => (
+                <tr key={tenant.id} style={{ borderBottom: '1px solid var(--border)' }}>
+                  <td style={{ padding: '12px' }}>{tenant.name}</td>
+                  <td style={{ padding: '12px' }}><code>{tenant.code}</code></td>
+                  <td style={{ padding: '12px' }}>
+                    <span className="badge" style={{ background: tenant.isActive ? 'var(--success)' : 'var(--danger)' }}>
+                      {tenant.isActive ? 'Active' : 'Inactive'}
+                    </span>
+                  </td>
+                  <td style={{ padding: '12px' }}>
+                    <button className="btn-ghost" style={{ fontSize: '0.8rem' }} onClick={async () => {
+                      if (await customConfirm(`Manually ${tenant.isActive ? 'Deactivate' : 'Activate'} ${tenant.name}?`)) {
+                        await updateDoc(doc(db, "tenants", tenant.id), { isActive: !tenant.isActive });
+                      }
+                    }}>Toggle Active</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+
   if (authLoading) return <div style={{ height: '100vh', display: 'flex', justifyContent: 'center', alignItems: 'center', background: '#0f172a', color: '#94a3b8' }}>Loading System...</div>;
   if (!user) return <AdminLogin />;
+
+  // PENDING APPROVAL SCREEN OR REJECTED
+  if (!isSuperAdmin && (pendingUserStatus === 'PENDING_APPROVAL' || pendingUserStatus === 'REJECTED')) {
+    const isRejected = pendingUserStatus === 'REJECTED';
+    return (
+      <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', background: '#0f172a', color: '#f8fafc', padding: '20px', textAlign: 'center' }}>
+        <div style={{ fontSize: '4rem', marginBottom: '20px' }}>{isRejected ? '❌' : '⏳'}</div>
+        <h1 style={{ marginBottom: '10px' }}>{isRejected ? 'Approval Rejected' : 'Approval Pending'}</h1>
+        <p style={{ color: '#94a3b8', maxWidth: '500px', lineHeight: '1.6' }}>
+          {isRejected
+            ? `We're sorry, but your institute registration for '${tenantData.name || 'your institute'}' has been rejected. Please contact support at prowintechs@gmail.com for more information.`
+            : `Thank you for signing up! Your institute ${tenantData.name ? `<strong>${tenantData.name}</strong>` : 'account'} is currently being reviewed by our Super Admin. Once approved, you will have full access. This usually takes less than 24 hours.`
+          }
+        </p>
+        <button className="btn-primary" onClick={() => signOut(auth)} style={{ marginTop: '30px' }}>Sign Out</button>
+      </div>
+    );
+  }
 
   return (
     <div className="app-layout">
@@ -1143,6 +1287,7 @@ Password: [Hidden]`);
             {activeTab === 'homework' && 'Manage Homework'}
             {activeTab === 'students' && 'Manage Students'}
             {activeTab === 'settings' && 'System Configuration'}
+            {activeTab === 'superadmin' && 'Super Admin Control Panel'}
           </h1>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <span style={{ width: '10px', height: '10px', borderRadius: '50%', background: 'var(--success)' }}></span>
@@ -1170,8 +1315,8 @@ Password: [Hidden]`);
             ))}
           </div>
         )}
-
         {activeTab === 'dashboard' && <DashboardView />}
+        {activeTab === 'superadmin' && isSuperAdmin && <SuperAdminView />}
 
         {activeTab === 'settings' && (
           <div className="grid-2">

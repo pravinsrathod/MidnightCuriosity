@@ -13,6 +13,10 @@ service cloud.firestore {
       return data != null && data.role == 'admin';
     }
 
+    function isSuperAdmin() {
+      return request.auth != null && request.auth.token.email == 'prowintechs@gmail.com';
+    }
+
     function isTenantUser(tid) {
       let data = getUserData();
       return data != null && data.tenantId == tid;
@@ -22,7 +26,7 @@ service cloud.firestore {
     match /tenants/{tenantId} {
       allow read: if true; // Public for validation
       allow create: if request.auth != null; // Admin signup
-      allow update: if request.auth != null && isAdmin() && getUserData().tenantId == tenantId;
+      allow update: if request.auth != null && (isSuperAdmin() || (isAdmin() && getUserData().tenantId == tenantId));
       
       match /metadata/{any=**} {
         allow read: if true; 
@@ -36,7 +40,7 @@ service cloud.firestore {
       allow read: if request.auth != null;
       allow create: if request.auth != null;
       allow update: if request.auth != null;
-      allow delete: if isAdmin();
+      allow delete: if isAdmin() || isSuperAdmin();
     }
 
     // --- CONTENT (Lectures, Polls, Exams) ---
