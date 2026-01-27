@@ -90,21 +90,22 @@ function App() {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
       if (currentUser) {
-        // Fetch Admin Tenant ID Profile
         try {
+          // 1. IMMEDIATE SUPER ADMIN CHECK (Based on Email)
+          if (currentUser.email === 'prowintechs@gmail.com') {
+            setIsSuperAdmin(true);
+            setPendingUserStatus('APPROVED'); // Super admin is always approved
+          }
+
+          // 2. FETCH USER PROFILE
           const userDoc = await getDoc(doc(db, "users", currentUser.uid));
           if (userDoc.exists()) {
             const userData = userDoc.data();
             setAdminTenantId(userData.tenantId);
             setPendingUserStatus(userData.status || 'APPROVED');
-
-            // SUPER ADMIN CHECK
-            if (currentUser.email === 'prowintechs@gmail.com') {
-              setIsSuperAdmin(true);
-            }
           }
         } catch (e) {
-          console.error("Failed to fetch admin tenant", e);
+          console.error("Failed to fetch user profile", e);
         }
       } else {
         setAdminTenantId(null);
