@@ -9,7 +9,7 @@ export default ({ config }) => {
             name: process.env.APP_NAME || "EduPro",
             slug: "mobile-rn",
             scheme: "com.prowin.edupro",
-            version: "1.2.0",
+            version: "1.2.1",
             orientation: "portrait",
             icon: process.env.APP_ICON || `${brandingPath}/icon.png`,
             userInterfaceStyle: "light",
@@ -22,10 +22,16 @@ export default ({ config }) => {
             ios: {
                 supportsTablet: true,
                 bundleIdentifier: process.env.APP_PACKAGE || "com.prowin.edupro",
-                buildNumber: process.env.EAS_BUILD_NUMBER || "1",
+                buildNumber: "2",
                 googleServicesFile: process.env.EXPO_PUBLIC_APP_ENV === 'production'
                     ? './GoogleService-Info.production.plist'
-                    : './GoogleService-Info.development.plist'
+                    : './GoogleService-Info.development.plist',
+                infoPlist: {
+                    NSCameraUsageDescription: `${process.env.APP_NAME || "EduPro"} requires camera access to allow students to capture photos of their written homework for electronic submission and to update their profile pictures.`,
+                    NSPhotoLibraryUsageDescription: `${process.env.APP_NAME || "EduPro"} requires photo library access to allow students to select and upload existing homework documents and profile pictures from their gallery.`,
+                    NSMicrophoneUsageDescription: `${process.env.APP_NAME || "EduPro"} requires microphone access to enable interactive features, such as voice-to-text for doubt clearing and recording audio responses during lessons.`,
+                    NSFaceIDUsageDescription: `${process.env.APP_NAME || "EduPro"} uses FaceID to provide a secure and faster way to log in to your educational account.`
+                }
             },
             android: {
                 versionCode: 3,
@@ -54,8 +60,8 @@ export default ({ config }) => {
                 [
                     "expo-image-picker",
                     {
-                        "photosPermission": "Allow $(PRODUCT_NAME) to access your photos",
-                        "cameraPermission": "Allow $(PRODUCT_NAME) to access your camera"
+                        "photosPermission": `${process.env.APP_NAME || "EduPro"} requires photo library access to allow students to select and upload existing homework documents and profile pictures.`,
+                        "cameraPermission": `${process.env.APP_NAME || "EduPro"} requires camera access to allow students to capture photos of their written homework for electronic submission and to update their profile pictures.`
                     }
                 ],
                 "expo-av",

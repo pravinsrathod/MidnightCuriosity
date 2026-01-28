@@ -2,7 +2,7 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { View, Text, StyleSheet, ScrollView, ActivityIndicator, TouchableOpacity, RefreshControl, Image, Alert, Modal, TextInput } from 'react-native';
 import { useRouter } from 'expo-router';
 import { auth, db } from '../services/firebaseConfig';
-import { collection, query, where, getDocs, doc, getDoc, orderBy, limit, onSnapshot } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc, getDoc, orderBy, limit, onSnapshot, updateDoc, arrayUnion, setDoc } from 'firebase/firestore';
 import { useTheme } from '../context/ThemeContext';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -178,7 +178,6 @@ export default function ParentDashboard() {
             }
 
             // Update Firestore
-            const { arrayUnion, updateDoc } = await import('firebase/firestore');
             await updateDoc(userRef, {
                 linkedStudentPhones: arrayUnion(clean)
             });
@@ -340,6 +339,50 @@ export default function ParentDashboard() {
         }
     };
 
+    const handleDeleteAccount = async () => {
+        Alert.alert(
+            "Delete Parent Account",
+            "Are you sure you want to delete your parent account? This will remove your links to your children's data and delete your profile. This action cannot be undone.",
+            [
+                { text: "Cancel", style: "cancel" },
+                {
+                    text: "Request Deletion",
+                    style: "destructive",
+                    onPress: async () => {
+                        try {
+                            setLoading(true);
+                            const user = auth.currentUser;
+                            const uid = user?.uid || await AsyncStorage.getItem('user_uid');
+
+                            if (uid) {
+                                // 1. Flag for Deletion Request in Firestore
+                                await setDoc(doc(db, "users", uid), {
+                                    deletionRequested: true,
+                                    deletionRequestedAt: new Date().toISOString(),
+                                    status: 'DELETION_PENDING'
+                                }, { merge: true });
+
+                                // 2. Sign out (Lock out the user)
+                                await auth.signOut();
+                                await AsyncStorage.removeItem('user_uid');
+                                await AsyncStorage.removeItem('biometric_enabled');
+                                await AsyncStorage.clear();
+
+                                router.replace('/auth');
+                                Alert.alert("Request Sent", "Your parent account deletion request has been sent to the institute. Your access has been disabled, and your data will be permanently removed once approved by the administrator.");
+                            }
+                        } catch (e) {
+                            console.error("Deletion failed", e);
+                            Alert.alert("Error", "Failed to delete account. Please try logging out and back in first.");
+                        } finally {
+                            setLoading(false);
+                        }
+                    }
+                }
+            ]
+        );
+    };
+
     const getStatusColor = (status: string) => {
         switch (status) {
             case 'PRESENT': return colors.success;
@@ -465,6 +508,16 @@ export default function ParentDashboard() {
                         ))}
                     </View>
                 )}
+
+                {/* Account Deletion (Apple Compliance) */}
+                <TouchableOpacity
+                    style={{ marginTop: 20, marginBottom: 60, alignSelf: 'center', padding: 10 }}
+                    onPress={handleDeleteAccount}
+                >
+                    <Text style={{ color: colors.danger, fontSize: 13, textDecorationLine: 'underline', opacity: 0.7 }}>
+                        Delete Parent Account
+                    </Text>
+                </TouchableOpacity>
             </ScrollView>
 
             {/* Selection Modal (Switch Student) */}

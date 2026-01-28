@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect, useMemo } from 'react'; // v2
-import { View, Text, TouchableOpacity, ScrollView, StyleSheet, SafeAreaView, Image, ActivityIndicator, Platform } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, StyleSheet, SafeAreaView, Image, ActivityIndicator, Platform, Alert } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { auth, db, storage } from '../services/firebaseConfig';
 import { doc, getDoc, updateDoc, setDoc, collection, query, where, onSnapshot, orderBy, limit } from 'firebase/firestore';
@@ -241,6 +241,50 @@ export default function GradeSelectionScreen() {
         }
     };
 
+    const handleDeleteAccount = async () => {
+        Alert.alert(
+            "Delete Account",
+            "Are you absolutely sure you want to delete your account? This action is permanent and will remove all your learning progress, completed topics, and profile data. You cannot undo this.",
+            [
+                { text: "Cancel", style: "cancel" },
+                {
+                    text: "Request Deletion",
+                    style: "destructive",
+                    onPress: async () => {
+                        try {
+                            setUploading(true);
+                            const user = auth.currentUser;
+                            const uid = user?.uid || await AsyncStorage.getItem('user_uid');
+
+                            if (uid) {
+                                // 1. Flag for Deletion Request in Firestore
+                                await setDoc(doc(db, "users", uid), {
+                                    deletionRequested: true,
+                                    deletionRequestedAt: new Date().toISOString(),
+                                    status: 'DELETION_PENDING'
+                                }, { merge: true });
+
+                                // 2. Sign out (Lock out the user)
+                                await auth.signOut();
+                                await AsyncStorage.removeItem('user_uid');
+                                await AsyncStorage.removeItem('biometric_enabled');
+                                await AsyncStorage.clear();
+
+                                router.replace('/auth');
+                                Alert.alert("Request Sent", "Your account deletion request has been sent to the institute. Your access has been disabled, and your data will be permanently removed once approved by the administrator.");
+                            }
+                        } catch (e) {
+                            console.error("Deletion failed", e);
+                            Alert.alert("Error", "Failed to delete account. Please try logging out and back in, then try again.");
+                        } finally {
+                            setUploading(false);
+                        }
+                    }
+                }
+            ]
+        );
+    };
+
     return (
         <SafeAreaView style={styles.container}>
             <ScrollView
@@ -439,6 +483,16 @@ export default function GradeSelectionScreen() {
                 >
                     <Text style={styles.buttonText}>Continue Learning</Text>
                     <Ionicons name="arrow-forward" size={20} color="#FFF" />
+                </TouchableOpacity>
+
+                {/* Account Deletion (Apple Compliance) */}
+                <TouchableOpacity
+                    style={{ marginTop: 20, marginBottom: 40, alignSelf: 'center', padding: 10 }}
+                    onPress={handleDeleteAccount}
+                >
+                    <Text style={{ color: colors.danger, fontSize: 13, textDecorationLine: 'underline', opacity: 0.7 }}>
+                        Delete Educational Account
+                    </Text>
                 </TouchableOpacity>
             </ScrollView>
         </SafeAreaView >

@@ -186,7 +186,7 @@ function App() {
   const [existingVideoUrl, setExistingVideoUrl] = useState('');
 
   // Dashboard Stats
-  const [stats, setStats] = useState({ lectures: 0, doubts: 0, pendingDoubts: 0, pendingStudents: 0 });
+  const [stats, setStats] = useState({ lectures: 0, doubts: 0, pendingDoubts: 0, pendingStudents: 0, deletionRequests: 0 });
 
   // Polls State
   const [polls, setPolls] = useState([]);
@@ -417,10 +417,16 @@ function App() {
       setStats(prev => ({ ...prev, pendingStudents: snap.size }));
     });
 
+    const qDeletionRequests = query(collection(db, "users"), where("tenantId", "==", adminTenantId), where("status", "==", "DELETION_PENDING"));
+    const unsubDeletion = onSnapshot(qDeletionRequests, snap => {
+      setStats(prev => ({ ...prev, deletionRequests: snap.size }));
+    });
+
     return () => {
       unsubLec();
       unsubDoubts();
       unsubStudents();
+      unsubDeletion();
     };
   }, [adminTenantId]);
 
@@ -612,6 +618,36 @@ function App() {
       await updateDoc(doc(db, "users", id), { status: 'REJECTED' });
     } catch (e) {
       console.error(e);
+      customAlert("Failed to reject student");
+    }
+  };
+
+  const handleApproveDeletion = async (id) => {
+    if (!await customConfirm("PERMANENTLY DELETE this account and all associated data? This cannot be undone.", "Finalize Deletion", true)) return;
+    try {
+      await updateDoc(doc(db, "users", id), {
+        status: 'DELETED',
+        deletedAt: new Date().toISOString(),
+        isActive: false
+      });
+      customAlert("Account permanently deleted.");
+    } catch (e) {
+      console.error(e);
+      customAlert("Failed to delete account");
+    }
+  };
+
+  const handleRejectDeletion = async (id) => {
+    if (!await customConfirm("Restore this account and reject the deletion request?")) return;
+    try {
+      await updateDoc(doc(db, "users", id), {
+        status: 'ACTIVE',
+        deletionRequested: false
+      });
+      customAlert("Account restored.");
+    } catch (e) {
+      console.error(e);
+      customAlert("Failed to restore account");
     }
   };
 
@@ -1136,6 +1172,9 @@ Password: [Hidden]`);
         <button className={`nav-item ${activeTab === 'students' ? 'active' : ''}`} onClick={() => { setActiveTab('students'); cancelEdit(); }}>
           <span>🎓</span> Students {stats.pendingStudents > 0 && <span className="badge" style={{ background: 'var(--accent)' }}>{stats.pendingStudents}</span>}
         </button>
+        <button className={`nav-item ${activeTab === 'deletion' ? 'active' : ''}`} onClick={() => { setActiveTab('deletion'); cancelEdit(); }}>
+          <span>⚠️</span> Deletion Requests {stats.deletionRequests > 0 && <span className="badge" style={{ background: 'var(--danger)' }}>{stats.deletionRequests}</span>}
+        </button>
         <button className={`nav-item ${activeTab === 'settings' ? 'active' : ''}`} onClick={() => { setActiveTab('settings'); cancelEdit(); }}>
           <span>⚙️</span> Settings
         </button>
@@ -1157,6 +1196,61 @@ Password: [Hidden]`);
       </div>
     </aside>
   );
+
+  const DeletionRequestsView = () => {
+    const [requests, setRequests] = useState([]);
+    const [reqLoading, setReqLoading] = useState(true);
+
+    useEffect(() => {
+      if (!adminTenantId) return;
+      const q = query(
+        collection(db, "users"),
+        where("tenantId", "==", adminTenantId),
+        where("status", "==", "DELETION_PENDING")
+      );
+      const unsub = onSnapshot(q, (snapshot) => {
+        setRequests(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+        setReqLoading(false);
+      });
+      return () => unsub();
+    }, [adminTenantId]);
+
+    return (
+      <div className="card">
+        <h2>Users Awaiting Account Deletion</h2>
+        <p style={{ color: 'var(--text-secondary)', marginBottom: '20px' }}>
+          These users have requested permanent account deletion from their app.
+          Approving will permanently disable their login and mark their data for removal.
+        </p>
+
+        {reqLoading ? (
+          <div style={{ padding: '20px', textAlign: 'center' }}>Loading Requests...</div>
+        ) : requests.length === 0 ? (
+          <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-tertiary)' }}>
+            <div style={{ fontSize: '3rem', marginBottom: '10px' }}>🎉</div>
+            No pending deletion requests.
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+            {requests.map(req => (
+              <div key={req.id} className="card" style={{ background: 'var(--bg-secondary)', border: '1px solid var(--danger)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                  <h3 style={{ margin: 0 }}>{req.name || req.phoneNumber || req.email}</h3>
+                  <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '5px' }}>
+                    Role: <strong>{req.role?.toUpperCase()}</strong> • Requested: {req.deletionRequestedAt ? new Date(req.deletionRequestedAt).toLocaleString() : 'N/A'}
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: '10px' }}>
+                  <button className="btn-primary" style={{ background: 'var(--danger)' }} onClick={() => handleApproveDeletion(req.id)}>Approve Deletion</button>
+                  <button className="btn-ghost" onClick={() => handleRejectDeletion(req.id)}>Reject & Restore</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   const DashboardView = () => (
     <div className="grid-3">
@@ -1287,6 +1381,7 @@ Password: [Hidden]`);
             {activeTab === 'attendance' && 'Daily Attendance'}
             {activeTab === 'homework' && 'Manage Homework'}
             {activeTab === 'students' && 'Manage Students'}
+            {activeTab === 'deletion' && 'Account Deletion Requests'}
             {activeTab === 'settings' && 'System Configuration'}
             {activeTab === 'superadmin' && 'Super Admin Control Panel'}
           </h1>
@@ -1317,6 +1412,7 @@ Password: [Hidden]`);
           </div>
         )}
         {activeTab === 'dashboard' && <DashboardView />}
+        {activeTab === 'deletion' && <DeletionRequestsView />}
         {activeTab === 'superadmin' && isSuperAdmin && <SuperAdminView />}
 
         {activeTab === 'settings' && (
