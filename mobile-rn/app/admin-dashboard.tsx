@@ -15,7 +15,7 @@ export default function AdminDashboard() {
     const router = useRouter();
     const { colors } = useTheme();
     const { tenantId, tenantName, tenantLogo } = useTenant();
-    const [grades, setGrades] = useState(Array.from({ length: 12 }, (_, i) => "Grade " + (i + 1)));
+    const [grades, setGrades] = useState<string[]>([]);
 
     // Role Guard: Ensure only admins can access
     useEffect(() => {

@@ -32,9 +32,9 @@ const makeXhrRequest = (url: string, method: string, data: any): Promise<string>
     });
 };
 
-export const solveHomeworkFromImage = async (base64Image: string, mimeType: string = "image/jpeg") => {
+export const solveHomeworkFromImage = async (base64Image: string, mimeType: string = "image/jpeg", subject: string = "General", context: string = "") => {
     try {
-        console.log("Analyzing image with Gemini (XHR)...", mimeType);
+        console.log("Analyzing image with Gemini (XHR)...", mimeType, "Subject:", subject, "Context:", context);
 
         const cleanBase64 = base64Image.replace(/^data:image\/\w+;base64,/, "");
 
@@ -42,7 +42,7 @@ export const solveHomeworkFromImage = async (base64Image: string, mimeType: stri
         const payload = {
             contents: [{
                 parts: [
-                    { text: "You are an expert tutor. Please analyze this homework problem image. 1) Identify the subject (Math, Physics, etc). 2) Solve the problem step-by-step. 3) Explain the concept clearly. Format the output with clear headers and bullet points." },
+                    { text: `You are an expert ${subject} tutor. Please analyze this homework problem image. 1) Specifically solve for ${subject} concepts. 2) Solve the problem step-by-step. 3) Explain the logic clearly. ${context ? `User Context: ${context}` : ''} Format the output with clear headers and bullet points.` },
                     {
                         inline_data: {
                             mime_type: mimeType,
@@ -65,6 +65,34 @@ export const solveHomeworkFromImage = async (base64Image: string, mimeType: stri
 
     } catch (error) {
         console.error("Gemini Vision Error:", error);
+        throw error;
+    }
+};
+
+export const solveHomeworkFromText = async (text: string, subject: string = "General") => {
+    try {
+        console.log("Analyzing text with Gemini (XHR)...", "Subject:", subject);
+
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${API_KEY}`;
+        const payload = {
+            contents: [{
+                parts: [
+                    { text: `You are an expert ${subject} tutor. Please solve the following question step-by-step. 1) Specifically solve for ${subject} concepts. 2) Explain the logic clearly. Question: ${text} Format the output with clear headers and bullet points.` }
+                ]
+            }]
+        };
+
+        const responseText = await makeXhrRequest(url, 'POST', payload);
+        const data = JSON.parse(responseText);
+
+        if (data.candidates && data.candidates[0].content && data.candidates[0].content.parts) {
+            return data.candidates[0].content.parts[0].text;
+        } else {
+            throw new Error("No explanation generated.");
+        }
+
+    } catch (error) {
+        console.error("Gemini Text Error:", error);
         throw error;
     }
 };
