@@ -36,6 +36,77 @@ export default function AuthScreen() {
     const [isBiometricSupported, setIsBiometricSupported] = useState(false);
     const params = useLocalSearchParams();
 
+    // Student Search State
+    const [studentSearchQuery, setStudentSearchQuery] = useState('');
+    const [studentSearchResults, setStudentSearchResults] = useState<any[]>([]);
+    const [studentListCache, setStudentListCache] = useState<any[]>([]);
+    const [selectedStudent, setSelectedStudent] = useState<any>(null);
+    const [isSearchingStudent, setIsSearchingStudent] = useState(false);
+
+    // Fetch students when entering Parent Form
+    useEffect(() => {
+        if (authStage === 'FORM' && isParent && resolvedTenantId && studentListCache.length === 0) {
+            const fetchStudents = async () => {
+                console.log(`[Auth] Fetching students for tenant: ${resolvedTenantId}`);
+                try {
+                    // Ensure we are authenticated (anonymously) to read Firestore
+                    if (!auth.currentUser) {
+                        console.log("[Auth] Signing in anonymously for search access...");
+                        await signInAnonymously(auth);
+                    }
+
+                    // Fetch all users for tenant to avoid case-sensitivity issues in 'role'
+                    const q = query(
+                        collection(db, "users"),
+                        where("tenantId", "==", resolvedTenantId)
+                    );
+                    const snap = await getDocs(q);
+                    console.log(`[Auth] Fetched ${snap.size} users from Firestore`);
+
+                    const list = snap.docs
+                        .map(d => ({ id: d.id, ...d.data() } as any))
+                        .filter(u => {
+                            const r = u.role?.toUpperCase();
+                            // Include if role is explicitly STUDENT, or if no role/admin flags present (legacy/simple users)
+                            return r === 'STUDENT' || (!r && !u.isAdmin);
+                        });
+
+                    console.log(`[Auth] Caching ${list.length} students after filtering`);
+                    setStudentListCache(list);
+                } catch (e) {
+                    console.error("[Auth] Failed to load students for search", e);
+                }
+            };
+            fetchStudents();
+        }
+    }, [authStage, isParent, resolvedTenantId]);
+
+    const handleStudentSearch = (text: string) => {
+        setStudentSearchQuery(text);
+        if (!text || text.length < 2) {
+            setStudentSearchResults([]);
+            return;
+        }
+
+        console.log(`[Auth] Searching for "${text}" in ${studentListCache.length} cached students`);
+        const lower = text.toLowerCase();
+        const matches = studentListCache.filter((s: any) =>
+            s.name?.toLowerCase().includes(lower) ||
+            s.phoneNumber?.includes(text)
+        ).slice(0, 5); // Limit results
+
+        console.log(`[Auth] Found ${matches.length} matches`);
+        setStudentSearchResults(matches);
+    };
+
+    const selectStudent = (student: any) => {
+        setSelectedStudent(student);
+        setLinkedStudentPhone(student.phoneNumber || ''); // Auto-fill phone
+        setStudentSearchQuery('');
+        setStudentSearchResults([]);
+        Keyboard.dismiss();
+    };
+
     const validateTenant = async () => {
         const trimmedCode = inputTenantId.trim();
         if (!trimmedCode) { Alert.alert('Error', 'Please enter an Institute Code'); return; }
@@ -553,15 +624,66 @@ export default function AuthScreen() {
 
                                 {isSignUp && isParent && !isAdminMode && (
                                     <View style={styles.inputWrapper}>
-                                        <Text style={styles.label}>Student's Mobile Number (to link)</Text>
-                                        <TextInput
-                                            style={styles.input}
-                                            placeholder="+1 555 987 6543"
-                                            placeholderTextColor={colors.textSecondary}
-                                            keyboardType="phone-pad"
-                                            value={linkedStudentPhone}
-                                            onChangeText={setLinkedStudentPhone}
-                                        />
+                                        <Text style={styles.label}>Select Your Child</Text>
+
+                                        {selectedStudent ? (
+                                            <View style={{
+                                                flexDirection: 'row',
+                                                alignItems: 'center',
+                                                backgroundColor: colors.primary + '15',
+                                                padding: 12,
+                                                borderRadius: 12,
+                                                borderWidth: 1,
+                                                borderColor: colors.primary
+                                            }}>
+                                                <View style={{ flex: 1 }}>
+                                                    <Text style={{ fontWeight: 'bold', fontSize: 16, color: colors.text }}>{selectedStudent.name}</Text>
+                                                    <Text style={{ fontSize: 12, color: colors.textSecondary }}>Grade: {selectedStudent.grade} • Mobile: {selectedStudent.phoneNumber?.slice(-4).padStart(10, '*')}</Text>
+                                                </View>
+                                                <TouchableOpacity onPress={() => { setSelectedStudent(null); setLinkedStudentPhone(''); }}>
+                                                    <Ionicons name="close-circle" size={24} color={colors.primary} />
+                                                </TouchableOpacity>
+                                            </View>
+                                        ) : (
+                                            <View>
+                                                <View style={[styles.input, { flexDirection: 'row', alignItems: 'center', padding: 10 }]}>
+                                                    <Ionicons name="search" size={20} color={colors.textSecondary} style={{ marginRight: 8 }} />
+                                                    <TextInput
+                                                        style={{ flex: 1, color: colors.text, fontSize: 16 }}
+                                                        placeholder="Search by Name"
+                                                        placeholderTextColor={colors.textSecondary}
+                                                        value={studentSearchQuery}
+                                                        onChangeText={handleStudentSearch}
+                                                    />
+                                                </View>
+
+                                                {studentSearchResults.length > 0 && (
+                                                    <View style={{
+                                                        backgroundColor: colors.card,
+                                                        borderWidth: 1,
+                                                        borderColor: colors.border,
+                                                        borderTopWidth: 0,
+                                                        borderRadius: 8,
+                                                        marginTop: 4,
+                                                        maxHeight: 200
+                                                    }}>
+                                                        {studentSearchResults.map((student) => (
+                                                            <TouchableOpacity
+                                                                key={student.id}
+                                                                style={{ padding: 12, borderBottomWidth: 1, borderBottomColor: colors.border }}
+                                                                onPress={() => selectStudent(student)}
+                                                            >
+                                                                <Text style={{ fontWeight: '600', color: colors.text }}>{student.name}</Text>
+                                                                <Text style={{ fontSize: 12, color: colors.textSecondary }}>Grade: {student.grade || 'N/A'}</Text>
+                                                            </TouchableOpacity>
+                                                        ))}
+                                                    </View>
+                                                )}
+                                            </View>
+                                        )}
+
+                                        {/* Hidden Input for Logic Compatibility */}
+                                        {/* <TextInput value={linkedStudentPhone} style={{ height: 0 }} /> */}
                                     </View>
                                 )}
 

@@ -21,6 +21,8 @@ export default function ParentDashboard() {
 
     // Data States
     const [attendanceHistory, setAttendanceHistory] = useState<any[]>([]);
+    const [viewDate, setViewDate] = useState(new Date());
+    const [calendarMode, setCalendarMode] = useState<'month' | 'list'>('month');
     const [stats, setStats] = useState({ present: 0, absent: 0, late: 0, total: 0 });
     const [homeworkList, setHomeworkList] = useState<any[]>([]);
 
@@ -233,7 +235,7 @@ export default function ParentDashboard() {
             });
 
             setStats({ present: p, absent: a, late: l, total: history.length });
-            setAttendanceHistory(history.slice(0, 30));
+            setAttendanceHistory(history);
         }, (err) => {
             console.error("Attendance snapshot error:", err);
             setLoading(false);
@@ -392,6 +394,51 @@ export default function ParentDashboard() {
         }
     };
 
+    const changeMonth = (increment: number) => {
+        const newDate = new Date(viewDate);
+        newDate.setMonth(newDate.getMonth() + increment);
+        setViewDate(newDate);
+    };
+
+    const getDaysInMonth = () => {
+        const year = viewDate.getFullYear();
+        const month = viewDate.getMonth();
+        const firstDay = new Date(year, month, 1);
+        const lastDay = new Date(year, month + 1, 0);
+
+        const days = [];
+        const startDay = firstDay.getDay(); // 0 is Sunday
+
+        // Add empty cells for previous month
+        for (let i = 0; i < startDay; i++) {
+            days.push(null);
+        }
+
+        // Add days of current month
+        for (let i = 1; i <= lastDay.getDate(); i++) {
+            days.push(new Date(year, month, i));
+        }
+
+        return days;
+    };
+
+    const getDayStatus = (date: Date) => {
+        if (!date) return null;
+
+        // Find record matching this date
+        // Assuming records are sorted by date descending in attendanceHistory
+        // but we need to match exact date.
+        // We'll traverse or find. Since history is small per student usually < 365, find is ok.
+        const record = attendanceHistory.find(r => {
+            const rd = new Date(r.date);
+            return rd.getDate() === date.getDate() &&
+                rd.getMonth() === date.getMonth() &&
+                rd.getFullYear() === date.getFullYear();
+        });
+
+        return record ? record.status : null;
+    };
+
     if (loading && !studentName) { // Only show full loader if we don't even have a name yet
         return (
             <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
@@ -480,33 +527,113 @@ export default function ParentDashboard() {
                     )}
                 </View>
 
-                {/* Attendance List */}
+                {/* Attendance Section */}
                 <View style={styles.sectionHeader}>
                     <Ionicons name="calendar-outline" size={20} color={colors.primary} />
-                    <Text style={styles.sectionTitle}>Attendance History (Last 30 Days)</Text>
+                    <Text style={styles.sectionTitle}>Attendance</Text>
+                    <View style={{ flex: 1 }} />
+                    <TouchableOpacity
+                        onPress={() => setCalendarMode(calendarMode === 'month' ? 'list' : 'month')}
+                        style={{ flexDirection: 'row', alignItems: 'center', gap: 5, padding: 4, borderRadius: 8, backgroundColor: colors.background }}
+                    >
+                        <Ionicons name={calendarMode === 'month' ? 'list' : 'calendar'} size={18} color={colors.primary} />
+                        <Text style={{ fontSize: 12, color: colors.primary, fontWeight: '600' }}>
+                            {calendarMode === 'month' ? 'List View' : 'Calendar View'}
+                        </Text>
+                    </TouchableOpacity>
                 </View>
 
-                {attendanceHistory.length === 0 ? (
-                    <View style={styles.emptyState}>
-                        <Text style={styles.emptyText}>No attendance records found yet.</Text>
+                {calendarMode === 'month' ? (
+                    <View style={styles.calendarContainer}>
+                        {/* Calendar Header */}
+                        <View style={styles.calendarHeader}>
+                            <TouchableOpacity onPress={() => changeMonth(-1)} style={styles.calendarNavBtn}>
+                                <Ionicons name="chevron-back" size={20} color={colors.text} />
+                            </TouchableOpacity>
+                            <Text style={styles.calendarMonthTitle}>
+                                {viewDate.toLocaleString('default', { month: 'long', year: 'numeric' })}
+                            </Text>
+                            <TouchableOpacity onPress={() => changeMonth(1)} style={styles.calendarNavBtn}>
+                                <Ionicons name="chevron-forward" size={20} color={colors.text} />
+                            </TouchableOpacity>
+                        </View>
+
+                        {/* Weekday Headers */}
+                        <View style={styles.weekRow}>
+                            {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((day, i) => (
+                                <Text key={i} style={styles.weekDayText}>{day}</Text>
+                            ))}
+                        </View>
+
+                        {/* Days Grid */}
+                        <View style={styles.daysGrid}>
+                            {getDaysInMonth().map((date, index) => {
+                                if (!date) return <View key={index} style={styles.dayCell} />;
+
+                                const status = getDayStatus(date);
+                                const isToday = new Date().toDateString() === date.toDateString();
+                                const color = status ? getStatusColor(status) : 'transparent';
+
+                                return (
+                                    <View key={index} style={[
+                                        styles.dayCell,
+                                        status && { backgroundColor: color + '20', borderColor: color, borderWidth: 1 }
+                                    ]}>
+                                        <Text style={[
+                                            styles.dayNumber,
+                                            status && { color: color, fontWeight: 'bold' },
+                                            isToday && !status && { color: colors.primary, fontWeight: 'bold' }
+                                        ]}>
+                                            {date.getDate()}
+                                        </Text>
+
+                                        {/* Optional Dot for status if preferred over full bg */}
+                                        {/* {status && <View style={[styles.statusDot, { backgroundColor: color }]} />} */}
+                                    </View>
+                                );
+                            })}
+                        </View>
+
+                        {/* Legend */}
+                        <View style={styles.legendContainer}>
+                            <View style={styles.legendItem}>
+                                <View style={[styles.legendDot, { backgroundColor: colors.success }]} />
+                                <Text style={styles.legendText}>Present</Text>
+                            </View>
+                            <View style={styles.legendItem}>
+                                <View style={[styles.legendDot, { backgroundColor: colors.danger }]} />
+                                <Text style={styles.legendText}>Absent</Text>
+                            </View>
+                            <View style={styles.legendItem}>
+                                <View style={[styles.legendDot, { backgroundColor: colors.warning }]} />
+                                <Text style={styles.legendText}>Late</Text>
+                            </View>
+                        </View>
                     </View>
                 ) : (
-                    <View style={styles.listContainer}>
-                        {attendanceHistory.map((item) => (
-                            <View key={item.id} style={styles.listItem}>
-                                <View style={styles.dateBox}>
-                                    <Text style={styles.dayText}>{new Date(item.date).getDate()}</Text>
-                                    <Text style={styles.monthText}>{new Date(item.date).toLocaleString('default', { month: 'short' })}</Text>
+                    /* List View (Original) */
+                    attendanceHistory.length === 0 ? (
+                        <View style={styles.emptyState}>
+                            <Text style={styles.emptyText}>No attendance records found yet.</Text>
+                        </View>
+                    ) : (
+                        <View style={styles.listContainer}>
+                            {attendanceHistory.slice(0, 50).map((item) => (
+                                <View key={item.id} style={styles.listItem}>
+                                    <View style={styles.dateBox}>
+                                        <Text style={styles.dayText}>{new Date(item.date).getDate()}</Text>
+                                        <Text style={styles.monthText}>{new Date(item.date).toLocaleString('default', { month: 'short' })}</Text>
+                                    </View>
+                                    <View style={{ flex: 1, paddingLeft: 15 }}>
+                                        <Text style={styles.dateFullText}>{new Date(item.date).toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</Text>
+                                    </View>
+                                    <View style={[styles.statusBadge, { backgroundColor: getStatusColor(item.status) + '20' }]}>
+                                        <Text style={[styles.statusText, { color: getStatusColor(item.status) }]}>{item.status}</Text>
+                                    </View>
                                 </View>
-                                <View style={{ flex: 1, paddingLeft: 15 }}>
-                                    <Text style={styles.dateFullText}>{new Date(item.date).toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</Text>
-                                </View>
-                                <View style={[styles.statusBadge, { backgroundColor: getStatusColor(item.status) + '20' }]}>
-                                    <Text style={[styles.statusText, { color: getStatusColor(item.status) }]}>{item.status}</Text>
-                                </View>
-                            </View>
-                        ))}
-                    </View>
+                            ))}
+                        </View>
+                    )
                 )}
 
                 {/* Account Deletion (Apple Compliance) */}
@@ -798,9 +925,84 @@ const makeStyles = (colors: any) => StyleSheet.create({
         alignItems: 'center',
     },
     emptyText: {
-        color: colors.textSecondary,
-        fontStyle: 'italic',
+        color: 'gray',
     },
+    // Calendar Styles
+    calendarContainer: {
+        backgroundColor: colors.card,
+        borderRadius: 16,
+        padding: 16,
+        borderWidth: 1,
+        borderColor: colors.border,
+    },
+    calendarHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 20,
+    },
+    calendarMonthTitle: {
+        fontSize: 18,
+        fontWeight: 'bold',
+        color: colors.text,
+    },
+    calendarNavBtn: {
+        padding: 8,
+        borderRadius: 8,
+        backgroundColor: colors.background,
+    },
+    weekRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        marginBottom: 10,
+    },
+    weekDayText: {
+        width: '14.28%',
+        textAlign: 'center',
+        fontWeight: '600',
+        color: colors.textSecondary,
+        fontSize: 12,
+    },
+    daysGrid: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+    },
+    dayCell: {
+        width: '14.28%',
+        aspectRatio: 1, // Keep cells square
+        justifyContent: 'center',
+        alignItems: 'center',
+        borderRadius: 8,
+        marginBottom: 5,
+    },
+    dayNumber: {
+        fontSize: 14,
+        color: colors.text,
+    },
+    legendContainer: {
+        flexDirection: 'row',
+        justifyContent: 'center',
+        marginTop: 15,
+        gap: 20,
+        paddingTop: 15,
+        borderTopWidth: 1,
+        borderTopColor: colors.border,
+    },
+    legendItem: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+    },
+    legendDot: {
+        width: 8,
+        height: 8,
+        borderRadius: 4,
+    },
+    legendText: {
+        fontSize: 12,
+        color: colors.textSecondary,
+    },
+
     switchModeButton: {
         flexDirection: 'row',
         justifyContent: 'center',

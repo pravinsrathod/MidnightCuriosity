@@ -16,7 +16,7 @@ export default ({ config }) => {
             newArchEnabled: true,
             splash: {
                 image: process.env.APP_SPLASH || `${brandingPath}/splash.png`,
-                resizeMode: "contain",
+                resizeMode: "cover",
                 backgroundColor: process.env.APP_SPLASH_COLOR || "#FFFFFF"
             },
             ios: {

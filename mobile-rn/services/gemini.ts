@@ -38,7 +38,7 @@ export const solveHomeworkFromImage = async (base64Image: string, mimeType: stri
 
         const cleanBase64 = base64Image.replace(/^data:image\/\w+;base64,/, "");
 
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${API_KEY}`;
+        const url = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${API_KEY}`;
         const payload = {
             contents: [{
                 parts: [
@@ -73,7 +73,7 @@ export const solveHomeworkFromText = async (text: string, subject: string = "Gen
     try {
         console.log("Analyzing text with Gemini (XHR)...", "Subject:", subject);
 
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${API_KEY}`;
+        const url = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${API_KEY}`;
         const payload = {
             contents: [{
                 parts: [
