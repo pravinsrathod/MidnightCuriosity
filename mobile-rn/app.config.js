@@ -30,7 +30,8 @@ export default ({ config }) => {
                     NSCameraUsageDescription: `${process.env.APP_NAME || "EduPro"} requires camera access to allow students to capture photos of their written homework for electronic submission and to update their profile pictures.`,
                     NSPhotoLibraryUsageDescription: `${process.env.APP_NAME || "EduPro"} requires photo library access to allow students to select and upload existing homework documents and profile pictures from their gallery.`,
                     NSMicrophoneUsageDescription: `${process.env.APP_NAME || "EduPro"} requires microphone access to enable interactive features, such as voice-to-text for doubt clearing and recording audio responses during lessons.`,
-                    NSFaceIDUsageDescription: `${process.env.APP_NAME || "EduPro"} uses FaceID to provide a secure and faster way to log in to your educational account.`
+                    NSFaceIDUsageDescription: `${process.env.APP_NAME || "EduPro"} uses FaceID to provide a secure and faster way to log in to your educational account.`,
+                    ITSAppUsesNonExemptEncryption: false
                 }
             },
             android: {
