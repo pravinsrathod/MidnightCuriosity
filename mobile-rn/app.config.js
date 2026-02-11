@@ -9,7 +9,7 @@ export default ({ config }) => {
             name: process.env.APP_NAME || "EduPro",
             slug: "mobile-rn",
             scheme: "com.prowin.edupro",
-            version: "1.2.1",
+            version: "1.2.2",
             orientation: "portrait",
             icon: process.env.APP_ICON || `${brandingPath}/icon.png`,
             userInterfaceStyle: "light",
