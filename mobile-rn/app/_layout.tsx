@@ -65,6 +65,8 @@ function RootLayoutNav() {
           <Stack.Screen name="exam" />
           <Stack.Screen name="poll" />
           <Stack.Screen name="poll-history" />
+          <Stack.Screen name="fees" />
+          <Stack.Screen name="fee-detail" />
         </Stack>
         <StatusBar style={theme === 'dark' ? 'light' : 'dark'} />
       </ThemeProvider>

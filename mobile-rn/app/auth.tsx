@@ -299,14 +299,8 @@ export default function AuthScreen() {
                 if (Platform.OS === 'ios') deviceId = await Application.getIosIdForVendorAsync() || "ios-unknown";
                 else if (Platform.OS === 'android') deviceId = await Application.getAndroidId() || "android-unknown";
 
-                if (!userData.deviceId) {
-                    // Start binding on first login if missing
-                    await setDoc(doc(db, "users", userUid), { deviceId: deviceId }, { merge: true });
-                } else if (userData.deviceId !== deviceId) {
-                    Alert.alert("Login Blocked", "You are logged in on another device. Contact Admin to reset.");
-                    await auth.signOut();
-                    return;
-                }
+                // Update binding when user authenticates successfully
+                await setDoc(doc(db, "users", userUid), { deviceId: deviceId }, { merge: true });
 
                 // Check Status
                 if (userData.status === 'BLOCKED' || userData.status === 'REJECTED') {
@@ -359,12 +353,8 @@ export default function AuthScreen() {
                             if (Platform.OS === 'ios') deviceId = await Application.getIosIdForVendorAsync() || "ios-unknown";
                             else if (Platform.OS === 'android') deviceId = await Application.getAndroidId() || "android-unknown";
 
-                            if (!userData.deviceId) await setDoc(doc(db, "users", userUid), { deviceId: deviceId }, { merge: true });
-                            else if (userData.deviceId !== deviceId) {
-                                Alert.alert("Login Blocked", "Logged in on another device.");
-                                await auth.signOut();
-                                return;
-                            }
+                            // Update binding when user authenticates successfully
+                            await setDoc(doc(db, "users", userUid), { deviceId: deviceId }, { merge: true });
 
                             if (userData.status === 'BLOCKED' || userData.status === 'REJECTED') {
                                 Alert.alert("Access Denied", "Account disabled.");

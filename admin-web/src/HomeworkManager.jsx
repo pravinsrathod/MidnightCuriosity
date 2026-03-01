@@ -127,9 +127,12 @@ const HomeworkManager = ({ students, tenantId, onAlert, grades: propGrades, subj
                     const tokens = parentSnaps.docs
                         .map(d => d.data())
                         .filter(p => {
-                            if (!p.pushToken || !p.linkedStudentPhone) return false;
-                            const cleanParentLink = p.linkedStudentPhone.replace(/[^0-9]/g, '');
-                            return studentPhones.some(sp => sp.replace(/[^0-9]/g, '') === cleanParentLink);
+                            if (!p.pushToken) return false;
+                            const pPhones = [(p.linkedStudentPhone || ''), ...(p.linkedStudentPhones || [])];
+                            return pPhones.some(pp => {
+                                const cleanParentLink = (pp || '').replace(/[^0-9]/g, '');
+                                return cleanParentLink && studentPhones.some(sp => (sp || '').replace(/[^0-9]/g, '') === cleanParentLink);
+                            });
                         })
                         .map(p => p.pushToken);
 
@@ -213,7 +216,11 @@ const HomeworkManager = ({ students, tenantId, onAlert, grades: propGrades, subj
 
                         const tokens = parentSnaps.docs
                             .map(d => d.data())
-                            .filter(p => p.pushToken && (p.linkedStudentPhone || '').replace(/[^0-9]/g, '') === cleanStudentPhone)
+                            .filter(p => {
+                                if (!p.pushToken) return false;
+                                const pPhones = [(p.linkedStudentPhone || ''), ...(p.linkedStudentPhones || [])];
+                                return pPhones.some(pp => (pp || '').replace(/[^0-9]/g, '') === cleanStudentPhone);
+                            })
                             .map(p => p.pushToken);
 
                         if (tokens.length > 0) {
@@ -252,115 +259,125 @@ const HomeworkManager = ({ students, tenantId, onAlert, grades: propGrades, subj
     const filteredHomework = homeworkList.filter(hw => hw.dueDate === selectedDate && (!filterGrade || filterGrade === 'All' || hw.grade === filterGrade));
 
     return (
-        <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
+        <div className="animate-fade-in" style={{ maxWidth: '1200px', margin: '0 auto' }}>
             {/* SUB-MENU TABS */}
-            <div style={{ display: 'flex', gap: '20px', marginBottom: '20px', borderBottom: '1px solid var(--border)' }}>
+            <div className="glass-panel" style={{ display: 'flex', gap: '8px', padding: '8px', marginBottom: '32px', borderRadius: '16px' }}>
                 <button
                     onClick={() => { setActiveSubTab('create'); setSelectedDate(new Date(new Date().getTime() - (new Date().getTimezoneOffset() * 60000)).toISOString().split('T')[0]); }}
-                    style={{
-                        padding: '10px 20px',
-                        background: 'transparent',
-                        border: 'none',
-                        borderBottom: activeSubTab === 'create' ? '2px solid var(--accent)' : 'none',
-                        color: activeSubTab === 'create' ? 'var(--accent)' : 'var(--text-secondary)',
-                        cursor: 'pointer',
-                        fontWeight: 'bold'
-                    }}
+                    className={`btn ${activeSubTab === 'create' ? 'btn-primary' : 'btn-ghost'}`}
+                    style={{ flex: 1, borderRadius: '12px' }}
                 >
-                    Create New Homework
+                    Assign Homework
                 </button>
                 <button
                     onClick={() => { setActiveSubTab('assess'); setSelectedDate(new Date(new Date().getTime() - (new Date().getTimezoneOffset() * 60000)).toISOString().split('T')[0]); }}
-                    style={{
-                        padding: '10px 20px',
-                        background: 'transparent',
-                        border: 'none',
-                        borderBottom: activeSubTab === 'assess' ? '2px solid var(--accent)' : 'none',
-                        color: activeSubTab === 'assess' ? 'var(--accent)' : 'var(--text-secondary)',
-                        cursor: 'pointer',
-                        fontWeight: 'bold'
-                    }}
+                    className={`btn ${activeSubTab === 'assess' ? 'btn-primary' : 'btn-ghost'}`}
+                    style={{ flex: 1, borderRadius: '12px' }}
                 >
-                    Assess Homework
+                    Review Submissions
                 </button>
             </div>
 
             <div className="content-area">
                 {/* 1. Create Homework Section */}
                 {activeSubTab === 'create' && (
-                    <div className="card" style={{ maxWidth: '600px' }}>
-                        <h3 style={{ marginBottom: '15px' }}>➕ Assign New Homework</h3>
-                        <form onSubmit={handleCreateHomework} style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-                            <div>
-                                <label className="label">Due Date (Today Onwards)</label>
+                    <div className="glass-panel animate-scale-up" style={{ maxWidth: '700px', margin: '0 auto', padding: '40px' }}>
+                        <div style={{ textAlign: 'center', marginBottom: '32px' }}>
+                            <div style={{ fontSize: '3rem', marginBottom: '16px' }}>📝</div>
+                            <h2 style={{ fontSize: '1.75rem' }}>Create New Assignment</h2>
+                            <p style={{ color: 'var(--text-secondary)' }}>Send a new task to your students' dashboard.</p>
+                        </div>
+
+                        <form onSubmit={handleCreateHomework} style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+                            <div className="form-group">
+                                <label className="label">Due Date</label>
                                 <input
                                     type="date"
                                     min={new Date(new Date().getTime() - (new Date().getTimezoneOffset() * 60000)).toISOString().split('T')[0]} // Min Today
                                     value={selectedDate}
                                     onChange={e => setSelectedDate(e.target.value)}
-                                    style={{ width: '100%', padding: '8px', background: 'var(--bg-input)', border: '1px solid var(--border)', color: '#fff', borderRadius: '4px' }}
+                                    className="date-input"
+                                    style={{ width: '100%', padding: '12px', background: 'var(--bg-input)', border: '1px solid var(--border)', color: '#fff', borderRadius: '10px' }}
                                 />
                             </div>
+
                             <div className="grid-2">
-                                <div>
-                                    <label className="label">Grade</label>
+                                <div className="form-group">
+                                    <label className="label">Class/Grade</label>
                                     <select
                                         value={newHomework.grade}
                                         onChange={e => setNewHomework({ ...newHomework, grade: e.target.value })}
-                                        style={{ width: '100%', padding: '8px', background: 'var(--bg-input)', border: '1px solid var(--border)', color: '#fff', borderRadius: '4px' }}
+                                        style={{ width: '100%', padding: '12px', background: 'var(--bg-input)', border: '1px solid var(--border)', color: '#fff', borderRadius: '10px' }}
                                     >
                                         <option value="">Select Grade</option>
                                         {grades.map(g => <option key={g} value={g}>{g}</option>)}
                                     </select>
                                 </div>
-                                <div>
+                                <div className="form-group">
                                     <label className="label">Subject</label>
                                     <select
                                         value={newHomework.subject}
                                         onChange={e => setNewHomework({ ...newHomework, subject: e.target.value })}
-                                        style={{ width: '100%', padding: '8px', background: 'var(--bg-input)', border: '1px solid var(--border)', color: '#fff', borderRadius: '4px' }}
+                                        style={{ width: '100%', padding: '12px', background: 'var(--bg-input)', border: '1px solid var(--border)', color: '#fff', borderRadius: '10px' }}
                                     >
                                         <option value="">Select Subject</option>
                                         {subjects.map(s => <option key={s} value={s}>{s}</option>)}
                                     </select>
                                 </div>
                             </div>
-                            <div>
-                                <label className="label">Topic (Optional)</label>
-                                <select
+
+                            <div className="form-group">
+                                <label className="label">Topic Name</label>
+                                <input
+                                    placeholder="e.g. Trigonometry Basics"
                                     value={newHomework.topic}
                                     onChange={e => setNewHomework({ ...newHomework, topic: e.target.value })}
-                                    style={{ width: '100%', padding: '8px', background: 'var(--bg-input)', border: '1px solid var(--border)', color: '#fff', borderRadius: '4px' }}
-                                >
-                                    <option value="">Select Topic</option>
-                                    {topics.map(t => <option key={t} value={t}>{t}</option>)}
-                                </select>
+                                    style={{ width: '100%', padding: '12px', background: 'var(--bg-input)', border: '1px solid var(--border)', color: '#fff', borderRadius: '10px' }}
+                                />
                             </div>
-                            <div>
-                                <label className="label">Task Title</label>
+
+                            <div className="form-group">
+                                <label className="label">Assignment Title</label>
                                 <input
-                                    placeholder="e.g. Algebra Exercise 4.1"
+                                    placeholder="e.g. Exercise 5.2 - Question 1 to 10"
                                     value={newHomework.title}
                                     onChange={e => setNewHomework({ ...newHomework, title: e.target.value })}
-                                    style={{ width: '100%', padding: '8px', background: 'var(--bg-input)', border: '1px solid var(--border)', color: '#fff', borderRadius: '4px' }}
+                                    style={{ width: '100%', padding: '12px', background: 'var(--bg-input)', border: '1px solid var(--border)', color: '#fff', borderRadius: '10px' }}
                                 />
                             </div>
-                            <div>
-                                <label className="label">Description / Instructions</label>
+
+                            <div className="form-group">
+                                <label className="label">Task Instructions</label>
                                 <textarea
-                                    placeholder="Solve Q1 to Q10 in notebook and upload photo."
+                                    placeholder="Explain the task clearly for students..."
                                     value={newHomework.description}
                                     onChange={e => setNewHomework({ ...newHomework, description: e.target.value })}
-                                    rows={3}
-                                    style={{ width: '100%', padding: '8px', background: 'var(--bg-input)', border: '1px solid var(--border)', color: '#fff', borderRadius: '4px' }}
+                                    rows={4}
+                                    style={{ width: '100%', padding: '12px', background: 'var(--bg-input)', border: '1px solid var(--border)', color: '#fff', borderRadius: '10px', resize: 'vertical' }}
                                 />
                             </div>
-                            <div>
-                                <label className="label">Reference File (PDF/Image)</label>
-                                <input type="file" onChange={e => setHomeworkFile(e.target.files[0])} />
+
+                            <div className="form-group">
+                                <label className="label">Upload Resource (PDF/Image)</label>
+                                <div style={{
+                                    border: '2px dashed var(--border)',
+                                    padding: '24px',
+                                    borderRadius: '12px',
+                                    textAlign: 'center',
+                                    background: homeworkFile ? 'rgba(59, 130, 246, 0.05)' : 'transparent',
+                                    transition: 'all 0.3s'
+                                }}>
+                                    <input type="file" id="hw-file" onChange={e => setHomeworkFile(e.target.files[0])} style={{ display: 'none' }} />
+                                    <label htmlFor="hw-file" style={{ cursor: 'pointer' }}>
+                                        <div style={{ fontSize: '2rem', marginBottom: '8px' }}>{homeworkFile ? '📄' : '📤'}</div>
+                                        <div style={{ fontWeight: 600 }}>{homeworkFile ? homeworkFile.name : 'Click to Browse Files'}</div>
+                                        <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '4px' }}>Max file size: 10MB</div>
+                                    </label>
+                                </div>
                             </div>
-                            <button type="submit" className="btn-primary" disabled={creating}>
-                                {creating ? "Assigning..." : "Assign Homework"}
+
+                            <button type="submit" className="btn btn-primary" disabled={creating} style={{ padding: '16px', fontSize: '1.1rem', marginTop: '12px' }}>
+                                {creating ? <span className="loader" style={{ width: '20px', height: '20px' }}></span> : "🚀 Distribute Assignment"}
                             </button>
                         </form>
                     </div>
@@ -368,86 +385,104 @@ const HomeworkManager = ({ students, tenantId, onAlert, grades: propGrades, subj
 
                 {/* 2. Assess Homework Section */}
                 {activeSubTab === 'assess' && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                        <div className="card" style={{ marginBottom: '10px', padding: '15px' }}>
-                            <label className="label">Filter by Due Date (Today & Previous)</label>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
+                        <div className="glass-panel" style={{ padding: '20px 32px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '20px', flexWrap: 'wrap' }}>
+                            <div>
+                                <h3 style={{ margin: 0 }}>Filter by Due Date</h3>
+                                <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Browsing submissions for tasks due on this date.</p>
+                            </div>
                             <input
                                 type="date"
                                 max={new Date(new Date().getTime() - (new Date().getTimezoneOffset() * 60000)).toISOString().split('T')[0]} // Max Today
                                 value={selectedDate}
                                 onChange={e => setSelectedDate(e.target.value)}
-                                style={{ width: '100%', padding: '8px', background: 'var(--bg-input)', border: '1px solid var(--border)', color: '#fff', borderRadius: '4px' }}
+                                style={{ padding: '10px 16px', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border)', color: '#fff', borderRadius: '10px' }}
                             />
                         </div>
 
                         {filteredHomework.length === 0 ? (
-                            <div className="card" style={{ textAlign: 'center', color: 'var(--text-secondary)' }}>
-                                No homework found for {selectedDate}.
+                            <div className="glass-panel" style={{ padding: '80px 20px', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                                <div style={{ fontSize: '3rem', marginBottom: '16px', opacity: 0.5 }}>📭</div>
+                                <h3>No Assignments Found</h3>
+                                <p>There were no homework tasks due on {selectedDate}.</p>
                             </div>
                         ) : (
-                            filteredHomework.map(hw => (
-                                <div key={hw.id} className="card" style={{ borderLeft: '4px solid var(--accent)' }}>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                                        <h4>{hw.title}</h4>
-                                        <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Due: {hw.dueDate}</span>
-                                    </div>
-                                    <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '10px' }}>
-                                        {hw.grade} • {hw.subject}
-                                        {hw.attachmentUrl && <a href={hw.attachmentUrl} target="_blank" rel="noreferrer" style={{ marginLeft: '10px', color: 'var(--accent)' }}>[View Attachment]</a>}
-                                    </div>
-                                    <p style={{ fontSize: '0.9rem', marginBottom: '15px' }}>{hw.description}</p>
-
-                                    {/* Student Status List */}
-                                    <div style={{ background: 'var(--bg-secondary)', padding: '10px', borderRadius: '8px', maxHeight: '300px', overflowY: 'auto' }}>
-                                        <div style={{ fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '10px', color: 'var(--text-secondary)' }}> STUDENT SUBMISSIONS</div>
-                                        {students.filter(s => s.grade === hw.grade && s.status === 'ACTIVE' && (s.role === 'student' || s.role === 'STUDENT')).map(student => {
-                                            const sub = submissions[hw.id]?.[student.id];
-                                            const isChecked = sub?.status === 'CHECKED';
-                                            const isIncomplete = sub?.status === 'INCOMPLETE';
-
-                                            return (
-                                                <div key={student.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
-                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                                        <span style={{
-                                                            width: '8px', height: '8px', borderRadius: '50%',
-                                                            background: sub ? (isChecked ? 'var(--success)' : (isIncomplete ? 'var(--danger)' : 'var(--warning)')) : 'var(--text-tertiary)'
-                                                        }}></span>
-                                                        <span>{student.name}</span>
-                                                        {sub && sub.fileUrl && (
-                                                            <a href={sub.fileUrl} target="_blank" rel="noreferrer" style={{ fontSize: '0.8rem', color: 'var(--accent)' }}>
-                                                                [View File]
-                                                            </a>
-                                                        )}
-                                                    </div>
-                                                    <button
-                                                        className="btn-ghost"
-                                                        style={{
-                                                            fontSize: '0.8rem', padding: '2px 8px',
-                                                            border: isChecked ? '1px solid var(--success)' : (isIncomplete ? '1px solid var(--danger)' : '1px solid var(--border)'),
-                                                            color: isChecked ? 'var(--success)' : (isIncomplete ? 'var(--danger)' : 'var(--text)')
-                                                        }}
-                                                        onClick={() => {
-                                                            setReviewingSubmission({
-                                                                homeworkId: hw.id,
-                                                                studentId: student.id,
-                                                                studentName: student.name,
-                                                                ...sub // Spread existing submission data if any
-                                                            });
-                                                            setReviewStatus(sub?.status || 'CHECKED');
-                                                            setTeacherComment(sub?.teacherComment || "");
-                                                        }}
-                                                    >
-                                                        {isChecked ? "✅ Verified" : (isIncomplete ? "❌ Incomplete" : (sub ? "Review" : "Mark manually"))}
-                                                    </button>
+                            <div className="grid-3">
+                                {filteredHomework.map(hw => (
+                                    <div key={hw.id} className="glass-panel animate-fade-in" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px' }}>
+                                            <div style={{ flex: 1, minWidth: 0 }}>
+                                                <h4 style={{ margin: 0, fontSize: '1.25rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{hw.title}</h4>
+                                                <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
+                                                    <span className="badge" style={{ background: 'var(--bg-tertiary)' }}>{hw.grade}</span> • {hw.subject}
                                                 </div>
-                                            )
-                                        })}
-                                        {students.filter(s => s.grade === hw.grade && s.status === 'ACTIVE' && (s.role === 'student' || s.role === 'STUDENT')).length === 0 && (
-                                            <div style={{ fontSize: '0.8rem', color: 'var(--text-tertiary)' }}>No students found in {hw.grade}</div>
-                                        )}
+                                            </div>
+                                            {hw.attachmentUrl && (
+                                                <a href={hw.attachmentUrl} target="_blank" rel="noreferrer" className="btn btn-ghost" style={{ padding: '8px', borderRadius: '8px' }} title="View Resource">
+                                                    📎
+                                                </a>
+                                            )}
+                                        </div>
+
+                                        <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', marginBottom: '24px', flex: 1, lineClamp: 3, display: '-webkit-box', WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{hw.description}</p>
+
+                                        {/* Submission Progress */}
+                                        <div style={{ background: 'rgba(0,0,0,0.2)', padding: '16px', borderRadius: '12px' }}>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: '12px' }}>
+                                                <span>Submissions</span>
+                                                <span style={{ color: 'var(--accent)' }}>
+                                                    {Object.keys(submissions[hw.id] || {}).length} / {students.filter(s => s.grade === hw.grade && s.status === 'ACTIVE').length}
+                                                </span>
+                                            </div>
+
+                                            <div style={{ maxHeight: '250px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                                {students.filter(s => s.grade === hw.grade && s.status === 'ACTIVE' && (s.role === 'student' || s.role === 'STUDENT')).map(student => {
+                                                    const sub = submissions[hw.id]?.[student.id];
+                                                    const isChecked = sub?.status === 'CHECKED';
+                                                    const isIncomplete = sub?.status === 'INCOMPLETE';
+
+                                                    return (
+                                                        <div key={student.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', background: 'rgba(255,255,255,0.02)', borderRadius: '8px', border: '1px solid var(--border)' }}>
+                                                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0, flex: 1 }}>
+                                                                <div style={{
+                                                                    width: '8px', height: '8px', borderRadius: '50%', flexShrink: 0,
+                                                                    background: sub ? (isChecked ? 'var(--success)' : (isIncomplete ? 'var(--danger)' : 'var(--warning)')) : 'rgba(255,255,255,0.1)'
+                                                                }}></div>
+                                                                <span style={{ fontSize: '0.85rem', fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{student.name}</span>
+                                                            </div>
+                                                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                                {sub?.fileUrl && (
+                                                                    <a href={sub.fileUrl} target="_blank" rel="noreferrer" style={{ fontSize: '0.9rem', color: 'var(--accent)' }} title="View Submission">👁️</a>
+                                                                )}
+                                                                <button
+                                                                    className="btn btn-ghost"
+                                                                    style={{
+                                                                        fontSize: '0.75rem', padding: '4px 10px', minWidth: '85px',
+                                                                        borderColor: isChecked ? 'var(--success-border)' : (isIncomplete ? 'var(--danger-border)' : 'var(--border)'),
+                                                                        color: isChecked ? 'var(--success)' : (isIncomplete ? 'var(--danger)' : 'var(--text-primary)')
+                                                                    }}
+                                                                    onClick={() => {
+                                                                        setReviewingSubmission({
+                                                                            homeworkId: hw.id,
+                                                                            studentId: student.id,
+                                                                            studentName: student.name,
+                                                                            ...sub
+                                                                        });
+                                                                        setReviewStatus(sub?.status || 'CHECKED');
+                                                                        setTeacherComment(sub?.teacherComment || "");
+                                                                    }}
+                                                                >
+                                                                    {isChecked ? "Verified" : (isIncomplete ? "Redo" : (sub ? "Review" : "Mark"))}
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                    )
+                                                })}
+                                            </div>
+                                        </div>
                                     </div>
-                                </div>
-                            ))
+                                ))}
+                            </div>
                         )}
                     </div>
                 )}
@@ -455,72 +490,79 @@ const HomeworkManager = ({ students, tenantId, onAlert, grades: propGrades, subj
 
             {/* REVIEW MODAL */}
             {reviewingSubmission && (
-                <div style={{
-                    position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-                    background: 'rgba(0,0,0,0.8)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000
-                }}>
-                    <div className="card" style={{ width: '500px', padding: '20px', border: '1px solid var(--border)' }}>
-                        <h3 style={{ marginBottom: '15px' }}>Review Homework: {reviewingSubmission.studentName}</h3>
+                <div className="modal-overlay" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+                    <div className="glass-panel animate-scale-up" style={{ width: '100%', maxWidth: '550px', padding: '32px', border: '1px solid var(--border)', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '24px' }}>
+                            <h3 style={{ margin: 0, fontSize: '1.5rem' }}>Submission Review</h3>
+                            <button className="btn btn-ghost" onClick={() => setReviewingSubmission(null)} style={{ padding: '8px' }}>✕</button>
+                        </div>
 
-                        {reviewingSubmission.fileUrl ? (
-                            <div style={{ marginBottom: '15px', padding: '10px', background: 'var(--bg-tertiary)', borderRadius: '4px' }}>
-                                📄 Student uploaded: <a href={reviewingSubmission.fileUrl} target="_blank" rel="noreferrer" style={{ color: 'var(--accent)' }}>View Attachment</a>
-                                <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '5px' }}>
-                                    Submitted at: {reviewingSubmission.submittedAt ? new Date(reviewingSubmission.submittedAt.seconds * 1000).toLocaleString() : "Manual Entry"}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '16px', padding: '16px', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', border: '1px solid var(--border)', marginBottom: '24px' }}>
+                            <div style={{ width: '48px', height: '48px', borderRadius: '50%', background: 'var(--accent)', display: 'flex', justifyContent: 'center', alignItems: 'center', fontSize: '1.25rem', fontWeight: 800 }}>
+                                {reviewingSubmission.studentName?.charAt(0)}
+                            </div>
+                            <div>
+                                <div style={{ fontSize: '1.1rem', fontWeight: 'bold' }}>{reviewingSubmission.studentName}</div>
+                                <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                                    {reviewingSubmission.submittedAt ? `Submitted: ${new Date(reviewingSubmission.submittedAt.seconds * 1000).toLocaleDateString()}` : "No submission record"}
                                 </div>
-                            </div>
-                        ) : (
-                            <div style={{ marginBottom: '15px', padding: '10px', background: 'var(--bg-tertiary)', borderRadius: '4px', color: 'var(--warning)' }}>
-                                ⚠️ No file uploaded by student.
-                            </div>
-                        )}
-
-                        <div className="form-group">
-                            <label className="label">Status</label>
-                            <div style={{ display: 'flex', gap: '10px' }}>
-                                <label style={{ display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer', padding: '8px', border: '1px solid var(--border)', borderRadius: '4px', background: reviewStatus === 'CHECKED' ? 'var(--success)' : 'transparent' }}>
-                                    <input
-                                        type="radio"
-                                        name="status"
-                                        value="CHECKED"
-                                        checked={reviewStatus === 'CHECKED'}
-                                        onChange={() => setReviewStatus('CHECKED')}
-                                    />
-                                    Verified (Complete)
-                                </label>
-                                <label style={{ display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer', padding: '8px', border: '1px solid var(--border)', borderRadius: '4px', background: reviewStatus === 'INCOMPLETE' ? 'var(--danger)' : 'transparent' }}>
-                                    <input
-                                        type="radio"
-                                        name="status"
-                                        value="INCOMPLETE"
-                                        checked={reviewStatus === 'INCOMPLETE'}
-                                        onChange={() => setReviewStatus('INCOMPLETE')}
-                                    />
-                                    Incomplete / Redo
-                                </label>
                             </div>
                         </div>
 
-                        <div className="form-group">
-                            <label className="label">Teacher's Remark / Feedback</label>
+                        {reviewingSubmission.fileUrl && (
+                            <div style={{ marginBottom: '24px' }}>
+                                <label className="label">Student's Work</label>
+                                <a href={reviewingSubmission.fileUrl} target="_blank" rel="noreferrer" className="glass-panel" style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 20px', textDecoration: 'none', color: 'inherit', borderRadius: '10px', transition: 'all 0.2s' }}>
+                                    <span style={{ fontSize: '1.5rem' }}>📄</span>
+                                    <div style={{ flex: 1 }}>
+                                        <div style={{ fontWeight: 600, color: 'var(--accent)' }}>View Attachment</div>
+                                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Opens in new tab</div>
+                                    </div>
+                                    <span>→</span>
+                                </a>
+                            </div>
+                        )}
+
+                        <div className="form-group" style={{ marginBottom: '24px' }}>
+                            <label className="label">Evaluation Status</label>
+                            <div style={{ display: 'flex', gap: '12px' }}>
+                                <button
+                                    className={`btn ${reviewStatus === 'CHECKED' ? 'btn-primary' : 'btn-ghost'}`}
+                                    onClick={() => setReviewStatus('CHECKED')}
+                                    style={{ flex: 1, height: '45px', border: reviewStatus === 'CHECKED' ? 'none' : '1px solid var(--success-border)', color: reviewStatus === 'CHECKED' ? '#fff' : 'var(--success)' }}
+                                >
+                                    ✅ Verified
+                                </button>
+                                <button
+                                    className={`btn ${reviewStatus === 'INCOMPLETE' ? 'btn-danger' : 'btn-ghost'}`}
+                                    onClick={() => setReviewStatus('INCOMPLETE')}
+                                    style={{ flex: 1, height: '45px', border: reviewStatus === 'INCOMPLETE' ? 'none' : '1px solid var(--danger-border)', color: reviewStatus === 'INCOMPLETE' ? '#fff' : 'var(--danger)' }}
+                                >
+                                    ❌ Incomplete
+                                </button>
+                            </div>
+                        </div>
+
+                        <div className="form-group" style={{ marginBottom: '24px' }}>
+                            <label className="label">Teacher's Feedback</label>
                             <textarea
                                 rows={3}
                                 value={teacherComment}
                                 onChange={e => setTeacherComment(e.target.value)}
-                                placeholder="Good work! OR Please redo Q3."
-                                style={{ width: '100%', padding: '8px', background: 'var(--bg-input)', border: '1px solid var(--border)', color: '#fff', borderRadius: '4px' }}
+                                placeholder="Add a personal note or guidance for the student..."
+                                style={{ width: '100%', padding: '12px', background: 'var(--bg-input)', border: '1px solid var(--border)', color: '#fff', borderRadius: '10px' }}
                             />
                         </div>
 
-                        <div className="form-group">
-                            <label className="label">Attach Correction File (Optional)</label>
-                            <input type="file" onChange={e => setTeacherFile(e.target.files[0])} />
+                        <div className="form-group" style={{ marginBottom: '32px' }}>
+                            <label className="label">Attach Correction/Solution (Optional)</label>
+                            <input type="file" onChange={e => setTeacherFile(e.target.files[0])} style={{ fontSize: '0.9rem' }} />
                         </div>
 
-                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '20px' }}>
-                            <button className="btn-ghost" onClick={() => setReviewingSubmission(null)}>Cancel</button>
-                            <button className="btn-primary" onClick={handleReviewSave} disabled={loading}>
-                                {loading ? "Saving..." : "Save Status"}
+                        <div style={{ display: 'flex', gap: '12px' }}>
+                            <button className="btn btn-ghost" onClick={() => setReviewingSubmission(null)} style={{ flex: 1 }}>Cancel</button>
+                            <button className="btn btn-primary" onClick={handleReviewSave} disabled={loading} style={{ flex: 2 }}>
+                                {loading ? <span className="loader" style={{ width: '16px', height: '16px' }}></span> : "💾 Save Evaluation"}
                             </button>
                         </div>
                     </div>

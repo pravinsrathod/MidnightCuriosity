@@ -5,9 +5,11 @@
 const API_KEY_STORAGE_KEY = 'gemini_api_key';
 
 export const getApiKey = () => {
-    const envKey = import.meta.env.VITE_GEMINI_API_KEY;
-    if (envKey) return envKey;
-    return localStorage.getItem(API_KEY_STORAGE_KEY);
+    // Priority: 1. User specified key in LocalStorage, 2. Env variable
+    const localKey = localStorage.getItem(API_KEY_STORAGE_KEY);
+    if (localKey) return localKey;
+
+    return import.meta.env.VITE_GEMINI_API_KEY || "";
 };
 export const setApiKey = (key) => localStorage.setItem(API_KEY_STORAGE_KEY, key);
 
@@ -266,7 +268,7 @@ export const generateExamFromPdf = async (pdfFile, apiKey) => {
             contents: [{
                 parts: [
                     { text: "Analyze the uploaded document. Extract ALL multiple choice questions found in the document (up to 50). Format the output STRICTLY as a JSON array of objects, where each object has: 'question' (string), 'options' (array of 4 strings), 'correctAnswer' (index 0-3). Do not include markdown code blocks, just raw JSON." },
-                    { file_data: { file_uri: processedFile.uri, mime_type: processedFile.mime_type } }
+                    { file_data: { file_uri: processedFile.uri, mime_type: processedFile.mimeType } }
                 ]
             }]
         })

@@ -29,9 +29,9 @@ export default function GradeSelectionScreen() {
     const [activePoll, setActivePoll] = useState<any>(null);
     const [hasVoted, setHasVoted] = useState(false);
 
-    // Homework State
-    const [recentHomework, setRecentHomework] = useState<any[]>([]);
-    const [hwLoading, setHwLoading] = useState(true);
+    // Fees State
+    const [pendingFees, setPendingFees] = useState<any[]>([]);
+    const [feesTotalDue, setFeesTotalDue] = useState(0);
 
     // Listen for Active Polls
     // Listen for Active Polls (Multi-tenant)
@@ -56,27 +56,28 @@ export default function GradeSelectionScreen() {
         return () => unsub();
     }, [tenantId]);
 
-    // Listen for Recent Homework
+
+    // Listen for Pending Fees
     useEffect(() => {
-        if (!tenantId || !userGrade) return;
-        setHwLoading(true);
+        const uid = auth.currentUser?.uid;
+        if (!uid) return;
         const q = query(
-            collection(db, "homework"),
-            where("tenantId", "==", tenantId),
-            where("grade", "==", userGrade),
-            orderBy("dueDate", "desc"),
-            limit(2)
+            collection(db, 'fees'),
+            where('studentId', '==', uid)
         );
         const unsub = onSnapshot(q, (snapshot) => {
-            const list = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-            setRecentHomework(list);
-            setHwLoading(false);
-        }, (error) => {
-            console.error("Homework snapshot error", error);
-            setHwLoading(false);
+            const today = new Date().toISOString().split('T')[0];
+            const list = snapshot.docs
+                .map(d => ({ id: d.id, ...d.data() } as any))
+                .filter(f => {
+                    if (f.status === 'PENDING' && f.dueDate < today) f.status = 'OVERDUE';
+                    return ['PENDING', 'OVERDUE', 'PARTIAL'].includes(f.status);
+                });
+            setPendingFees(list);
+            setFeesTotalDue(list.reduce((s: number, f: any) => s + ((f.totalAmount || 0) - (f.paidAmount || 0)), 0));
         });
         return () => unsub();
-    }, [tenantId, userGrade]);
+    }, []);
 
     const handleVote = async (optionIndex: number) => {
         if (!activePoll) return;
@@ -388,38 +389,54 @@ export default function GradeSelectionScreen() {
                     </TouchableOpacity>
                 )}
 
-                {/* Homework Section */}
-                <View style={styles.homeworkSection}>
-                    <View style={styles.sectionHeader}>
-                        <Text style={styles.sectionTitle}>Recent Homework</Text>
-                        <TouchableOpacity onPress={() => router.push('/homework')}>
-                            <Text style={styles.viewAllText}>View All</Text>
-                        </TouchableOpacity>
-                    </View>
-
-                    {hwLoading ? (
-                        <ActivityIndicator color={colors.primary} style={{ marginVertical: 20 }} />
-                    ) : recentHomework.length === 0 ? (
-                        <View style={styles.emptyHwCard}>
-                            <Ionicons name="book-outline" size={24} color={colors.textSecondary} />
-                            <Text style={styles.emptyHwText}>No homework available</Text>
-                        </View>
-                    ) : (
-                        recentHomework.map((hw) => (
-                            <TouchableOpacity
-                                key={hw.id}
-                                style={styles.hwCard}
-                                onPress={() => router.push({ pathname: '/homework/[id]', params: { id: hw.id, title: hw.title } })}
-                            >
-                                <View style={styles.hwInfo}>
-                                    <Text style={styles.hwTitle} numberOfLines={1}>{hw.title}</Text>
-                                    <Text style={styles.hwSubject}>{hw.subject} • Due: {hw.dueDate}</Text>
-                                </View>
-                                <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
-                            </TouchableOpacity>
-                        ))
-                    )}
+                {/* Fees Section */}
+                <View style={styles.sectionHeader}>
+                    <Ionicons name="card-outline" size={20} color={colors.primary} />
+                    <Text style={styles.sectionTitle}>Fees</Text>
+                    <View style={{ flex: 1 }} />
+                    <TouchableOpacity onPress={() => router.push('/fees')}>
+                        <Text style={{ color: colors.primary, fontWeight: '600' }}>View All</Text>
+                    </TouchableOpacity>
                 </View>
+
+                {pendingFees.length > 0 ? (
+                    <TouchableOpacity
+                        style={[styles.hwCard, { borderColor: '#ef444440', backgroundColor: '#ef444408', marginBottom: 20 }]}
+                        onPress={() => router.push('/fees')}
+                        activeOpacity={0.7}
+                    >
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
+                            <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: '#ef444420', justifyContent: 'center', alignItems: 'center' }}>
+                                <Ionicons name="alert-circle" size={20} color="#ef4444" />
+                            </View>
+                            <View style={{ flex: 1 }}>
+                                <Text style={[styles.hwTitle, { color: '#ef4444' }]}>Fees Due</Text>
+                                <Text style={styles.hwSubject}>{pendingFees.length} fee{pendingFees.length > 1 ? 's' : ''} pending · RM {feesTotalDue.toFixed(2)} outstanding</Text>
+                            </View>
+                        </View>
+                        <Ionicons name="chevron-forward" size={20} color="#ef4444" />
+                    </TouchableOpacity>
+                ) : (
+                    <TouchableOpacity
+                        style={[styles.hwCard, { backgroundColor: colors.card, borderColor: colors.border, marginBottom: 20 }]}
+                        onPress={() => router.push('/fees')}
+                        activeOpacity={0.7}
+                    >
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
+                            <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: '#22c55e20', justifyContent: 'center', alignItems: 'center' }}>
+                                <Ionicons name="checkmark-circle" size={20} color="#22c55e" />
+                            </View>
+                            <View style={{ flex: 1 }}>
+                                <Text style={[styles.hwTitle, { color: '#22c55e' }]}>All Caught Up!</Text>
+                                <Text style={styles.hwSubject}>No pending fees. Tap to view history.</Text>
+                            </View>
+                        </View>
+                        <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
+                    </TouchableOpacity>
+                )}
+
+
+
 
                 {/* Quick Actions Grid */}
                 <View style={styles.quickActionsContainer}>
@@ -642,9 +659,6 @@ const makeStyles = (colors: any) => StyleSheet.create({
         marginTop: 0,
         marginBottom: 20,
     },
-    homeworkSection: {
-        marginBottom: 24,
-    },
     sectionHeader: {
         flexDirection: 'row',
         justifyContent: 'space-between',
@@ -680,7 +694,6 @@ const makeStyles = (colors: any) => StyleSheet.create({
         color: colors.textSecondary,
     },
     emptyHwCard: {
-        backgroundColor: colors.card,
         padding: 24,
         borderRadius: 16,
         alignItems: 'center',

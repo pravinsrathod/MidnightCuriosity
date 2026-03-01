@@ -31,6 +31,10 @@ export default function ParentDashboard() {
     const [rawHomeworks, setRawHomeworks] = useState<any[]>([]);
     const [rawSubmissions, setRawSubmissions] = useState<any>({});
 
+    // Fees State
+    const [pendingFees, setPendingFees] = useState<any[]>([]);
+    const [feesTotalDue, setFeesTotalDue] = useState(0);
+
     // Multi-Student Support
     const [children, setChildren] = useState<any[]>([]);
     const [selectedChildId, setSelectedChildId] = useState<string | null>(null);
@@ -301,12 +305,34 @@ export default function ParentDashboard() {
             setLoading(false);
         });
 
+        // 4. Fees Listener (for selected child)
+        const qFees = query(
+            collection(db, 'fees'),
+            where('tenantId', '==', tenantId),
+            where('studentId', 'in', allStudentIds)
+        );
+        const unsubFees = onSnapshot(qFees, (snapshot) => {
+            const today = new Date().toISOString().split('T')[0];
+            const list = snapshot.docs
+                .map(d => ({ id: d.id, ...d.data() } as any))
+                .filter(f => {
+                    if (f.status === 'PENDING' && f.dueDate < today) f.status = 'OVERDUE';
+                    return ['PENDING', 'OVERDUE', 'PARTIAL'].includes(f.status);
+                });
+            setPendingFees(list);
+            setFeesTotalDue(list.reduce((s: number, f: any) => s + ((f.totalAmount || 0) - (f.paidAmount || 0)), 0));
+        }, (err) => {
+            console.error("Fees snapshot error:", err);
+            setLoading(false);
+        });
+
         setLoading(false);
 
         return () => {
             unsubAtt();
             unsubHw();
             unsubSub();
+            unsubFees();
         };
     }, [studentContext]);
 
@@ -479,6 +505,54 @@ export default function ParentDashboard() {
             >
 
 
+                {/* Fees Section */}
+                <View style={styles.sectionHeader}>
+                    <Ionicons name="card-outline" size={20} color={colors.primary} />
+                    <Text style={styles.sectionTitle}>Fees</Text>
+                    <View style={{ flex: 1 }} />
+                    <TouchableOpacity onPress={() => router.push({ pathname: '/fees', params: { studentId: studentContext?.allStudentIds?.join(','), tenantId: studentContext?.tenantId, studentName: studentName } })}>
+                        <Text style={{ color: colors.primary, fontWeight: '600' }}>View All</Text>
+                    </TouchableOpacity>
+                </View>
+
+                {pendingFees.length > 0 ? (
+                    <TouchableOpacity
+                        style={[styles.feeCard]}
+                        onPress={() => router.push({ pathname: '/fees', params: { studentId: studentContext?.allStudentIds?.join(','), tenantId: studentContext?.tenantId, studentName: studentName } })}
+                        activeOpacity={0.7}
+                    >
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
+                            <View style={styles.feeIconBg}>
+                                <Ionicons name="alert-circle" size={22} color="#ef4444" />
+                            </View>
+                            <View style={{ flex: 1 }}>
+                                <Text style={styles.feeTitle}>Fees Due for {studentName}</Text>
+                                <Text style={styles.feeSubtitle}>
+                                    {pendingFees.length} fee{pendingFees.length > 1 ? 's' : ''} pending · RM {feesTotalDue.toFixed(2)} outstanding
+                                </Text>
+                            </View>
+                        </View>
+                        <Ionicons name="chevron-forward" size={20} color="#ef4444" />
+                    </TouchableOpacity>
+                ) : (
+                    <TouchableOpacity
+                        style={[styles.feeCard, { backgroundColor: colors.card, borderColor: colors.border }]}
+                        onPress={() => router.push({ pathname: '/fees', params: { studentId: studentContext?.allStudentIds?.join(','), tenantId: studentContext?.tenantId, studentName: studentName } })}
+                        activeOpacity={0.7}
+                    >
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
+                            <View style={[styles.feeIconBg, { backgroundColor: '#22c55e20' }]}>
+                                <Ionicons name="checkmark-circle" size={22} color="#22c55e" />
+                            </View>
+                            <View style={{ flex: 1 }}>
+                                <Text style={[styles.feeTitle, { color: '#22c55e' }]}>All Caught Up!</Text>
+                                <Text style={[styles.feeSubtitle, { color: colors.textSecondary }]}>No pending fees. Tap to view history.</Text>
+                            </View>
+                        </View>
+                        <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
+                    </TouchableOpacity>
+                )}
+
                 {/* Stats Cards */}
                 <View style={styles.statsContainer}>
                     <View style={[styles.statCard, { backgroundColor: colors.success + '15', borderColor: colors.success }]}>
@@ -508,9 +582,31 @@ export default function ParentDashboard() {
                         </View>
                     ) : (
                         homeworkList.map((item) => (
-                            <View key={item.id} style={styles.listItem}>
+                            <TouchableOpacity
+                                key={item.id}
+                                style={styles.listItem}
+                                onPress={() => {
+                                    router.push({
+                                        pathname: '/parent-homework-detail',
+                                        params: {
+                                            id: item.id,
+                                            title: item.title,
+                                            description: item.description,
+                                            dueDate: item.dueDate,
+                                            status: item.submission?.status || 'PENDING',
+                                            fileUrl: item.submission?.fileUrl || null,
+                                            teacherComment: item.submission?.teacherComment || null,
+                                            teacherFileUrl: item.submission?.teacherFileUrl || null,
+                                            submittedAt: item.submission?.submittedAt?.seconds || null
+                                        }
+                                    });
+                                }}
+                            >
                                 <View style={{ flex: 1 }}>
-                                    <Text style={styles.dateFullText}>{item.title}</Text>
+                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                                        <Text style={styles.dateFullText}>{item.title}</Text>
+                                        <Ionicons name="chevron-forward" size={14} color={colors.textSecondary} />
+                                    </View>
                                     <Text style={{ fontSize: 12, color: colors.textSecondary }}>Due: {item.dueDate}</Text>
                                 </View>
                                 <View style={[styles.statusBadge, {
@@ -522,7 +618,7 @@ export default function ParentDashboard() {
                                         {item.submission ? (item.submission.status === 'CHECKED' ? 'Verified' : (item.submission.status === 'INCOMPLETE' ? 'Redo / Incomplete' : 'Submitted')) : 'Pending'}
                                     </Text>
                                 </View>
-                            </View>
+                            </TouchableOpacity>
                         ))
                     )}
                 </View>
@@ -1072,5 +1168,35 @@ const makeStyles = (colors: any) => StyleSheet.create({
     addStudentText: {
         color: colors.primary,
         fontWeight: '600',
-    }
+    },
+    feeCard: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#ef444410',
+        borderWidth: 1,
+        borderColor: '#ef444430',
+        borderRadius: 14,
+        padding: 16,
+        marginBottom: 20,
+        gap: 4,
+    },
+    feeIconBg: {
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        backgroundColor: '#ef444420',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    feeTitle: {
+        fontSize: 14,
+        fontWeight: '700',
+        color: '#ef4444',
+        marginBottom: 2,
+    },
+    feeSubtitle: {
+        fontSize: 12,
+        color: '#ef4444',
+        opacity: 0.8,
+    },
 });

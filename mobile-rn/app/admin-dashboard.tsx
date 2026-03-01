@@ -121,7 +121,11 @@ export default function AdminDashboard() {
 
                         const tokens = parentSnaps.docs
                             .map(d => d.data())
-                            .filter(p => p.pushToken && (p.linkedStudentPhone || '').replace(/[^0-9]/g, '') === cleanStudentPhone)
+                            .filter(p => {
+                                if (!p.pushToken) return false;
+                                const pPhones = [(p.linkedStudentPhone || ''), ...(p.linkedStudentPhones || [])];
+                                return pPhones.some(pp => (pp || '').replace(/[^0-9]/g, '') === cleanStudentPhone);
+                            })
                             .map(p => p.pushToken);
 
                         if (tokens.length > 0) {
@@ -293,7 +297,14 @@ export default function AdminDashboard() {
                     // 3. Filter parents linked to these students and get tokens
                     const tokens = parentSnaps.docs
                         .map(d => d.data())
-                        .filter(p => p.pushToken && studentPhones.includes(p.linkedStudentPhone))
+                        .filter(p => {
+                            if (!p.pushToken) return false;
+                            const pPhones = [(p.linkedStudentPhone || ''), ...(p.linkedStudentPhones || [])];
+                            return pPhones.some(pp => {
+                                const cleanPP = (pp || '').replace(/[^0-9]/g, '');
+                                return cleanPP && studentPhones.includes(cleanPP);
+                            });
+                        })
                         .map(p => p.pushToken);
 
                     if (tokens.length > 0) {
@@ -459,8 +470,8 @@ export default function AdminDashboard() {
                             const matchedAffectedStudents = Object.entries(studentMap)
                                 .filter(([id, s]: [string, any]) => {
                                     const cleanStudentPhone = (s.phoneNumber || '').replace(/[^0-9]/g, '');
-                                    const cleanParentLink = (parent.linkedStudentPhone || '').replace(/[^0-9]/g, '');
-                                    return cleanStudentPhone === cleanParentLink && affectedStudentIds.includes(id);
+                                    const pPhones = [(parent.linkedStudentPhone || ''), ...(parent.linkedStudentPhones || [])];
+                                    return pPhones.some(pp => (pp || '').replace(/[^0-9]/g, '') === cleanStudentPhone) && affectedStudentIds.includes(id);
                                 });
 
                             for (const [sId, sData] of matchedAffectedStudents) {

@@ -118,50 +118,52 @@ export default function AdminLogin() {
     };
 
     return (
-        <div style={styles.container}>
-            <div style={styles.card}>
-                <div style={styles.logo}>🚀 EduPro Admin</div>
-                <h2 style={styles.title}>{isSignUp ? 'Create Admin' : 'Welcome Back'}</h2>
-                <p style={styles.subtitle}>{isSignUp ? 'Register a new admin account' : 'Please sign in to continue'}</p>
+        <div className="app-layout" style={{ justifyContent: 'center', alignItems: 'center', background: 'var(--bg-primary)' }}>
+            <div className="card animate-fade-in" style={{ width: '100%', maxWidth: '400px', padding: '40px' }}>
+                <div className="logo" style={{ justifyContent: 'center', marginBottom: '1.5rem' }}>
+                    🚀 <span>EduPro Admin</span>
+                </div>
+                <h2 style={{ textAlign: 'center', marginBottom: '8px' }}>{isSignUp ? 'Create Admin' : 'Welcome Back'}</h2>
+                <p style={{ textAlign: 'center', color: 'var(--text-secondary)', marginBottom: '32px', fontSize: '0.9rem' }}>
+                    {isSignUp ? 'Register a new admin account' : 'Please sign in to continue'}
+                </p>
 
-                {error && <div style={styles.error}>{error}</div>}
-                {success && <div style={styles.success}>{success}</div>}
+                {error && <div className="badge badge-danger" style={{ width: '100%', marginBottom: '20px', textAlign: 'center', padding: '12px' }}>{error}</div>}
+                {success && <div className="badge badge-success" style={{ width: '100%', marginBottom: '20px', textAlign: 'center', padding: '12px' }}>{success}</div>}
 
-                <form onSubmit={handleAuth} style={styles.form}>
+                <form onSubmit={handleAuth} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
                     {isSignUp && (
-                        <div style={styles.inputGroup}>
-                            <label style={styles.label}>Institute Name</label>
+                        <div className="form-group">
+                            <label className="label">Institute Name</label>
                             <input
                                 type="text"
                                 value={instituteName}
                                 onChange={(e) => setInstituteName(e.target.value)}
-                                style={styles.input}
                                 placeholder="e.g. Curiosity High School"
                                 required
                             />
                         </div>
                     )}
 
-                    <div style={styles.inputGroup}>
-                        <label style={styles.label}>Mobile Number OR Email</label>
+                    <div className="form-group">
+                        <label className="label">Mobile Number OR Email</label>
                         <input
                             type="text"
                             value={identifier}
                             onChange={(e) => setIdentifier(e.target.value)}
-                            style={styles.input}
                             placeholder="e.g. 9876543210 or admin@abc.com"
                             required
                         />
                     </div>
 
-                    <div style={styles.inputGroup}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <label style={styles.label}>Password</label>
+                    <div className="form-group">
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                            <label className="label" style={{ marginBottom: 0 }}>Password</label>
                             {!isSignUp && (
                                 <button
                                     type="button"
                                     onClick={handleForgotPassword}
-                                    style={{ background: 'none', border: 'none', color: '#3b82f6', cursor: 'pointer', fontSize: '0.8rem' }}
+                                    style={{ background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', fontSize: '0.8rem' }}
                                 >
                                     Forgot Password?
                                 </button>
@@ -171,22 +173,21 @@ export default function AdminLogin() {
                             type="password"
                             value={password}
                             onChange={(e) => setPassword(e.target.value)}
-                            style={styles.input}
                             placeholder="••••••••"
                             required={!loading}
                         />
                     </div>
 
-                    <button type="submit" style={styles.button} disabled={loading}>
+                    <button type="submit" className="btn btn-primary" style={{ width: '100%', marginTop: '10px' }} disabled={loading}>
                         {loading ? 'Processing...' : (isSignUp ? 'Create Account' : 'Sign In')}
                     </button>
                 </form>
 
-                <div style={styles.footer}>
+                <div style={{ marginTop: '32px', textAlign: 'center' }}>
                     <button
                         type="button"
                         onClick={() => setIsSignUp(!isSignUp)}
-                        style={{ background: 'none', border: 'none', color: '#3b82f6', cursor: 'pointer', textDecoration: 'underline' }}
+                        style={{ background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', fontSize: '0.9rem', textDecoration: 'none' }}
                     >
                         {isSignUp ? 'Already have an account? Login' : 'Need an account? Sign Up'}
                     </button>
@@ -195,100 +196,3 @@ export default function AdminLogin() {
         </div>
     );
 }
-
-const styles = {
-    container: {
-        height: '100vh',
-        display: 'flex',
-        justifyContent: 'center',
-        alignItems: 'center',
-        background: '#0f172a', // Dark dashboard bg
-        color: '#f8fafc',
-        fontFamily: 'Inter, sans-serif'
-    },
-    card: {
-        background: '#1e293b',
-        padding: '40px',
-        borderRadius: '16px',
-        width: '100%',
-        maxWidth: '400px',
-        boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.3)',
-        border: '1px solid #334155'
-    },
-    logo: {
-        textAlign: 'center',
-        fontSize: '1.5rem',
-        fontWeight: 'bold',
-        marginBottom: '20px',
-        color: '#3b82f6'
-    },
-    title: {
-        textAlign: 'center',
-        fontSize: '1.5rem',
-        marginBottom: '8px'
-    },
-    subtitle: {
-        textAlign: 'center',
-        color: '#94a3b8',
-        marginBottom: '32px',
-        fontSize: '0.9rem'
-    },
-    form: {
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '20px'
-    },
-    inputGroup: {
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '8px'
-    },
-    label: {
-        fontSize: '0.9rem',
-        fontWeight: '500',
-        color: '#cbd5e1'
-    },
-    input: {
-        padding: '12px',
-        borderRadius: '8px',
-        border: '1px solid #475569',
-        background: '#0f172a',
-        color: '#fff',
-        fontSize: '1rem',
-        outline: 'none'
-    },
-    button: {
-        marginTop: '10px',
-        padding: '14px',
-        background: '#3b82f6',
-        color: 'white',
-        border: 'none',
-        borderRadius: '12px',
-        fontSize: '1rem',
-        fontWeight: 'bold',
-        cursor: 'pointer',
-        transition: 'background 0.2s'
-    },
-    error: {
-        background: 'rgba(239, 68, 68, 0.1)',
-        color: '#ef4444',
-        padding: '12px',
-        borderRadius: '8px',
-        marginBottom: '20px',
-        textAlign: 'center',
-        fontSize: '0.9rem'
-    },
-    success: {
-        background: 'rgba(34, 197, 94, 0.1)',
-        color: '#22c55e',
-        padding: '12px',
-        borderRadius: '8px',
-        marginBottom: '20px',
-        textAlign: 'center',
-        fontSize: '0.9rem'
-    },
-    footer: {
-        marginTop: '32px',
-        textAlign: 'center'
-    }
-};

@@ -30,8 +30,13 @@ export default function ApprovalPendingScreen() {
                 if (snapshot.exists()) {
                     const data = snapshot.data();
                     if (data.status === 'ACTIVE') {
-                        console.log("Auto-Approval Detected! Redirecting...");
-                        router.replace('/grade');
+                        console.log("Auto-Approval Detected! Redirecting based on role...");
+                        const role = data.role?.toUpperCase();
+                        if (role === 'PARENT') {
+                            router.replace('/parent-dashboard');
+                        } else {
+                            router.replace('/grade');
+                        }
                     }
                 }
             });

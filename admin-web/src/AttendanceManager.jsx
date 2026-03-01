@@ -153,122 +153,139 @@ const AttendanceManager = ({ students, tenantId, onAlert, filterGrade }) => {
     };
 
     return (
-        <div className="card" style={{ maxWidth: '1000px', margin: '0 auto' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '15px' }}>
+        <div className="animate-fade-in" style={{ maxWidth: '1100px', margin: '0 auto' }}>
+            <div className="glass-panel" style={{ padding: '24px', marginBottom: '32px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '20px' }}>
                 <div>
-                    <h2 style={{ marginBottom: '5px' }}>📅 Attendance Register</h2>
-                    <p style={{ color: 'var(--text-secondary)' }}>Mark attendance for active students.</p>
+                    <h2 style={{ fontSize: '1.75rem', marginBottom: '4px' }}>📅 Attendance Register</h2>
+                    <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>Tracking attendance for <span style={{ color: 'var(--accent)', fontWeight: 600 }}>{activeStudents.length}</span> students.</p>
                 </div>
 
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <label className="label" style={{ margin: 0 }}>Select Date:</label>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', background: 'rgba(255,255,255,0.03)', padding: '8px 16px', borderRadius: '12px', border: '1px solid var(--border)' }}>
+                    <label style={{ fontSize: '0.85rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Date:</label>
                     <input
                         type="date"
                         max={todayStr}
                         value={selectedDate}
                         onChange={(e) => setSelectedDate(e.target.value)}
-                        style={{ padding: '8px', borderRadius: '4px', border: '1px solid var(--border)', background: 'var(--bg-input)', color: '#fff' }}
+                        style={{
+                            background: 'transparent',
+                            border: 'none',
+                            color: 'var(--text-primary)',
+                            fontSize: '1rem',
+                            outline: 'none',
+                            fontFamily: 'inherit'
+                        }}
                     />
                 </div>
             </div>
 
             {loading ? (
-                <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-secondary)' }}>Loading attendance record...</div>
+                <div style={{ padding: '80px 0', textAlign: 'center' }}>
+                    <div className="loader" style={{ margin: '0 auto 16px' }}></div>
+                    <div style={{ color: 'var(--text-secondary)' }}>Synchronizing records...</div>
+                </div>
             ) : activeStudents.length === 0 ? (
-                <div style={{ padding: '30px', textAlign: 'center', background: 'var(--bg-secondary)', borderRadius: '8px' }}>
-                    No Active Students found. Approve students in the "Students" tab first.
+                <div className="glass-panel" style={{ padding: '60px 20px', textAlign: 'center', background: 'rgba(239, 68, 68, 0.05)', borderColor: 'var(--danger-border)' }}>
+                    <div style={{ fontSize: '3rem', marginBottom: '16px' }}>👥</div>
+                    <h3>No Active Students Found</h3>
+                    <p style={{ color: 'var(--text-secondary)', maxWidth: '400px', margin: '0 auto' }}>Please ensure students are approved in the "Students" tab before marking attendance.</p>
                 </div>
             ) : (
-                <>
-                    {/* Bulk Actions */}
-                    <div style={{ marginBottom: '20px', display: 'flex', gap: '10px', alignItems: 'center' }}>
-                        <button className="btn-ghost" onClick={() => markAll('PRESENT')} disabled={isLocked()} style={{ color: 'var(--success)', borderColor: 'var(--success)', opacity: isLocked() ? 0.5 : 1 }}>Mark All Present</button>
-                        <button className="btn-ghost" onClick={() => markAll('ABSENT')} disabled={isLocked()} style={{ color: 'var(--danger)', borderColor: 'var(--danger)', opacity: isLocked() ? 0.5 : 1 }}>Mark All Absent</button>
-                        {isLocked() && <span style={{ color: 'var(--warning)', fontSize: '0.9rem' }}>🔒 Record Locked (Read Only)</span>}
+                <div className="glass-panel" style={{ padding: '0', overflow: 'hidden' }}>
+                    <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,255,255,0.02)' }}>
+                        <div style={{ display: 'flex', gap: '12px' }}>
+                            <button
+                                className="btn btn-ghost"
+                                onClick={() => markAll('PRESENT')}
+                                disabled={isLocked()}
+                                style={{ color: 'var(--success)', fontSize: '0.85rem' }}
+                            >
+                                Mark All Present
+                            </button>
+                            <button
+                                className="btn btn-ghost"
+                                onClick={() => markAll('ABSENT')}
+                                disabled={isLocked()}
+                                style={{ color: 'var(--danger)', fontSize: '0.85rem' }}
+                            >
+                                Mark All Absent
+                            </button>
+                        </div>
+                        {isLocked() && (
+                            <div className="badge badge-warning" style={{ fontSize: '0.75rem' }}>
+                                🔒 Locked (Read Only)
+                            </div>
+                        )}
                     </div>
 
                     <div style={{ overflowX: 'auto' }}>
-                        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '600px' }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                             <thead>
-                                <tr style={{ background: 'var(--bg-tertiary)', textAlign: 'left' }}>
-                                    <th style={{ padding: '12px', borderRadius: '8px 0 0 8px' }}>Student Name</th>
-                                    <th style={{ padding: '12px' }}>Grade</th>
-                                    <th style={{ padding: '12px', textAlign: 'center' }}>Status</th>
-                                    <th style={{ padding: '12px', borderRadius: '0 8px 8px 0', textAlign: 'center' }}>Marking</th>
+                                <tr style={{ textAlign: 'left', borderBottom: '2px solid var(--border)' }}>
+                                    <th style={{ padding: '16px 24px', color: 'var(--text-secondary)', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '1px' }}>Student</th>
+                                    <th style={{ padding: '16px 24px', color: 'var(--text-secondary)', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '1px' }}>Class</th>
+                                    <th style={{ padding: '16px 24px', color: 'var(--text-secondary)', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '1px', textAlign: 'center' }}>Status</th>
+                                    <th style={{ padding: '16px 24px', color: 'var(--text-secondary)', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '1px', textAlign: 'center' }}>Marking</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {activeStudents.map(student => {
                                     const status = attendanceMap[student.id] || 'UNMARKED';
                                     return (
-                                        <tr key={student.id} style={{ borderBottom: '1px solid var(--border)' }}>
-                                            <td style={{ padding: '15px 10px', fontWeight: 'bold' }}>{student.name}</td>
-                                            <td style={{ padding: '10px', color: 'var(--text-secondary)' }}>{student.grade}</td>
-                                            <td style={{ padding: '10px', textAlign: 'center' }}>
-                                                <span style={{
-                                                    padding: '4px 10px',
-                                                    borderRadius: '12px',
-                                                    fontSize: '0.8rem',
-                                                    background: status === 'PRESENT' ? 'var(--success)' : status === 'ABSENT' ? 'var(--danger)' : 'var(--bg-tertiary)',
-                                                    color: '#fff',
-                                                    opacity: status === 'UNMARKED' ? 0.5 : 1
-                                                }}>
+                                        <tr key={student.id} style={{ borderBottom: '1px solid var(--border)', transition: 'background 0.2s' }}>
+                                            <td style={{ padding: '20px 24px' }}>
+                                                <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{student.name}</div>
+                                                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>ID: {student.id.slice(0, 8)}</div>
+                                            </td>
+                                            <td style={{ padding: '20px 24px' }}>
+                                                <span className="badge" style={{ background: 'rgba(255,255,255,0.05)', color: 'var(--text-secondary)' }}>{student.grade}</span>
+                                            </td>
+                                            <td style={{ padding: '20px 24px', textAlign: 'center' }}>
+                                                <span className={`badge ${status === 'PRESENT' ? 'badge-success' :
+                                                    status === 'ABSENT' ? 'badge-danger' :
+                                                        status === 'LATE' ? 'badge-warning' : ''
+                                                    }`} style={{ opacity: status === 'UNMARKED' ? 0.3 : 1 }}>
                                                     {status}
                                                 </span>
                                             </td>
-                                            <td style={{ padding: '10px', textAlign: 'center' }}>
-                                                <div style={{ display: 'flex', justifyContent: 'center', gap: '5px' }}>
+                                            <td style={{ padding: '20px 24px' }}>
+                                                <div style={{ display: 'flex', justifyContent: 'center', gap: '8px' }}>
                                                     <button
                                                         disabled={isLocked()}
                                                         onClick={() => handleStatusChange(student.id, 'PRESENT')}
                                                         style={{
-                                                            padding: '6px 15px',
-                                                            borderRadius: '4px',
-                                                            border: '1px solid var(--success)',
+                                                            width: '36px', height: '36px', borderRadius: '10px',
+                                                            border: '1px solid var(--success-border)',
                                                             background: status === 'PRESENT' ? 'var(--success)' : 'transparent',
                                                             color: status === 'PRESENT' ? '#fff' : 'var(--success)',
-                                                            cursor: 'pointer',
-                                                            fontWeight: 'bold',
-                                                            transition: 'all 0.2s',
-                                                            opacity: isLocked() ? 0.3 : 1
+                                                            cursor: 'pointer', fontWeight: 800, transition: 'all 0.2s',
+                                                            opacity: isLocked() ? 0.3 : 1, fontSize: '0.8rem'
                                                         }}
-                                                    >
-                                                        P
-                                                    </button>
+                                                    >P</button>
                                                     <button
                                                         disabled={isLocked()}
                                                         onClick={() => handleStatusChange(student.id, 'ABSENT')}
                                                         style={{
-                                                            padding: '6px 15px',
-                                                            borderRadius: '4px',
-                                                            border: '1px solid var(--danger)',
+                                                            width: '36px', height: '36px', borderRadius: '10px',
+                                                            border: '1px solid var(--danger-border)',
                                                             background: status === 'ABSENT' ? 'var(--danger)' : 'transparent',
                                                             color: status === 'ABSENT' ? '#fff' : 'var(--danger)',
-                                                            cursor: 'pointer',
-                                                            fontWeight: 'bold',
-                                                            transition: 'all 0.2s',
-                                                            opacity: isLocked() ? 0.3 : 1
+                                                            cursor: 'pointer', fontWeight: 800, transition: 'all 0.2s',
+                                                            opacity: isLocked() ? 0.3 : 1, fontSize: '0.8rem'
                                                         }}
-                                                    >
-                                                        A
-                                                    </button>
+                                                    >A</button>
                                                     <button
                                                         disabled={isLocked()}
                                                         onClick={() => handleStatusChange(student.id, 'LATE')}
                                                         style={{
-                                                            padding: '6px 15px',
-                                                            borderRadius: '4px',
-                                                            border: '1px solid var(--warning)',
+                                                            width: '36px', height: '36px', borderRadius: '10px',
+                                                            border: '1px solid var(--warning-border)',
                                                             background: status === 'LATE' ? 'var(--warning)' : 'transparent',
                                                             color: status === 'LATE' ? '#fff' : 'var(--warning)',
-                                                            cursor: 'pointer',
-                                                            fontWeight: 'bold',
-                                                            transition: 'all 0.2s',
-                                                            opacity: isLocked() ? 0.3 : 1
+                                                            cursor: 'pointer', fontWeight: 800, transition: 'all 0.2s',
+                                                            opacity: isLocked() ? 0.3 : 1, fontSize: '0.8rem'
                                                         }}
-                                                    >
-                                                        L
-                                                    </button>
+                                                    >L</button>
                                                 </div>
                                             </td>
                                         </tr>
@@ -278,17 +295,17 @@ const AttendanceManager = ({ students, tenantId, onAlert, filterGrade }) => {
                         </table>
                     </div>
 
-                    <div style={{ marginTop: '20px', display: 'flex', justifyContent: 'flex-end' }}>
+                    <div style={{ padding: '24px', background: 'rgba(255,255,255,0.02)', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'flex-end' }}>
                         <button
-                            className="btn-primary"
+                            className="btn btn-primary"
                             onClick={saveAttendance}
                             disabled={saving || isLocked()}
-                            style={{ padding: '10px 30px', fontSize: '1rem', opacity: isLocked() ? 0.5 : 1 }}
+                            style={{ padding: '12px 32px', fontSize: '1rem', minWidth: '220px' }}
                         >
-                            {saving ? 'Saving...' : (isLocked() ? 'Log Locked' : '💾 Save Attendance Log')}
+                            {saving ? <span className="loader" style={{ width: '16px', height: '16px' }}></span> : (isLocked() ? 'Log Locked 🔒' : '💾 Save Changes')}
                         </button>
                     </div>
-                </>
+                </div>
             )}
         </div>
     );

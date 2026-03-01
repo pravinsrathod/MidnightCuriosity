@@ -36,10 +36,38 @@ service cloud.firestore {
 
     // --- USERS ---
     match /users/{userId} {
-      // Relaxed rules to support Custom OTP Auth flow (where Auth UID != User Doc ID)
       allow read: if request.auth != null;
-      allow create: if request.auth != null;
-      allow update: if request.auth != null;
+      
+      // Allow self-registration or admin creation
+      allow create: if request.auth != null && (
+        (request.auth.uid == userId && 
+         // Prevent self-granting admin/superadmin roles
+         !(request.resource.data.role in ['admin', 'ADMIN', 'superadmin'])
+        ) 
+        || 
+        (isAdmin() && request.resource.data.tenantId == getUserData().tenantId) 
+        || 
+        isSuperAdmin()
+      );
+
+      // Protect sensitive fields during self-update
+      allow update: if request.auth != null && (
+        (request.auth.uid == userId && 
+         // Cannot escalate privileges or change tenant
+         (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'tenantId', 'status', 'isAdmin']))
+        ) 
+        ||
+        (isAdmin() && resource.data.tenantId == getUserData().tenantId) 
+        ||
+        isSuperAdmin() 
+        ||
+        // Allow fallback OTP login to set deviceId ONLY IF it is currently empty/unknown
+        // and they are not trying to change other fields
+        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['deviceId']) &&
+         (!('deviceId' in resource.data) || resource.data.deviceId == null || resource.data.deviceId == '' || resource.data.deviceId == 'unknown' || resource.data.deviceId == 'ios-unknown' || resource.data.deviceId == 'android-unknown')
+        )
+      );
+
       allow delete: if isAdmin() || isSuperAdmin();
     }
 
@@ -107,9 +135,53 @@ service cloud.firestore {
         allow delete: if isAdmin();
     }
 
+    // --- FEES ---
+    match /fees/{id} {
+      // Students: read their own fees only
+      // Parents: read fees for their tenant (Admin verification check)
+      // Admins: full read/write for their tenant
+      allow read: if request.auth != null && (
+        resource.data.studentId == request.auth.uid ||
+        isAdmin() ||
+        (isTenantUser(resource.data.tenantId) && getUserData().role == 'parent' && 
+         (resource.data.studentId == getUserData().phoneNumber || 
+          resource.data.studentId == getUserData().linkedStudentPhone ||
+          resource.data.studentId in (getUserData().linkedStudentPhones || [])))
+      );
+      allow create: if isAdmin() && request.resource.data.tenantId == getUserData().tenantId;
+      allow update: if isAdmin() && resource.data.tenantId == getUserData().tenantId;
+      allow delete: if isAdmin() && resource.data.tenantId == getUserData().tenantId;
+    }
+
+    // --- FEE STRUCTURES ---
+    match /feeStructures/{id} {
+      allow read: if request.auth != null && isTenantUser(resource.data.tenantId);
+      allow create: if isAdmin() && request.resource.data.tenantId == getUserData().tenantId;
+      allow update, delete: if isAdmin() && resource.data.tenantId == getUserData().tenantId;
+    }
+
     // --- LEGACY ---
     match /metadata/{id} {
       allow read: if request.auth != null;
+    }
+
+    // --- PAYMENT RECEIPTS ---
+    match /paymentReceipts/{id} {
+      // Read: Owner, or Admin of same tenant
+      allow read: if request.auth != null && (
+        resource.data.studentId == request.auth.uid || 
+        (isAdmin() && resource.data.tenantId == getUserData().tenantId)
+      );
+      // Create: Self only, matching tenant
+      allow create: if request.auth != null && 
+        request.resource.data.studentId == request.auth.uid &&
+        request.resource.data.tenantId == getUserData().tenantId;
+      // Update: Admin (to verify) OR Owner (if still pending/rejected to re-submit or cancel)
+      allow update: if request.auth != null && (
+        (isAdmin() && resource.data.tenantId == getUserData().tenantId) ||
+        (resource.data.studentId == request.auth.uid && resource.data.status != 'APPROVED')
+      );
+      allow delete: if isAdmin() && resource.data.tenantId == getUserData().tenantId;
     }
   }
 }
