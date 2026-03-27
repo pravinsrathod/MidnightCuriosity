@@ -12,6 +12,8 @@ export default function ApprovalPendingScreen() {
     const { colors } = useTheme();
     const styles = useMemo(() => makeStyles(colors), [colors]);
 
+    const [role, setRole] = React.useState<string | null>(null);
+
     // Real-time listener for auto-approval
     useEffect(() => {
         let unsub: () => void;
@@ -29,16 +31,22 @@ export default function ApprovalPendingScreen() {
             unsub = onSnapshot(doc(db, "users", uid), (snapshot) => {
                 if (snapshot.exists()) {
                     const data = snapshot.data();
+                    const currentRole = data.role?.toUpperCase();
+                    setRole(currentRole);
+
                     if (data.status === 'ACTIVE') {
                         console.log("Auto-Approval Detected! Redirecting based on role...");
-                        const role = data.role?.toUpperCase();
-                        if (role === 'PARENT') {
-                            router.replace('/parent-dashboard');
+                        if (currentRole === 'PARENT') {
+                            router.replace('/(tabs)/parent-home');
+                        } else if (currentRole === 'ADMIN') {
+                            router.replace('/admin-dashboard');
                         } else {
                             router.replace('/grade');
                         }
                     }
                 }
+            }, (err) => {
+                console.error("Approval listener error:", err);
             });
         };
 
@@ -56,6 +64,8 @@ export default function ApprovalPendingScreen() {
         router.replace('/auth');
     };
 
+    const isInternalAdmin = role === 'ADMIN';
+
     return (
         <SafeAreaView style={styles.container}>
             <View style={styles.content}>
@@ -66,9 +76,15 @@ export default function ApprovalPendingScreen() {
                 <Text style={styles.title}>Approval Pending</Text>
 
                 <Text style={styles.description}>
-                    Your request has been sent to the institute administrator.
+                    {isInternalAdmin 
+                        ? "Your institute registration has been sent to the Super Admin for verification."
+                        : "Your request has been sent to the institute administrator."
+                    }
                     {"\n\n"}
-                    Once approved, you will be able to access your classes and learning materials.
+                    {isInternalAdmin
+                        ? "Once approved, you will be able to manage your students, batches, and academic content."
+                        : "Once approved, you will be able to access your classes and learning materials."
+                    }
                 </Text>
 
                 <View style={styles.infoBox}>

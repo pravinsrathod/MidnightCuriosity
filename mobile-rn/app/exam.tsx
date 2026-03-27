@@ -3,7 +3,7 @@ import { View, Text, TouchableOpacity, ScrollView, StyleSheet, SafeAreaView, Act
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { db, auth } from '../services/firebaseConfig'; // Ensure auth is imported
-import { collection, query, orderBy, onSnapshot, where, doc, updateDoc, setDoc } from 'firebase/firestore';
+import { collection, query, orderBy, onSnapshot, where, doc, updateDoc, setDoc, getDoc } from 'firebase/firestore';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '../context/ThemeContext';
 import { useTenant } from '../context/TenantContext';
@@ -26,19 +26,60 @@ export default function ExamScreen() {
 
     // Fetch Exams
     useEffect(() => {
-        const q = query(
-            collection(db, "exams"),
-            where("tenantId", "==", tenantId || "default")
-        );
-        const unsub = onSnapshot(q, (snap) => {
-            const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-            // Client-side sort to avoid composite index
-            const sorted = list.sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
-            setExams(sorted);
-            setLoading(false);
-        });
-        return () => unsub();
-    }, []);
+        let unsub: any;
+        const init = async () => {
+            try {
+                let uid = auth.currentUser?.uid;
+                if (!uid) {
+                    uid = await AsyncStorage.getItem('user_uid') || undefined;
+                }
+
+                if (!uid) {
+                    setLoading(false);
+                    return;
+                }
+
+                // 1. Get Student Batch
+                const userDoc = await getDoc(doc(db, 'users', uid));
+                const userData = userDoc.exists() ? userDoc.data() : {};
+                const studentBatch = userData.batch || "General Batch";
+                const studentGrade = userData.grade;
+
+                if (!studentGrade) {
+                    setLoading(false);
+                    return;
+                }
+
+                // 2. Query Exams for Grade
+                const q = query(
+                    collection(db, "exams"),
+                    where("tenantId", "==", tenantId || "default"),
+                    where("grade", "==", studentGrade)
+                );
+
+                unsub = onSnapshot(q, (snap) => {
+                    const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+                    // 3. Filter by Batch (All or specific)
+                    const filtered = list.filter((exam: any) => 
+                        !exam.batch || exam.batch === "All" || exam.batch === studentBatch
+                    );
+                    // Client-side sort to avoid composite index
+                    const sorted = filtered.sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
+                    setExams(sorted);
+                    setLoading(false);
+                }, (err) => {
+                    console.error("Exam snapshot error:", err);
+                    setLoading(false);
+                });
+            } catch (e) {
+                console.error("Error initializing exam screen:", e);
+                setLoading(false);
+            }
+        };
+
+        init();
+        return () => unsub && unsub();
+    }, [tenantId]);
 
     // Timer Logic
     useEffect(() => {
@@ -128,8 +169,18 @@ export default function ExamScreen() {
             // REMOVED: Alert.alert("Time's Up!", "Your exam has been automatically submitted.");
         } else {
             // REMOVED: Confirmation popup. Executing directly.
-            finalize();
         }
+    };
+
+    const handleExitExam = () => {
+        Alert.alert(
+            "Quit Exam?",
+            "Your progress will be lost. Are you sure you want to exit?",
+            [
+                { text: "Cancel", style: "cancel" },
+                { text: "Quit", style: "destructive", onPress: () => setActiveExam(null) }
+            ]
+        );
     };
 
     if (loading) {
@@ -164,9 +215,14 @@ export default function ExamScreen() {
         return (
             <SafeAreaView style={styles.container}>
                 <View style={styles.header}>
-                    <Text style={[styles.timer, timeLeft < 60 && { color: colors.danger }]}>
-                        Time Remaining: {formatTime(timeLeft)}
-                    </Text>
+                    <TouchableOpacity onPress={handleExitExam} style={styles.exitBtn}>
+                        <Ionicons name="close-circle-outline" size={28} color={colors.danger} />
+                    </TouchableOpacity>
+                    <View style={{ flex: 1, alignItems: 'center' }}>
+                        <Text style={[styles.timer, timeLeft < 60 && { color: colors.danger }]}>
+                            {formatTime(timeLeft)}
+                        </Text>
+                    </View>
                     <Text style={styles.progress}>Q {currentQuestionIndex + 1} / {activeExam.questions.length}</Text>
                 </View>
 
@@ -261,9 +317,10 @@ const makeStyles = (colors: any) => StyleSheet.create({
     emptyText: { color: colors.textSecondary, textAlign: 'center', marginTop: 50 },
 
     // Exam Mode Styles
-    header: { padding: 20, flexDirection: 'row', justifyContent: 'space-between', borderBottomWidth: 1, borderColor: colors.border },
-    timer: { color: colors.warning, fontWeight: 'bold' },
-    progress: { color: colors.textSecondary },
+    header: { padding: 15, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderBottomWidth: 1, borderColor: colors.border },
+    exitBtn: { padding: 4 },
+    timer: { color: colors.warning, fontWeight: 'bold', fontSize: 18 },
+    progress: { color: colors.textSecondary, fontWeight: '600' },
     questionContainer: { padding: 20 },
     questionText: { fontSize: 18, color: colors.text, marginBottom: 20, lineHeight: 26 },
     optionBtn: { backgroundColor: colors.card, padding: 16, borderRadius: 12, marginBottom: 12, borderWidth: 1, borderColor: colors.border },

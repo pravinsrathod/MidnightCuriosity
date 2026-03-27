@@ -55,6 +55,8 @@ function RootLayoutNav() {
     return (
       <ThemeProvider value={theme === 'dark' ? DarkTheme : DefaultTheme}>
         <Stack screenOptions={{ headerShown: false }}>
+          <Stack.Screen name="(tabs)" />
+          <Stack.Screen name="parent-dashboard" />
           <Stack.Screen name="index" />
           <Stack.Screen name="auth" />
           <Stack.Screen name="grade" />
@@ -66,6 +68,7 @@ function RootLayoutNav() {
           <Stack.Screen name="poll" />
           <Stack.Screen name="poll-history" />
           <Stack.Screen name="fees" />
+          <Stack.Screen name="attendance" />
           <Stack.Screen name="fee-detail" />
         </Stack>
         <StatusBar style={theme === 'dark' ? 'light' : 'dark'} />

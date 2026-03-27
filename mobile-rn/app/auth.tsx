@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Keyboard, ScrollView, Image } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { auth, db } from '../services/firebaseConfig';
-import { signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile, signInAnonymously } from "firebase/auth";
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile, signInAnonymously, sendPasswordResetEmail } from "firebase/auth";
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { registerForPushNotificationsAsync, savePushTokenToUser } from '../services/notificationService';
 import { useTheme } from '../context/ThemeContext';
@@ -10,7 +10,7 @@ import { useTenant } from '../context/TenantContext';
 import { Ionicons } from '@expo/vector-icons';
 import * as Application from 'expo-application';
 import * as Device from 'expo-device';
-import { collection, query, where, getDocs, doc, getDoc, updateDoc, setDoc, limit } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc, getDoc, updateDoc, setDoc, limit, addDoc, serverTimestamp } from 'firebase/firestore';
 import * as LocalAuthentication from 'expo-local-authentication';
 
 export default function AuthScreen() {
@@ -28,13 +28,27 @@ export default function AuthScreen() {
     const [resolvedTenantId, setResolvedTenantId] = useState(''); // Store the actual DocID
     const [instituteName, setInstituteName] = useState('');
     const [availableGrades, setAvailableGrades] = useState<string[]>([]);
+    const [batchList, setBatchList] = useState<Record<string, string[]>>({});
     const [name, setName] = useState('');
     const [selectedGrade, setSelectedGrade] = useState("");
+    const [selectedBatch, setSelectedBatch] = useState<string>("General Batch");
     const [otpCode, setOtpCode] = useState('');
     const [loading, setLoading] = useState(false);
     const [isAdminMode, setIsAdminMode] = useState(false);
+    const [isInstituteSignUp, setIsInstituteSignUp] = useState(false);
     const [isBiometricSupported, setIsBiometricSupported] = useState(false);
     const params = useLocalSearchParams();
+
+    // Effect to auto-select batch when grade changes
+    useEffect(() => {
+        if (selectedGrade && batchList[selectedGrade] && batchList[selectedGrade].length > 0) {
+            if (!batchList[selectedGrade].includes(selectedBatch)) {
+                setSelectedBatch(batchList[selectedGrade][0]);
+            }
+        } else {
+            setSelectedBatch("General Batch");
+        }
+    }, [selectedGrade, batchList]);
 
     // Student Search State
     const [studentSearchQuery, setStudentSearchQuery] = useState('');
@@ -42,6 +56,83 @@ export default function AuthScreen() {
     const [studentListCache, setStudentListCache] = useState<any[]>([]);
     const [selectedStudent, setSelectedStudent] = useState<any>(null);
     const [isSearchingStudent, setIsSearchingStudent] = useState(false);
+
+    // Institute Search State
+    const [tenantSearchQuery, setTenantSearchQuery] = useState('');
+    const [tenantSearchResults, setTenantSearchResults] = useState<any[]>([]);
+    const [tenantListCache, setTenantListCache] = useState<any[]>([]);
+    const [isSearchingTenant, setIsSearchingTenant] = useState(false);
+    const [showManualCode, setShowManualCode] = useState(false);
+    const [isForgot, setIsForgot] = useState(false);
+    const [resetEmail, setResetEmail] = useState('');
+
+    // Fetch institutes when in TENANT stage
+    useEffect(() => {
+        if (authStage === 'TENANT' && !isAdminMode && tenantListCache.length === 0) {
+            const fetchInstitutes = async () => {
+                setIsSearchingTenant(true);
+                try {
+                    // Check if authenticated to read, else sign in anonymously
+                    if (!auth.currentUser) {
+                        await signInAnonymously(auth);
+                    }
+                    // Query for isActive true as primary filter, status might be missing on older records
+                    const q = query(collection(db, "tenants"), where("isActive", "==", true));
+                    const snap = await getDocs(q);
+                    const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+                    setTenantListCache(list);
+                } catch (e) {
+                    console.error("[Auth] Failed to load institutes", e);
+                } finally {
+                    setIsSearchingTenant(false);
+                }
+            };
+            fetchInstitutes();
+        }
+    }, [authStage, isAdminMode]);
+
+    const handleTenantSearch = (text: string) => {
+        setTenantSearchQuery(text);
+        if (!text || text.length < 2) {
+            setTenantSearchResults([]);
+            return;
+        }
+        const lowerText = text.toLowerCase();
+        const matches = tenantListCache.filter((t: any) => 
+            (t.name?.toLowerCase() || '').includes(lowerText) || 
+            (t.code?.toLowerCase() || '').includes(lowerText)
+        ).slice(0, 5);
+        setTenantSearchResults(matches);
+    };
+
+    const selectTenant = async (tenant: any) => {
+        setLoading(true);
+        try {
+            setResolvedTenantId(tenant.id);
+            setInstituteName(tenant.name || tenant.institute_name || "Your Institute");
+
+            const configDoc = await getDoc(doc(db, "tenants", tenant.id, "metadata", "lists"));
+            if (configDoc.exists()) {
+                const data = configDoc.data();
+                const grades = data.grades || [];
+                const batches = data.batches || {};
+                setAvailableGrades(grades);
+                setBatchList(batches);
+                if (grades.length > 0) {
+                    setSelectedGrade(grades[0]);
+                    const initialBatches = batches[grades[0]] || ["General Batch"];
+                    if (initialBatches.length > 0) setSelectedBatch(initialBatches[0]);
+                }
+            }
+            Keyboard.dismiss();
+            setAuthStage('FORM');
+        } catch(e) {
+            console.error("Error setting up tenant defaults:", e);
+            Alert.alert("Error", "Could not load institute configuration.");
+        } finally {
+            setLoading(false);
+        }
+    };
 
     // Fetch students when entering Parent Form
     useEffect(() => {
@@ -108,58 +199,24 @@ export default function AuthScreen() {
     };
 
     const validateTenant = async () => {
+        // Fallback for direct code entry if still needed (or remove the button entirely)
+        // We will keep it just as a hidden Easter egg for direct login
         const trimmedCode = inputTenantId.trim();
-        if (!trimmedCode) { Alert.alert('Error', 'Please enter an Institute Code'); return; }
+        if (!trimmedCode) { Alert.alert('Error', 'Please enter an Institute Code or search above'); return; }
         setLoading(true);
         try {
-            // DEBUG ALERT - REMOVE LATER
-            // Alert.alert('DEBUG', `Project: ${db.app.options.projectId}\nSearching for: "${trimmedCode}"`);
-
             const q = query(collection(db, "tenants"), where("code", "==", trimmedCode));
             const snapshot = await getDocs(q);
 
             if (!snapshot.empty) {
                 const tenantDoc = snapshot.docs[0];
-                const tenantId = tenantDoc.id;
-                setResolvedTenantId(tenantId);
-                setInstituteName(tenantDoc.data().name || tenantDoc.data().institute_name || "Your Institute");
-
-                const configDoc = await getDoc(doc(db, "tenants", tenantId, "metadata", "lists"));
-                if (configDoc.exists()) {
-                    const grades = configDoc.data().grades || [];
-                    setAvailableGrades(grades);
-                    if (grades.length > 0) setSelectedGrade(grades[0]);
-                }
-
-                setAuthStage('FORM');
+                await selectTenant({ id: tenantDoc.id, ...tenantDoc.data() });
             } else {
-                // FETCH ALL CODES FOR DEBUGGING
-                let debugCodes = "";
-                let directText = "";
-                try {
-                    const allQ = query(collection(db, "tenants"), limit(5));
-                    const allSnap = await getDocs(allQ);
-                    debugCodes = allSnap.docs.map(d => d.data().code || d.id).join(", ");
-
-                    // Try direct ID lookup
-                    const directSnap = await getDoc(doc(db, "tenants", "inst_3abw0"));
-                    directText = directSnap.exists() ? `Direct ID (inst_3abw0) FOUND: ${directSnap.data().code}` : "Direct ID (inst_3abw0) NOT FOUND";
-                } catch (err: any) {
-                    debugCodes = "Error: " + err.message;
-                }
-
-                Alert.alert('Invalid Code',
-                    `No institute found with code: "${trimmedCode}"\n\n` +
-                    `Project: ${db.app.options.projectId}\n` +
-                    `Direct Check: ${directText}\n` +
-                    `Available: ${debugCodes || "NONE"}`
-                );
+                Alert.alert('Invalid Code', `No institute found with code: "${trimmedCode}"`);
             }
         } catch (e: any) {
             console.error("Validation Error:", e);
-            let msg = 'Could not connect to the server. Please check your internet.';
-            if (e.message.includes('permission-denied')) msg = 'Access denied while validating institute.';
-            Alert.alert('Institute Validation Failed', msg);
+            Alert.alert('Institute Validation Failed', 'Could not connect to the server.');
         } finally {
             setLoading(false);
         }
@@ -168,32 +225,114 @@ export default function AuthScreen() {
     const [password, setPassword] = useState('');
 
     const handleAuthAction = async () => {
-        // ADMIN LOGIN FLOW
+        // ADMIN FLOW
         if (isAdminMode) {
+            if (isInstituteSignUp) {
+                // --- INSTITUTE SIGN UP ---
+                if (!instituteName || !name || !phoneNumber || !password) {
+                    Alert.alert("Error", "Please fill in all fields (Institute Name, Owner Name, Email/Phone, Password).");
+                    return;
+                }
+                setLoading(true);
+                try {
+                    const isPhone = /^\+?[0-9\s]+$/.test(phoneNumber) && !phoneNumber.includes('@');
+                    let emailToUse = phoneNumber;
+                    const cleanPhone = phoneNumber.replace(/[^0-9]/g, '');
+
+                    if (isPhone) {
+                        if (cleanPhone.length < 8) {
+                            Alert.alert("Error", "Invalid phone number length.");
+                            setLoading(false);
+                            return;
+                        }
+                        emailToUse = `${cleanPhone}@midnightcuriosity.com`;
+                    }
+
+                    // 1. Create Auth User
+                    const userCredential = await createUserWithEmailAndPassword(auth, emailToUse, password);
+                    const user = userCredential.user;
+
+                    // 2. Generate Tenant ID (matches web portal logic)
+                    const generatedTenantId = `inst_${Math.random().toString(36).substring(2, 7)}`;
+
+                    // 3. Create Admin Profile
+                    const userData: any = {
+                        email: emailToUse,
+                        name: name,
+                        role: 'admin',
+                        tenantId: generatedTenantId,
+                        status: 'PENDING_APPROVAL',
+                        createdAt: serverTimestamp()
+                    };
+                    if (isPhone) userData.phoneNumber = cleanPhone;
+
+                    await setDoc(doc(db, "users", user.uid), userData);
+
+                    // 4. Create Tenant Document
+                    await setDoc(doc(db, "tenants", generatedTenantId), {
+                        name: instituteName,
+                        code: generatedTenantId,
+                        adminUid: user.uid,
+                        createdAt: serverTimestamp(),
+                        isActive: false,
+                        status: 'PENDING_APPROVAL'
+                    });
+
+                    await setTenantId(generatedTenantId);
+                    await AsyncStorage.setItem('user_uid', user.uid);
+                    
+                    try { await updateProfile(user, { displayName: name }); } catch (e) { }
+
+                    router.replace('/approval-pending');
+
+                } catch (e: any) {
+                    console.error("Institute Signup Error:", e);
+                    let msg = e.message;
+                    if (e.code === 'auth/email-already-in-use') msg = "This email/phone is already registered.";
+                    Alert.alert("Registration Failed", msg);
+                } finally {
+                    setLoading(false);
+                }
+                return;
+            }
+
+            // --- ADMIN LOGIN ---
             if (!phoneNumber || !password) {
-                Alert.alert("Error", "Please enter Email and Password.");
+                Alert.alert("Error", "Please enter Email/Phone and Password.");
                 return;
             }
             setLoading(true);
             try {
-                const userCredential = await signInWithEmailAndPassword(auth, phoneNumber, password); // phoneNumber holds Email here
+                const isPhone = /^\+?[0-9\s]+$/.test(phoneNumber) && !phoneNumber.includes('@');
+                let emailToUse = phoneNumber;
+                if (isPhone) {
+                    const cleanPhone = phoneNumber.replace(/[^0-9]/g, '');
+                    emailToUse = `${cleanPhone}@midnightcuriosity.com`;
+                }
+
+                const userCredential = await signInWithEmailAndPassword(auth, emailToUse, password);
 
                 // Verify Role
                 const uid = userCredential.user.uid;
                 const userDoc = await getDoc(doc(db, "users", uid));
                 if (userDoc.exists() && (userDoc.data().role === 'admin' || userDoc.data().role === 'ADMIN')) {
-                    await setTenantId(userDoc.data().tenantId);
+                    const userData = userDoc.data();
+                    await setTenantId(userData.tenantId);
                     await AsyncStorage.setItem('user_uid', uid);
-                    router.replace('/admin-dashboard');
+                    
+                    if (userData.status === 'PENDING_APPROVAL' || userData.status === 'PENDING') {
+                        router.replace('/approval-pending');
+                    } else {
+                        router.replace('/admin-dashboard');
+                    }
                 } else {
                     Alert.alert("Access Denied", "You do not have Admin privileges.");
                     await auth.signOut();
                 }
             } catch (e: any) {
                 console.error("Admin Login Error:", e);
-                let msg = "Check your email and password.";
-                if (e.code === 'auth/invalid-email') msg = "Invalid email format.";
-                if (e.code === 'auth/invalid-credential' || e.code === 'auth/wrong-password' || e.code === 'auth/user-not-found') msg = "Invalid admin email or password.";
+                let msg = "Check your email/phone and password.";
+                if (e.code === 'auth/invalid-email' || e.code === 'auth/invalid-credential' || e.code === 'auth/user-not-found') msg = "Invalid admin credentials.";
                 Alert.alert("Admin Login Failed", msg);
             } finally {
                 setLoading(false);
@@ -257,6 +396,7 @@ export default function AuthScreen() {
                 } else {
                     profileData.role = 'STUDENT';
                     profileData.grade = selectedGrade;
+                    profileData.batch = selectedBatch || 'General Batch';
                 }
 
                 // Save User Doc
@@ -440,7 +580,7 @@ export default function AuthScreen() {
         const role = userData.role?.toUpperCase();
         if (role === 'PARENT') {
             if (userData.status === 'PENDING') router.replace('/approval-pending');
-            else router.replace('/parent-dashboard');
+            else router.replace('/(tabs)/parent-home');
         } else if (role === 'ADMIN') {
             router.replace('/admin-dashboard');
         } else {
@@ -448,6 +588,61 @@ export default function AuthScreen() {
             else router.replace('/grade');
         }
     };
+
+    const handleForgotPassword = async () => {
+        const identifier = isAdminMode ? phoneNumber : phoneNumber.replace(/[^0-9]/g, '');
+        if (!identifier) {
+            Alert.alert("Error", "Please enter your " + (isAdminMode ? "Email" : "Mobile Number") + " first.");
+            return;
+        }
+
+        setLoading(true);
+        try {
+            if (isAdminMode) {
+                await sendPasswordResetEmail(auth, identifier);
+                Alert.alert("Success", "Password reset email sent! Please check your inbox.");
+            } else {
+                if (!name.trim()) {
+                    Alert.alert("Required", "Please enter your Full Name so the Administrator can identify you.");
+                    return;
+                }
+                
+                // Determine the correct tenant information from all available sources
+                const finalTenantId = resolvedTenantId || (tenantId !== 'default' ? tenantId : '');
+                const finalInstituteName = instituteName || (tenantName !== 'EduPro' ? tenantName : '');
+
+                if (!finalTenantId) {
+                    Alert.alert("Error", "Could not identify your Institute. Please go back and select it again.");
+                    setAuthStage('TENANT');
+                    setIsForgot(false);
+                    setLoading(false);
+                    return;
+                }
+
+                await addDoc(collection(db, "password_reset_requests"), {
+                    studentName: name || "Unknown Student",
+                    phoneNumber: identifier,
+                    tenantId: finalTenantId,
+                    instituteName: finalInstituteName,
+                    status: 'PENDING',
+                    createdAt: serverTimestamp(),
+                    type: isParent ? 'PARENT' : 'STUDENT'
+                });
+                
+                Alert.alert(
+                    "Request Sent", 
+                    "We've notified your Institute Administrator. \n\nThey will reset your password and contact you via WhatsApp shortly."
+                );
+            }
+            setIsForgot(false);
+        } catch (e: any) {
+            console.error("Reset Error:", e);
+            Alert.alert("Error", "Failed to process request. " + (e.message || ""));
+        } finally {
+            setLoading(false);
+        }
+    };
+
 
     const checkBiometrics = async (userData: any) => {
         try {
@@ -501,11 +696,13 @@ export default function AuthScreen() {
                         if (!isAdminMode) {
                             setAuthStage('FORM');
                             setIsSignUp(false);
+                            setIsInstituteSignUp(false); 
                             setIsParent(false);
                             setPhoneNumber("");
                             setPassword("");
                         } else {
                             setAuthStage('TENANT');
+                            setIsInstituteSignUp(false);
                             setPhoneNumber("");
                         }
                     }}
@@ -530,7 +727,22 @@ export default function AuthScreen() {
                 </View>
 
                 <View style={styles.card}>
-                    {!isAdminMode && (
+                    {isAdminMode ? (
+                        <View style={styles.toggleContainer}>
+                            <TouchableOpacity
+                                style={[styles.toggleButton, !isInstituteSignUp && styles.toggleButtonActive]}
+                                onPress={() => setIsInstituteSignUp(false)}
+                            >
+                                <Text style={[styles.toggleText, !isInstituteSignUp && styles.toggleTextActive]}>Admin Login</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                style={[styles.toggleButton, isInstituteSignUp && styles.toggleButtonActive]}
+                                onPress={() => setIsInstituteSignUp(true)}
+                            >
+                                <Text style={[styles.toggleText, isInstituteSignUp && styles.toggleTextActive]}>Register Institute</Text>
+                            </TouchableOpacity>
+                        </View>
+                    ) : (
                         <View style={styles.toggleContainer}>
                             <TouchableOpacity
                                 style={[styles.toggleButton, isSignUp && !isParent && styles.toggleButtonActive]}
@@ -554,26 +766,88 @@ export default function AuthScreen() {
                     )}
 
                     <Text style={styles.headerTitle}>
-                        {isAdminMode ? 'Admin Console' : (isParent ? 'Parent Portal' : (isSignUp ? 'Create Account' : 'Welcome Back'))}
+                        {isForgot ? 'Reset Password' : (isAdminMode ? (isInstituteSignUp ? 'Institute Registration' : 'Admin Console') : (isParent ? 'Parent Portal' : (isSignUp ? 'Create Account' : 'Welcome Back')))}
                     </Text>
                     <Text style={styles.headerSubtitle}>
-                        {isAdminMode ? 'Login to manage institute' : (authStage === 'TENANT' ? 'Validate your Institute' :
-                            isParent ? 'Track your child\'s progress' : 'Enter your details to start learning')}
+                        {isForgot ? 'Get back into your account' : (isAdminMode ? (isInstituteSignUp ? 'Grow your education brand' : 'Login to manage institute') : (authStage === 'TENANT' ? 'Validate your Institute' :
+                            isParent ? 'Track your child\'s progress' : 'Enter your details to start learning'))}
                     </Text>
 
                     <View style={styles.inputContainer}>
                         {/* STAGE 1: TENANT CHECK (Skipped if Admin) */}
                         {authStage === 'TENANT' && !isAdminMode && (
                             <View style={styles.inputWrapper}>
-                                <Text style={styles.label}>Institute Code</Text>
-                                <TextInput
-                                    style={styles.input}
-                                    placeholder="Enter Code (e.g. ProWin_id)"
-                                    placeholderTextColor={colors.textSecondary}
-                                    value={inputTenantId}
-                                    onChangeText={setInputTenantId}
-                                    autoCapitalize="none"
-                                />
+                                <Text style={styles.label}>Search Institute</Text>
+                                <View style={[styles.input, { padding: 0, justifyContent: 'center' }]}>
+                                    <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12 }}>
+                                        <Ionicons name="search" size={20} color={colors.textSecondary} />
+                                        <TextInput
+                                            style={{ flex: 1, padding: 12, color: colors.text }}
+                                            placeholder="Enter Institute Name..."
+                                            placeholderTextColor={colors.textSecondary}
+                                            value={tenantSearchQuery}
+                                            onChangeText={handleTenantSearch}
+                                            autoCapitalize="words"
+                                            autoCorrect={false}
+                                        />
+                                        {isSearchingTenant && <ActivityIndicator size="small" color={colors.primary} />}
+                                    </View>
+                                </View>
+
+                                {tenantSearchResults.length > 0 && (
+                                    <View style={{ backgroundColor: colors.card, borderRadius: 12, marginTop: 8, overflow: 'hidden', borderWidth: 1, borderColor: colors.border }}>
+                                        {tenantSearchResults.map((t, idx) => (
+                                            <TouchableOpacity 
+                                                key={t.id} 
+                                                onPress={() => selectTenant(t)}
+                                                style={{ padding: 16, borderBottomWidth: idx < tenantSearchResults.length - 1 ? 1 : 0, borderBottomColor: colors.border, flexDirection: 'row', alignItems: 'center' }}
+                                            >
+                                                <Ionicons name="business" size={24} color={colors.primary} style={{ marginRight: 12 }} />
+                                                <View>
+                                                    <Text style={{ color: colors.text, fontWeight: '600', fontSize: 16 }}>{t.name}</Text>
+                                                    <Text style={{ color: colors.textSecondary, fontSize: 12 }}>Code: {t.code}</Text>
+                                                </View>
+                                            </TouchableOpacity>
+                                        ))}
+                                    </View>
+                                )}
+
+                                {tenantSearchQuery.length > 0 && tenantSearchResults.length === 0 && !isSearchingTenant && !showManualCode && (
+                                    <View style={{ padding: 16, alignItems: 'center' }}>
+                                        <Text style={{ color: colors.textSecondary }}>No institutes found matching "{tenantSearchQuery}".</Text>
+                                        <TouchableOpacity onPress={() => setShowManualCode(true)}>
+                                          <Text style={{ color: colors.primary, marginTop: 8, fontSize: 13, fontWeight: '600' }}>Have an Institute Code? Enter manually ⌨️</Text>
+                                        </TouchableOpacity>
+                                    </View>
+                                )}
+
+                                {showManualCode && (
+                                    <View style={{ marginTop: 20, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 20 }}>
+                                        <Text style={styles.label}>Institute Code (Manual)</Text>
+                                        <TextInput
+                                            style={styles.input}
+                                            placeholder="Enter Code (e.g. ProWin_id)"
+                                            placeholderTextColor={colors.textSecondary}
+                                            value={inputTenantId}
+                                            onChangeText={setInputTenantId}
+                                            autoCapitalize="none"
+                                        />
+                                        <TouchableOpacity 
+                                            onPress={() => setShowManualCode(false)}
+                                            style={{ marginTop: 10, alignSelf: 'center' }}
+                                        >
+                                            <Text style={{ color: colors.textSecondary, fontSize: 12 }}>Back to Search</Text>
+                                        </TouchableOpacity>
+
+                                        <TouchableOpacity
+                                            style={[styles.mainButton, { marginTop: 20 }]}
+                                            onPress={validateTenant}
+                                            disabled={loading}
+                                        >
+                                            {loading ? <ActivityIndicator color="#FFF" /> : <Text style={styles.mainButtonText}>Validate Code</Text>}
+                                        </TouchableOpacity>
+                                    </View>
+                                )}
                             </View>
                         )}
 
@@ -586,15 +860,28 @@ export default function AuthScreen() {
                                     </View>
                                 ) : null}
 
-                                {isSignUp && !isAdminMode && (
+                                { (isSignUp || (isAdminMode && isInstituteSignUp)) && (
                                     <View style={styles.inputWrapper}>
-                                        <Text style={styles.label}>Full Name</Text>
+                                        <Text style={styles.label}>{isAdminMode ? "Owner Name" : "Full Name"}</Text>
                                         <TextInput
                                             style={styles.input}
                                             placeholder="John Doe"
                                             placeholderTextColor={colors.textSecondary}
                                             value={name}
                                             onChangeText={setName}
+                                        />
+                                    </View>
+                                )}
+
+                                {isAdminMode && isInstituteSignUp && (
+                                    <View style={styles.inputWrapper}>
+                                        <Text style={styles.label}>Institute Name</Text>
+                                        <TextInput
+                                            style={styles.input}
+                                            placeholder="e.g. Curiosity Academy"
+                                            placeholderTextColor={colors.textSecondary}
+                                            value={instituteName}
+                                            onChangeText={setInstituteName}
                                         />
                                     </View>
                                 )}
@@ -678,30 +965,56 @@ export default function AuthScreen() {
                                 )}
 
                                 {isSignUp && !isParent && !isAdminMode && availableGrades.length > 0 && (
-                                    <View style={styles.inputWrapper}>
-                                        <Text style={styles.label}>Select Grade</Text>
-                                        <View style={styles.gradeContainer}>
-                                            {availableGrades.map((g) => (
-                                                <TouchableOpacity
-                                                    key={g}
-                                                    style={[styles.gradeChip, selectedGrade === g && styles.gradeChipActive]}
-                                                    onPress={() => setSelectedGrade(g)}
-                                                >
-                                                    <Text style={[styles.gradeText, selectedGrade === g && styles.gradeTextActive]}>
-                                                        {g}
-                                                    </Text>
-                                                </TouchableOpacity>
-                                            ))}
+                                    <>
+                                        <View style={styles.inputWrapper}>
+                                            <Text style={styles.label}>Select Grade</Text>
+                                            <View style={styles.gradeContainer}>
+                                                {availableGrades.map((g) => (
+                                                    <TouchableOpacity
+                                                        key={g}
+                                                        style={[styles.gradeChip, selectedGrade === g && styles.gradeChipActive]}
+                                                        onPress={() => setSelectedGrade(g)}
+                                                    >
+                                                        <Text style={[styles.gradeText, selectedGrade === g && styles.gradeTextActive]}>
+                                                            {g}
+                                                        </Text>
+                                                    </TouchableOpacity>
+                                                ))}
+                                            </View>
                                         </View>
-                                    </View>
+                                        
+                                        <View style={styles.inputWrapper}>
+                                            <Text style={styles.label}>Select Batch</Text>
+                                            <View style={styles.gradeContainer}>
+                                                {(batchList[selectedGrade] || ["General Batch"]).map((b: string) => (
+                                                    <TouchableOpacity
+                                                        key={b}
+                                                        style={[styles.gradeChip, selectedBatch === b && styles.gradeChipActive]}
+                                                        onPress={() => setSelectedBatch(b)}
+                                                    >
+                                                        <Text style={[styles.gradeText, selectedBatch === b && styles.gradeTextActive]}>
+                                                            {b}
+                                                        </Text>
+                                                    </TouchableOpacity>
+                                                ))}
+                                            </View>
+                                        </View>
+                                    </>
                                 )}
                             </>
                         )}
 
                         {/* STAGE 3: PASSWORD (Merged into FORM) */}
-                        {authStage === 'FORM' && (
+                        {authStage === 'FORM' && !isForgot && (
                             <View style={styles.inputWrapper}>
-                                <Text style={styles.label}>Password</Text>
+                                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                                    <Text style={[styles.label, { marginBottom: 0 }]}>Password</Text>
+                                    {!isSignUp && (
+                                        <TouchableOpacity onPress={() => setIsForgot(true)}>
+                                            <Text style={{ color: colors.primary, fontSize: 13, fontWeight: '600' }}>Forgot?</Text>
+                                        </TouchableOpacity>
+                                    )}
+                                </View>
                                 <TextInput
                                     style={styles.input}
                                     placeholder="Enter Password"
@@ -712,25 +1025,58 @@ export default function AuthScreen() {
                                 />
                             </View>
                         )}
+
+                        {/* FORGOT PASSWORD VIEW */}
+                        {isForgot && (
+                            <View style={styles.inputWrapper}>
+                                {!isAdminMode && (
+                                    <>
+                                        <Text style={styles.label}>Full Name</Text>
+                                        <TextInput
+                                            style={[styles.input, { marginBottom: 12 }]}
+                                            placeholder="Enter your name"
+                                            placeholderTextColor={colors.textSecondary}
+                                            value={name}
+                                            onChangeText={setName}
+                                        />
+                                    </>
+                                )}
+                                <Text style={styles.label}>{isAdminMode ? "Confirm Admin Email" : "Confirm Mobile Number"}</Text>
+                                <TextInput
+                                    style={styles.input}
+                                    placeholder={isAdminMode ? "admin@example.com" : "9876543210"}
+                                    placeholderTextColor={colors.textSecondary}
+                                    keyboardType={isAdminMode ? "email-address" : "phone-pad"}
+                                    value={phoneNumber}
+                                    onChangeText={setPhoneNumber}
+                                />
+                                {!isAdminMode && (
+                                    <View style={{ marginTop: 16, padding: 12, backgroundColor: colors.primary + '10', borderRadius: 8 }}>
+                                        <Text style={{ color: colors.textSecondary, fontSize: 12, lineHeight: 18 }}>
+                                            Note: Your request will be sent to the Institute Administrator. They will reach out to you via WhatsApp once your password is reset.
+                                        </Text>
+                                    </View>
+                                )}
+                            </View>
+                        )}
                     </View>
 
-                    <TouchableOpacity
-                        style={styles.mainButton}
-                        onPress={() => {
-                            if (authStage === 'TENANT' && !isAdminMode) validateTenant();
-                            else handleAuthAction();
-                        }}
-                        disabled={loading}
-                    >
-                        {loading ? (
-                            <ActivityIndicator color="#FFFFFF" />
-                        ) : (
-                            <Text style={styles.mainButtonText}>
-                                {isAdminMode ? 'Login as Admin' : (authStage === 'TENANT' ? 'Validate Institute' :
-                                    isSignUp ? 'Sign Up' : 'Login')}
-                            </Text>
-                        )}
-                    </TouchableOpacity>
+                    {/* Show Main Button ONLY if not in TENANT stage (search selects automatically) or if manual code is shown */}
+                    {(authStage !== 'TENANT' || isAdminMode) && (
+                        <TouchableOpacity
+                            style={styles.mainButton}
+                            onPress={isForgot ? handleForgotPassword : handleAuthAction}
+                            disabled={loading}
+                        >
+                            {loading ? (
+                                <ActivityIndicator color="#FFFFFF" />
+                            ) : (
+                                <Text style={styles.mainButtonText}>
+                                    {isForgot ? 'Send Reset Link' : (isAdminMode ? (isInstituteSignUp ? 'Register Institute' : 'Login as Admin') : (isSignUp ? 'Sign Up' : 'Login'))}
+                                </Text>
+                            )}
+                        </TouchableOpacity>
+                    )}
 
                     {isBiometricSupported && !isSignUp && authStage === 'FORM' && (
                         <TouchableOpacity
@@ -745,8 +1091,15 @@ export default function AuthScreen() {
                     )}
 
                     {authStage !== 'TENANT' && !isAdminMode && (
-                        <TouchableOpacity onPress={() => { setAuthStage('TENANT'); setPassword(''); }}>
-                            <Text style={styles.changeNumberText}>Change Institute / Back</Text>
+                        <TouchableOpacity onPress={isForgot ? () => setIsForgot(false) : () => { setAuthStage('TENANT'); setPassword(''); }}>
+                            <Text style={styles.changeNumberText}>
+                                {isForgot ? 'Back to Login' : 'Change Institute / Back'}
+                            </Text>
+                        </TouchableOpacity>
+                    )}
+                    {isAdminMode && isForgot && (
+                        <TouchableOpacity onPress={() => setIsForgot(false)}>
+                            <Text style={styles.changeNumberText}>Back to Login</Text>
                         </TouchableOpacity>
                     )}
                 </View>

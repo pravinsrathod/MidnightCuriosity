@@ -1,13 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 
-const ConfirmModal = ({ isOpen, title, message, onConfirm, onCancel, confirmText = "Confirm", cancelText = "Cancel", isDangerous = false, type = 'confirm' }) => {
-    const [inputValue, setInputValue] = useState("");
+const ConfirmModal = ({ isOpen, title, message, onConfirm, onCancel, confirmText = "Confirm", cancelText = "Cancel", isDangerous = false, type = 'confirm', initialValue = "" }) => {
+    const [inputValue, setInputValue] = useState(initialValue);
 
     // Reset input when modal opens
     useEffect(() => {
-        if (isOpen) setInputValue("");
-    }, [isOpen]);
+        if (isOpen) setInputValue(initialValue || "");
+    }, [isOpen, initialValue]);
 
     if (!isOpen) return null;
 

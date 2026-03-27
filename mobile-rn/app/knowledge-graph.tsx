@@ -32,6 +32,7 @@ export default function KnowledgeGraphScreen() {
     const [selectedSubject, setSelectedSubject] = useState<string | null>(null);
     const [topicTitles, setTopicTitles] = useState<string[]>([]);
     const [completedTopicIds, setCompletedTopicIds] = useState<string[]>([]);
+    const [studentBatch, setStudentBatch] = useState("General Batch");
     const [loading, setLoading] = useState(true);
 
     // Fetch initial profile
@@ -57,6 +58,7 @@ export default function KnowledgeGraphScreen() {
                             const userGrade = data.grade || "Grade 10";
                             setGrade(userGrade);
                             setCompletedTopicIds(data.completedTopics || []);
+                            setStudentBatch(data.batch || "General Batch");
 
                             // Fetch Tenant Metadata
                             const tid = data.tenantId || tenantId;
@@ -111,7 +113,15 @@ export default function KnowledgeGraphScreen() {
                     const dateB = b.data().createdAt?.seconds || 0;
                     return dateA - dateB; // asc as before
                 });
-                const titles = [...new Set(sortedDocs.map(d => d.data().topic))].filter(Boolean);
+
+                const titles = [...new Set(
+                    sortedDocs
+                        .filter(d => {
+                            const b = d.data().batch;
+                            return !b || b === "All" || b === studentBatch;
+                        })
+                        .map(d => d.data().topic)
+                )].filter(Boolean);
                 setTopicTitles(titles);
             } catch (e) {
                 console.error("Error fetching topics:", e);
@@ -173,15 +183,20 @@ export default function KnowledgeGraphScreen() {
         return (
             <SafeAreaView style={styles.container}>
                 <ScrollView contentContainerStyle={styles.scrollContent}>
-                    <View style={styles.headerRow}>
+                    <View style={styles.header}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+                            <Ionicons name="arrow-back" size={24} color={colors.text} />
+                        </TouchableOpacity>
                         <View>
-                            <Text style={styles.welcomeLabel}>Welcome Back,</Text>
-                            <Text style={styles.userName}>{userName}</Text>
-                        </View>
-                        <View style={styles.gradeBadge}>
-                            <Text style={styles.gradeText}>{grade}</Text>
+                            <Text style={styles.headerSubtitle}>Personalized Path</Text>
+                            <Text style={styles.headerTitle}>Learning Map</Text>
                         </View>
                     </View>
+                    <View style={styles.headerIcon}>
+                        <Ionicons name="map-outline" size={32} color={colors.primary} />
+                    </View>
+                </View>
 
                     <Text style={styles.sectionTitle}>Choose Subject</Text>
 
@@ -296,22 +311,35 @@ const makeStyles = (colors: any) => StyleSheet.create({
     scrollContent: {
         padding: 24,
     },
-    headerRow: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        marginBottom: 40,
-        marginTop: 10,
+    header: { 
+        flexDirection: 'row', 
+        justifyContent: 'space-between', 
+        alignItems: 'center', 
+        marginBottom: 30,
+        backgroundColor: colors.background 
     },
-    welcomeLabel: {
+    backBtn: { 
+        padding: 10, 
+        borderRadius: 12, 
+        backgroundColor: colors.card, 
+        borderWidth: 1, 
+        borderColor: colors.border, 
+        marginRight: 15 
+    },
+    headerSubtitle: {
         color: colors.textSecondary,
         fontSize: 14,
         marginBottom: 4,
     },
-    userName: {
+    headerTitle: {
         color: colors.text,
         fontSize: 24,
         fontWeight: 'bold',
+    },
+    headerIcon: {
+        backgroundColor: colors.primaryLight,
+        padding: 10,
+        borderRadius: 15,
     },
     gradeBadge: {
         backgroundColor: colors.primaryLight,

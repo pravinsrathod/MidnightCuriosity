@@ -2,5 +2,7 @@
   "projects": {
     "default": "midnightcuriosity",
     "production": "midnightcuriosity-prod"
-  }
+  },
+  "targets": {},
+  "etags": {}
 }

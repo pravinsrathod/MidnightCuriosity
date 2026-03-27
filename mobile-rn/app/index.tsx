@@ -4,7 +4,7 @@ import { useRouter } from 'expo-router';
 import { auth, db } from '../services/firebaseConfig';
 import { onAuthStateChanged } from 'firebase/auth';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, updateDoc } from 'firebase/firestore';
 
 export default function SplashScreen() {
     const router = useRouter();
@@ -28,10 +28,44 @@ export default function SplashScreen() {
                             const userDoc = await getDoc(doc(db, "users", user.uid));
                             if (userDoc.exists()) {
                                 const userData = userDoc.data();
+
+                                // --- Streak & Last Active Logic ---
+                                try {
+                                    const today = new Date().toISOString().split('T')[0];
+                                    const lastActive = userData.lastActiveDate;
+                                    let currentStreak = userData.streak || 0;
+
+                                    if (!lastActive) {
+                                        currentStreak = 1;
+                                    } else if (lastActive !== today) {
+                                        const lastDate = new Date(lastActive);
+                                        const todayDate = new Date(today);
+                                        const diffTime = todayDate.getTime() - lastDate.getTime();
+                                        const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+
+                                        if (diffDays === 1) {
+                                            currentStreak += 1;
+                                        } else if (diffDays > 1) {
+                                            currentStreak = 1;
+                                        }
+                                    }
+
+                                    if (lastActive !== today) {
+                                        await updateDoc(doc(db, "users", user.uid), {
+                                            streak: currentStreak,
+                                            lastActiveDate: today
+                                        });
+                                        console.log(`Streak updated to ${currentStreak} for ${user.uid}`);
+                                    }
+                                } catch (streakErr) {
+                                    console.warn("Failed to update streak:", streakErr);
+                                }
+                                // ----------------------------------
+
                                 const role = userData.role?.toUpperCase();
 
                                 if (role === 'PARENT') {
-                                    router.replace('/parent-dashboard');
+                                    router.replace('/(tabs)/parent-home');
                                 } else if (role === 'ADMIN') {
                                     router.replace('/admin-dashboard');
                                 } else {

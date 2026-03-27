@@ -2,7 +2,7 @@ import React, { useState, useCallback, useEffect, useMemo } from 'react'; // v2
 import { View, Text, TouchableOpacity, ScrollView, StyleSheet, SafeAreaView, Image, ActivityIndicator, Platform, Alert } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { auth, db, storage } from '../services/firebaseConfig';
-import { doc, getDoc, updateDoc, setDoc, collection, query, where, onSnapshot, orderBy, limit } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, setDoc, collection, query, where, onSnapshot, orderBy, limit, getDocs } from 'firebase/firestore';
 import { onAuthStateChanged } from 'firebase/auth';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -10,6 +10,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
 import { useTenant } from '../context/TenantContext';
+import LiveClassroomView from '../components/LiveClassroomView';
 
 export default function GradeSelectionScreen() {
     const router = useRouter();
@@ -19,6 +20,7 @@ export default function GradeSelectionScreen() {
 
     const [userName, setUserName] = useState("Student");
     const [userGrade, setUserGrade] = useState("Grade 10");
+    const [userBatch, setUserBatch] = useState("General Batch");
     const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
     const [uploading, setUploading] = useState(false);
     const [avgScore, setAvgScore] = useState(0);
@@ -32,6 +34,9 @@ export default function GradeSelectionScreen() {
     // Fees State
     const [pendingFees, setPendingFees] = useState<any[]>([]);
     const [feesTotalDue, setFeesTotalDue] = useState(0);
+    // Live Session State
+    const [liveSession, setLiveSession] = useState<any>(null);
+    const [isJoining, setIsJoining] = useState(false);
 
     // Listen for Active Polls
     // Listen for Active Polls (Multi-tenant)
@@ -40,13 +45,21 @@ export default function GradeSelectionScreen() {
         const q = query(
             collection(db, "polls"),
             where("active", "==", true),
-            where("tenantId", "==", tenantId) // Filter by tenant
+            where("tenantId", "==", tenantId),
+            where("grade", "in", ["All", userGrade])
         );
         const unsub = onSnapshot(q, (snapshot) => {
             if (!snapshot.empty) {
-                const pollDoc = snapshot.docs[0];
-                setActivePoll({ id: pollDoc.id, ...pollDoc.data() });
-                setHasVoted(false); // Reset local vote state on new poll (simple logic)
+                const filteredPolls = snapshot.docs
+                    .map(d => ({ id: d.id, ...d.data() } as any))
+                    .filter(p => !p.batch || p.batch === "All" || p.batch === userBatch);
+
+                if (filteredPolls.length > 0) {
+                    setActivePoll(filteredPolls[0]);
+                    setHasVoted(false);
+                } else {
+                    setActivePoll(null);
+                }
             } else {
                 setActivePoll(null);
             }
@@ -54,7 +67,28 @@ export default function GradeSelectionScreen() {
             console.error("Poll snapshot error", err);
         });
         return () => unsub();
-    }, [tenantId]);
+    }, [tenantId, userGrade, userBatch]);
+
+    // Listen for Live Sessions
+    useEffect(() => {
+        if (!tenantId || !userGrade || !userBatch) return;
+        const normalizedGrade = userGrade.trim().replace(/\s+/g, '_');
+        const normalizedBatch = userBatch.trim().replace(/\s+/g, '_');
+        const sessionKey = `${tenantId}_${normalizedGrade}_${normalizedBatch}`;
+        
+        console.log(`[StudentApp] Listening for live session: ${sessionKey} (Tenant: ${tenantId})`);
+        
+        const unsub = onSnapshot(doc(db, "liveSessions", sessionKey), (docSnap) => {
+            const data = docSnap.data();
+            if (docSnap.exists() && data && (data.status === 'active' || data.status === 'live')) {
+                console.log(`[StudentApp] Active live session found!`, data);
+                setLiveSession({ id: docSnap.id, ...docSnap.data() });
+            } else {
+                setLiveSession(null);
+            }
+        });
+        return () => unsub();
+    }, [tenantId, userGrade, userBatch]);
 
 
     // Listen for Pending Fees
@@ -75,6 +109,8 @@ export default function GradeSelectionScreen() {
                 });
             setPendingFees(list);
             setFeesTotalDue(list.reduce((s: number, f: any) => s + ((f.totalAmount || 0) - (f.paidAmount || 0)), 0));
+        }, (err) => {
+            console.error("Grade fees snapshot error:", err);
         });
         return () => unsub();
     }, []);
@@ -132,22 +168,64 @@ export default function GradeSelectionScreen() {
                     const data = docSnap.data();
                     setUserName(data.name || "Student");
                     setUserGrade(data.grade || "Grade 10");
+                    setUserBatch(data.batch || "General Batch");
                     if (data.photoURL) setAvatarUrl(data.photoURL);
 
-                    // Stats Logic
-                    const completedCount = data.completedTopics ? data.completedTopics.length : 0;
-                    setAvgScore(completedCount > 0 ? 85 + (completedCount % 15) : 0);
+                    // 1. Avg Score Logic (from actual quiz results)
+                    const results = data.assignmentResults || {};
+                    const scores = Object.values(results).filter(v => typeof v === 'number') as number[];
+                    if (scores.length > 0) {
+                        const sum = scores.reduce((a, b) => a + b, 0);
+                        setAvgScore(Math.round(sum / scores.length));
+                    } else {
+                        setAvgScore(0);
+                    }
 
-                    // Streak Logic
-                    setStreak(data.streak || (completedCount > 0 ? 3 + (completedCount % 5) : 0));
+                    // 2. Streak Logic (from profile)
+                    setStreak(data.streak || 0);
 
-                    // Rank Logic
-                    const calculatedRank = Math.max(1, 100 - (completedCount * 12));
-                    setRank(calculatedRank);
+                    // 3. Rank Logic (Grade-Specific & Data-Driven)
+                    // PERFORMANCE NOTE: This fetches all students in the grade for ranking.
+                    // For large-scale institutes, this should be moved to a scheduled Cloud Function
+                    // that populates a 'rank' field on the user document periodically.
+                    const calculateGradeRank = async () => {
+                        try {
+                            const tenant = data.tenantId || tenantId || 'default';
+                            const grade = data.grade || 'Grade 10';
+                            
+                            const qRank = query(
+                                collection(db, 'users'),
+                                where('tenantId', '==', tenant),
+                                where('grade', '==', grade)
+                            );
+                            
+                            const snapRank = await getDocs(qRank);
+                            const studentProgress = snapRank.docs
+                                .map((d: any) => {
+                                    const dData = d.data();
+                                    const role = dData.role?.toUpperCase();
+                                    // Exclude non-students
+                                    if (role === 'PARENT' || role === 'ADMIN' || dData.isAdmin) return null;
+                                    
+                                    return {
+                                        id: d.id,
+                                        count: dData.completedTopics ? dData.completedTopics.length : 0
+                                    };
+                                })
+                                .filter((s: any) => s !== null) as { id: string, count: number }[];
+
+                            const sorted = studentProgress.sort((a, b) => b.count - a.count);
+                            const myRankIndex = sorted.findIndex((s: any) => s.id === uid);
+                            setRank(myRankIndex !== -1 ? myRankIndex + 1 : 0);
+                        } catch (e) {
+                            console.error("Rank calculation error:", e);
+                        }
+                    };
+                    calculateGradeRank();
 
                     // Self-Healing Redirection: If a parent somehow lands here, send them to Parent Dashboard
                     if (data.role?.toUpperCase() === 'PARENT') {
-                        router.replace('/parent-dashboard');
+                        router.replace('/(tabs)/parent-home');
                     }
                 } else {
                     // Doc doesn't exist? Create it automatically (Self-Healing)
@@ -288,6 +366,14 @@ export default function GradeSelectionScreen() {
 
     return (
         <SafeAreaView style={styles.container}>
+            {liveSession && isJoining && (
+                <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 1000, backgroundColor: '#000', overflow: 'hidden' }}>
+                    <LiveClassroomView 
+                        batchId={liveSession.id} 
+                        onEnd={() => setIsJoining(false)} 
+                    />
+                </View>
+            )}
             <ScrollView
                 contentContainerStyle={styles.scrollContent}
                 showsVerticalScrollIndicator={false}
@@ -367,6 +453,40 @@ export default function GradeSelectionScreen() {
                 </View>
 
 
+                {/* Live Session Banner - Prominent and High Priority */}
+                {liveSession && (
+                    <TouchableOpacity
+                        style={[styles.pollBanner, { 
+                            borderColor: colors.danger, 
+                            backgroundColor: colors.dangerLight,
+                            marginBottom: 20,
+                            borderWidth: 2,
+                            shadowColor: colors.danger,
+                            shadowOffset: { width: 0, height: 4 },
+                            shadowOpacity: 0.2,
+                            shadowRadius: 8,
+                            elevation: 5
+                        }]}
+                        onPress={() => setIsJoining(true)}
+                    >
+                        <View style={styles.pollBannerContent}>
+                            <View style={styles.pollBadgeContainer}>
+                                <View style={[styles.pollDot, { backgroundColor: colors.danger }]} />
+                                <Text style={[styles.pollBadgeText, { color: colors.danger, fontWeight: '800' }]}>LIVE NOW</Text>
+                            </View>
+                            <Text style={[styles.pollBannerTitle, { color: colors.danger, fontSize: 18, fontWeight: '700' }]}>
+                                {liveSession.title || "Your Live Class is Active!"}
+                            </Text>
+                            <Text style={styles.pollBannerSubtitle}>
+                                Instructor: {liveSession.instructorName || "Teacher"} • Join now to participate
+                            </Text>
+                        </View>
+                        <View style={{ backgroundColor: colors.danger, borderRadius: 20, padding: 8 }}>
+                            <Ionicons name="videocam" size={24} color="#FFF" />
+                        </View>
+                    </TouchableOpacity>
+                )}
+
                 {/* LIVE POLL BANNER */}
                 {activePoll && (
                     <TouchableOpacity
@@ -389,69 +509,29 @@ export default function GradeSelectionScreen() {
                     </TouchableOpacity>
                 )}
 
-                {/* Fees Section */}
-                <View style={styles.sectionHeader}>
-                    <Ionicons name="card-outline" size={20} color={colors.primary} />
-                    <Text style={styles.sectionTitle}>Fees</Text>
-                    <View style={{ flex: 1 }} />
-                    <TouchableOpacity onPress={() => router.push('/fees')}>
-                        <Text style={{ color: colors.primary, fontWeight: '600' }}>View All</Text>
-                    </TouchableOpacity>
-                </View>
-
-                {pendingFees.length > 0 ? (
-                    <TouchableOpacity
-                        style={[styles.hwCard, { borderColor: '#ef444440', backgroundColor: '#ef444408', marginBottom: 20 }]}
-                        onPress={() => router.push('/fees')}
-                        activeOpacity={0.7}
-                    >
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
-                            <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: '#ef444420', justifyContent: 'center', alignItems: 'center' }}>
-                                <Ionicons name="alert-circle" size={20} color="#ef4444" />
-                            </View>
-                            <View style={{ flex: 1 }}>
-                                <Text style={[styles.hwTitle, { color: '#ef4444' }]}>Fees Due</Text>
-                                <Text style={styles.hwSubject}>{pendingFees.length} fee{pendingFees.length > 1 ? 's' : ''} pending · RM {feesTotalDue.toFixed(2)} outstanding</Text>
-                            </View>
-                        </View>
-                        <Ionicons name="chevron-forward" size={20} color="#ef4444" />
-                    </TouchableOpacity>
-                ) : (
-                    <TouchableOpacity
-                        style={[styles.hwCard, { backgroundColor: colors.card, borderColor: colors.border, marginBottom: 20 }]}
-                        onPress={() => router.push('/fees')}
-                        activeOpacity={0.7}
-                    >
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
-                            <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: '#22c55e20', justifyContent: 'center', alignItems: 'center' }}>
-                                <Ionicons name="checkmark-circle" size={20} color="#22c55e" />
-                            </View>
-                            <View style={{ flex: 1 }}>
-                                <Text style={[styles.hwTitle, { color: '#22c55e' }]}>All Caught Up!</Text>
-                                <Text style={styles.hwSubject}>No pending fees. Tap to view history.</Text>
-                            </View>
-                        </View>
-                        <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
-                    </TouchableOpacity>
-                )}
-
-
 
 
                 {/* Quick Actions Grid */}
                 <View style={styles.quickActionsContainer}>
                     <Text style={styles.sectionTitle}>Quick Actions</Text>
                     <View style={styles.quickActionRow}>
-                        <TouchableOpacity style={styles.quickActionCard} onPress={() => router.push('/leaderboard')}>
+                        <TouchableOpacity style={styles.quickActionCard} onPress={handleStartLearning}>
                             <View style={[styles.actionIcon, { backgroundColor: colors.primaryLight }]}>
-                                <Ionicons name="podium" size={24} color={colors.primary} />
+                                <Ionicons name="book" size={24} color={colors.primary} />
+                            </View>
+                            <Text style={styles.quickActionText}>Lectures</Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity style={styles.quickActionCard} onPress={() => router.push('/leaderboard')}>
+                            <View style={[styles.actionIcon, { backgroundColor: 'rgba(234, 179, 8, 0.15)' }]}>
+                                <Ionicons name="podium" size={24} color="#EAB308" />
                             </View>
                             <Text style={styles.quickActionText}>Leaderboard</Text>
                         </TouchableOpacity>
 
                         <TouchableOpacity style={styles.quickActionCard} onPress={() => router.push('/homework')}>
                             <View style={[styles.actionIcon, { backgroundColor: 'rgba(59, 130, 246, 0.1)' }]}>
-                                <Ionicons name="book" size={24} color="#3B82F6" />
+                                <Ionicons name="pencil" size={24} color="#3B82F6" />
                             </View>
                             <Text style={styles.quickActionText}>Homework</Text>
                         </TouchableOpacity>
@@ -490,17 +570,18 @@ export default function GradeSelectionScreen() {
                             </View>
                             <Text style={styles.quickActionText}>Polls</Text>
                         </TouchableOpacity>
+
+                        <TouchableOpacity style={styles.quickActionCard} onPress={() => router.push('/fees')}>
+                            <View style={[styles.actionIcon, { backgroundColor: 'rgba(234, 179, 8, 0.15)' }]}>
+                                <Ionicons name="card" size={24} color="#EAB308" />
+                                {pendingFees.length > 0 && <View style={styles.dot} />}
+                            </View>
+                            <Text style={styles.quickActionText}>Fees</Text>
+                        </TouchableOpacity>
                     </View>
                 </View>
 
-                {/* Main CTA */}
-                <TouchableOpacity
-                    style={styles.button}
-                    onPress={handleStartLearning}
-                >
-                    <Text style={styles.buttonText}>Continue Learning</Text>
-                    <Ionicons name="arrow-forward" size={20} color="#FFF" />
-                </TouchableOpacity>
+
 
                 {/* Account Deletion (Apple Compliance) */}
                 <TouchableOpacity
@@ -548,35 +629,6 @@ const makeStyles = (colors: any) => StyleSheet.create({
     subHeroText: {
         fontSize: 14,
         color: colors.textSecondary,
-    },
-    button: {
-        backgroundColor: colors.primary,
-        height: 56,
-        borderRadius: 16,
-        flexDirection: 'row',
-        justifyContent: 'center',
-        alignItems: 'center',
-        gap: 8,
-        marginBottom: 10,
-        ...Platform.select({
-            ios: {
-                shadowColor: colors.primary,
-                shadowOffset: { width: 0, height: 4 },
-                shadowOpacity: 0.3,
-                shadowRadius: 8,
-            },
-            android: {
-                elevation: 4,
-            },
-            web: {
-                boxShadow: `0px 4px 8px ${colors.primary}4D`, // Approx 30% opacity
-            }
-        }),
-    },
-    buttonText: {
-        color: '#FFFFFF',
-        fontSize: 18,
-        fontWeight: 'bold',
     },
     profileSection: {
         flexDirection: 'row',
@@ -742,6 +794,17 @@ const makeStyles = (colors: any) => StyleSheet.create({
         fontSize: 14,
         fontWeight: 'bold',
         textAlign: 'center',
+    },
+    dot: {
+        position: 'absolute',
+        top: 0,
+        right: 0,
+        width: 12,
+        height: 12,
+        borderRadius: 6,
+        backgroundColor: '#ef4444',
+        borderWidth: 2,
+        borderColor: colors.card,
     },
     pollBanner: {
         backgroundColor: colors.card,

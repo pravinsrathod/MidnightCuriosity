@@ -2,8 +2,8 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { View, Text, StyleSheet, FlatList, Image, SafeAreaView, TouchableOpacity, ActivityIndicator, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { db } from '../../services/firebaseConfig';
-import { collection, query, orderBy, limit, getDocs, where } from 'firebase/firestore';
+import { auth, db } from '../../services/firebaseConfig';
+import { collection, query, orderBy, limit, getDocs, where, doc, getDoc } from 'firebase/firestore';
 import { useTheme } from '../../context/ThemeContext';
 import { useTenant } from '../../context/TenantContext';
 
@@ -12,6 +12,8 @@ interface UserRank {
     name: string;
     completedCount: number;
     grade?: string;
+    role?: string;
+    isAdmin?: boolean;
     avatarUrl?: string;
 }
 
@@ -23,36 +25,67 @@ export default function LeaderboardScreen() {
 
     const [users, setUsers] = useState<UserRank[]>([]);
     const [loading, setLoading] = useState(true);
+    const [currentUserGrade, setCurrentUserGrade] = useState<string | null>(null);
+    const [isNotStudent, setIsNotStudent] = useState(false);
 
     useEffect(() => {
         const fetchLeaderboard = async () => {
             try {
-                // Firestore limitation: cannot sort by array length directly.
-                // WE NEED TO UPDATE THE DB LOGIC TO TRACK 'xp' OR 'completedCount' AS A NUMBER.
-                // For MVP: Fetch all for this tenant and sort client side (ok for 100 students)
+                const user = auth.currentUser;
+                let userGrade: string | null = null;
+                let userRole = 'STUDENT';
+
+                if (user) {
+                    const userDoc = await getDoc(doc(db, 'users', user.uid));
+                    if (userDoc.exists()) {
+                        const userData = userDoc.data();
+                        userGrade = userData.grade;
+                        userRole = userData.role?.toUpperCase() || 'STUDENT';
+                        setCurrentUserGrade(userGrade);
+
+                        if (userRole === 'PARENT' || userRole === 'ADMIN') {
+                            setIsNotStudent(true);
+                            // We still show the leaderboard, but maybe they want to see it?
+                            // Usually parents shouldn't be here, but let's just filter them out from results anyway.
+                        }
+                    }
+                }
+
+                // Fetch all for this tenant
                 const q = query(
                     collection(db, 'users'),
                     where('tenantId', '==', tenantId || 'default')
                 );
+                
                 const allUsersSnap = await getDocs(q);
-                const allUsers = allUsersSnap.docs.map(doc => {
-                    const data = doc.data();
-                    const completed = data.completedTopics ? data.completedTopics.length : 0;
+                const filteredUsers = allUsersSnap.docs
+                    .map(doc => {
+                        const data = doc.data();
+                        const completed = data.completedTopics ? data.completedTopics.length : 0;
+                        const avatar = data.photoURL || `https://api.dicebear.com/7.x/avataaars/png?seed=${doc.id}`;
 
-                    // Prioritize real photoURL, fallback to procedural
-                    const avatar = data.photoURL || `https://api.dicebear.com/7.x/avataaars/png?seed=${doc.id}`;
-
-                    return {
-                        id: doc.id,
-                        name: data.name || "Anonymous",
-                        completedCount: completed,
-                        grade: data.grade,
-                        avatarUrl: avatar
-                    };
-                });
+                        return {
+                            id: doc.id,
+                            name: data.name || "Anonymous",
+                            completedCount: completed,
+                            grade: data.grade,
+                            role: data.role?.toUpperCase(),
+                            isAdmin: data.isAdmin,
+                            avatarUrl: avatar
+                        };
+                    })
+                    .filter(u => {
+                        // 1. Must be in the same grade (if student has a grade)
+                        if (userGrade && u.grade !== userGrade) return false;
+                        
+                        // 2. Exclude Parents and Admins
+                        if (u.role === 'PARENT' || u.role === 'ADMIN' || u.isAdmin) return false;
+                        
+                        return true;
+                    });
 
                 // Sort Descending
-                const sorted = allUsers.sort((a, b) => b.completedCount - a.completedCount);
+                const sorted = filteredUsers.sort((a, b) => b.completedCount - a.completedCount);
                 setUsers(sorted);
             } catch (e) {
                 console.error("Leaderboard fetch error:", e);
@@ -126,7 +159,14 @@ export default function LeaderboardScreen() {
 
             <View style={styles.banner}>
                 <Text style={styles.bannerText}>Top Performers 🏆</Text>
-                <Text style={styles.bannerSubtext}>Keep learning to climb the ranks!</Text>
+                <Text style={styles.bannerSubtext}>
+                    {currentUserGrade ? `${currentUserGrade} Ranking` : 'Climb the ranks!'}
+                </Text>
+                {isNotStudent && (
+                    <Text style={[styles.bannerSubtext, { color: '#FFD700', fontSize: 12, marginTop: 8 }]}>
+                        Viewing as Observer (Admin/Parent)
+                    </Text>
+                )}
             </View>
 
             {loading ? (

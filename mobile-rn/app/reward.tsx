@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, Platform } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, Platform, SafeAreaView } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { auth, db } from '../services/firebaseConfig';
@@ -43,7 +43,13 @@ export default function RewardScreen() {
     }, [topic]);
 
     return (
-        <View style={styles.container}>
+        <SafeAreaView style={styles.container}>
+            <TouchableOpacity 
+                style={styles.closeBtn} 
+                onPress={() => router.push('/knowledge-graph')}
+            >
+                <Ionicons name="close" size={28} color={colors.textSecondary} />
+            </TouchableOpacity>
             <View style={styles.content}>
                 <View style={styles.iconContainer}>
                     <Ionicons name="trophy" size={80} color={colors.warning} />
@@ -63,7 +69,7 @@ export default function RewardScreen() {
                     <Text style={styles.buttonText}>Continue Learning</Text>
                 </TouchableOpacity>
             </View>
-        </View>
+        </SafeAreaView>
     );
 }
 
@@ -141,5 +147,12 @@ const makeStyles = (colors: any) => StyleSheet.create({
         color: '#FFFFFF',
         fontSize: 18,
         fontWeight: 'bold',
+    },
+    closeBtn: {
+        position: 'absolute',
+        top: Platform.OS === 'ios' ? 10 : 20,
+        right: 20,
+        zIndex: 10,
+        padding: 8,
     },
 });

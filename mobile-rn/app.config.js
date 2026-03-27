@@ -9,20 +9,20 @@ export default ({ config }) => {
             name: process.env.APP_NAME || "EduPro",
             slug: "mobile-rn",
             scheme: "com.prowin.edupro",
-            version: "2.0.0",
+            version: "3.1.0",
             orientation: "portrait",
             icon: process.env.APP_ICON || `${brandingPath}/icon.png`,
             userInterfaceStyle: "light",
-            newArchEnabled: true,
+            newArchEnabled: false,
             splash: {
                 image: process.env.APP_SPLASH || `${brandingPath}/splash.png`,
-                resizeMode: "cover",
+                resizeMode: "contain",
                 backgroundColor: process.env.APP_SPLASH_COLOR || "#FFFFFF"
             },
             ios: {
                 supportsTablet: true,
-                bundleIdentifier: process.env.APP_PACKAGE || "com.prowin.edupro",
-                buildNumber: "4",
+                bundleIdentifier: "com.prowin.edupro",
+                buildNumber: "310",
                 googleServicesFile: process.env.EXPO_PUBLIC_APP_ENV === 'production'
                     ? './GoogleService-Info.production.plist'
                     : './GoogleService-Info.development.plist',
@@ -35,12 +35,12 @@ export default ({ config }) => {
                 }
             },
             android: {
-                versionCode: 5,
+                versionCode: 101,
                 adaptiveIcon: {
                     foregroundImage: process.env.APP_ADAPTIVE_ICON || `${brandingPath}/adaptive-icon.png`,
                     backgroundColor: "#ffffff"
                 },
-                package: process.env.APP_PACKAGE || "com.prowin.edupro",
+                package: "com.prowin.eduproapp",
                 googleServicesFile: process.env.EXPO_PUBLIC_APP_ENV === 'production'
                     ? './.google-services.production.json'
                     : './.google-services.development.json'

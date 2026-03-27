@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, SafeAreaView, ActivityIndicator, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
 import { db, auth } from '../services/firebaseConfig';
-import { collection, query, where, onSnapshot, updateDoc, doc, arrayUnion } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, updateDoc, doc, arrayUnion, getDoc } from 'firebase/firestore';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '../context/ThemeContext';
@@ -19,6 +19,7 @@ export default function PollScreen() {
     const [selectedOption, setSelectedOption] = useState<number | null>(null);
     const [currentUid, setCurrentUid] = useState<string | null>(null);
     const [userGrade, setUserGrade] = useState<string | null>(null);
+    const [userBatch, setUserBatch] = useState<string | null>(null);
 
     // Load User ID & Grade
     useEffect(() => {
@@ -36,12 +37,14 @@ export default function PollScreen() {
 
             if (finalUid) {
                 try {
-                    const userDoc = await import('firebase/firestore').then(({ getDoc, doc }) => getDoc(doc(db, "users", finalUid)));
+                    const userDoc = await getDoc(doc(db, "users", finalUid));
                     if (userDoc.exists()) {
-                        setUserGrade(userDoc.data().grade);
+                        const userData = userDoc.data();
+                        setUserGrade(userData.grade || null);
+                        setUserBatch(userData.batch || "General Batch");
                     }
                 } catch (e) {
-                    console.error("Error fetching user grade:", e);
+                     console.error("Error fetching user profile:", e);
                 }
             }
         };
@@ -63,7 +66,8 @@ export default function PollScreen() {
             const activePolls = polls.filter((p: any) => {
                 const isActive = p.active === true;
                 const matchesGrade = !p.grade || p.grade === 'All' || p.grade === userGrade;
-                return isActive && matchesGrade;
+                const matchesBatch = !p.batch || p.batch === 'All' || p.batch === userBatch;
+                return isActive && matchesGrade && matchesBatch;
             });
 
             if (activePolls.length > 0) {
@@ -89,6 +93,9 @@ export default function PollScreen() {
                 setActivePoll(null);
                 setSelectedOption(null);
             }
+            setLoading(false);
+        }, (err) => {
+            console.error("Poll snapshot error:", err);
             setLoading(false);
         });
         return () => unsub();

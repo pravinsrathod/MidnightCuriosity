@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { db } from './firebase';
+import { db, auth } from '../firebase';
 import {
     collection, query, where, onSnapshot, addDoc, updateDoc, doc,
     serverTimestamp, writeBatch, getDocs, getDoc, runTransaction
 } from 'firebase/firestore';
-import { sendPushNotification } from './notificationService';
+import { sendPushNotification } from '../notificationService';
 
 const STATUS_COLORS = {
     PENDING: { bg: 'rgba(234,179,8,0.15)', border: 'rgba(234,179,8,0.4)', text: '#eab308', label: '🟡 Pending' },
@@ -16,7 +16,7 @@ const STATUS_COLORS = {
 
 const generateReceiptNumber = () => `RCP-${Date.now().toString(36).toUpperCase()}`;
 
-const FeesManager = ({ students, tenantId, grades: propGrades, onAlert, onConfirm }) => {
+const FeesManager = ({ students = [], tenantId, onAlert = () => {}, onConfirm = () => {}, grades: propGrades, subjects: propSubjects, topics: propTopics, batches = {}, filterGrade: propFilterGrade, filterBatch: propFilterBatch }) => {
     const [activeSubTab, setActiveSubTab] = useState('overview');
 
     // --- Shared data ---
@@ -25,33 +25,45 @@ const FeesManager = ({ students, tenantId, grades: propGrades, onAlert, onConfir
     const [paymentReceipts, setPaymentReceipts] = useState([]);
     const [loading, setLoading] = useState(false);
 
-    const grades = propGrades && propGrades.length > 0
-        ? propGrades
-        : Array.from({ length: 12 }, (_, i) => `Grade ${i + 1}`);
-
+    const grades = (propGrades && propGrades.length > 0) ? propGrades : Array.from({ length: 12 }, (_, i) => "Grade " + (i + 1));
+    const subjects = (propSubjects && propSubjects.length > 0) ? propSubjects : ["Maths", "Physics", "Chemistry", "Biology"];
+    const topics = (propTopics && propTopics.length > 0) ? propTopics : ["General"];
     // --- Fee Structures state ---
-    const [newStructure, setNewStructure] = useState({ name: '', grade: '', period: 'monthly', items: [{ name: '', amount: '' }] });
+    const [newStructure, setNewStructure] = useState({ name: '', grade: '', batch: 'All', period: 'monthly', items: [{ name: '', amount: '' }] });
 
     // --- Assign Fees state ---
     const [assignStructureId, setAssignStructureId] = useState('');
     const [assignGrade, setAssignGrade] = useState('');
+    const [assignBatch, setAssignBatch] = useState('All');
     const [assignDueDate, setAssignDueDate] = useState('');
     const [assigning, setAssigning] = useState(false);
 
     // --- Record Payment state ---
     const [paymentModal, setPaymentModal] = useState(null); // { fee }
     const [payAmount, setPayAmount] = useState('');
+    const [structFilterGrade, setStructFilterGrade] = useState('All');
+    const [structFilterBatch, setStructFilterBatch] = useState('All');
     const [payMethod, setPayMethod] = useState('cash');
     const [payNotes, setPayNotes] = useState('');
     const [paying, setPaying] = useState(false);
 
     // --- Filters ---
-    const [filterGrade, setFilterGrade] = useState('All');
+    const [filterGrade, setFilterGrade] = useState(propFilterGrade || 'All');
+    const [filterBatch, setFilterBatch] = useState(propFilterBatch || 'All');
     const [filterStatus, setFilterStatus] = useState('All');
+
+    // Sync from props
+    useEffect(() => {
+        if (propFilterGrade) setFilterGrade(propFilterGrade);
+        if (propFilterBatch) setFilterBatch(propFilterBatch);
+    }, [propFilterGrade, propFilterBatch]);
 
     // ── Firestore listeners ──────────────────────────────────────────────────
     useEffect(() => {
-        if (!tenantId) return;
+        if (!tenantId || typeof tenantId !== 'string') {
+            console.log("Waiting for valid tenant context...");
+            return;
+        }
 
         const qFees = query(collection(db, 'fees'), where('tenantId', '==', tenantId));
         const unsubFees = onSnapshot(qFees, snap => {
@@ -71,6 +83,8 @@ const FeesManager = ({ students, tenantId, grades: propGrades, onAlert, onConfir
         const qStr = query(collection(db, 'feeStructures'), where('tenantId', '==', tenantId));
         const unsubStr = onSnapshot(qStr, snap => {
             setStructures(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+        }, err => {
+            console.error('Structures listener error:', err);
         });
 
         const qReceipts = query(collection(db, 'paymentReceipts'), where('tenantId', '==', tenantId));
@@ -78,6 +92,8 @@ const FeesManager = ({ students, tenantId, grades: propGrades, onAlert, onConfir
             const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
             list.sort((a, b) => (b.submittedAt?.seconds || 0) - (a.submittedAt?.seconds || 0));
             setPaymentReceipts(list);
+        }, err => {
+            console.error('Receipts listener error:', err);
         });
 
         return () => { unsubFees(); unsubStr(); unsubReceipts(); };
@@ -92,6 +108,7 @@ const FeesManager = ({ students, tenantId, grades: propGrades, onAlert, onConfir
     // ── Filtered fees table ──────────────────────────────────────────────────
     const filteredFees = feesList.filter(f => {
         if (filterGrade !== 'All' && f.grade !== filterGrade) return false;
+        if (filterBatch !== 'All' && f.batch !== filterBatch) return false;
         if (filterStatus !== 'All' && f.status !== filterStatus) return false;
         return true;
     });
@@ -122,7 +139,7 @@ const FeesManager = ({ students, tenantId, grades: propGrades, onAlert, onConfir
                 ...newStructure, items, totalAmount, tenantId, createdAt: serverTimestamp()
             });
             onAlert('Fee structure saved! ✅', 'Success');
-            setNewStructure({ name: '', grade: '', period: 'monthly', items: [{ name: '', amount: '' }] });
+            setNewStructure({ name: '', grade: '', batch: 'All', period: 'monthly', items: [{ name: '', amount: '' }] });
         } catch (err) {
             onAlert('Failed to save structure: ' + err.message, 'Error');
         } finally { setLoading(false); }
@@ -142,8 +159,8 @@ const FeesManager = ({ students, tenantId, grades: propGrades, onAlert, onConfir
     // ── Assign Fees handler ──────────────────────────────────────────────────
     const handleAssignFees = async (e) => {
         e.preventDefault();
-        if (!assignStructureId || !assignGrade || !assignDueDate) {
-            onAlert('Select a structure, grade, and due date.', 'Error');
+        if (!assignStructureId || !assignGrade || !assignBatch || !assignDueDate) {
+            onAlert('Select a structure, grade, batch, and due date.', 'Error');
             return;
         }
 
@@ -151,7 +168,9 @@ const FeesManager = ({ students, tenantId, grades: propGrades, onAlert, onConfir
         if (!structure) { onAlert('Structure not found.', 'Error'); return; }
 
         const targetStudents = students.filter(
-            s => s.grade === assignGrade && (s.status === 'ACTIVE' || !s.status) &&
+            s => s.grade === assignGrade && 
+                (assignBatch === 'All' || s.batch === assignBatch) &&
+                (s.status === 'ACTIVE' || !s.status) &&
                 (s.role === 'student' || s.role === 'STUDENT')
         );
         if (targetStudents.length === 0) {
@@ -168,7 +187,9 @@ const FeesManager = ({ students, tenantId, grades: propGrades, onAlert, onConfir
                     tenantId,
                     studentId: student.id,
                     studentName: student.name,
+                    studentPhone: student.phoneNumber,
                     grade: assignGrade,
+                    batch: student.batch || 'General Batch',
                     structureId: assignStructureId,
                     label: `${structure.name}`,
                     items: structure.items,
@@ -212,7 +233,7 @@ const FeesManager = ({ students, tenantId, grades: propGrades, onAlert, onConfir
             } catch (notifyErr) { console.warn('Fee notification failed', notifyErr); }
 
             onAlert(`Fees assigned to ${targetStudents.length} students! 🎉`, 'Success');
-            setAssignStructureId(''); setAssignGrade(''); setAssignDueDate('');
+            setAssignStructureId(''); setAssignGrade(''); setAssignBatch('All'); setAssignDueDate('');
         } catch (err) {
             onAlert('Failed to assign fees: ' + err.message, 'Error');
         } finally { setAssigning(false); }
@@ -404,7 +425,7 @@ const FeesManager = ({ students, tenantId, grades: propGrades, onAlert, onConfir
             {activeSubTab === 'overview' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
                     {/* Summary Cards */}
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 280px), 1fr))', gap: '16px' }}>
                         {[
                             { icon: '💰', label: 'Total Collected', value: `RM ${totalCollected.toFixed(2)}`, color: '#22c55e' },
                             { icon: '⏳', label: 'Total Pending', value: `RM ${totalPending.toFixed(2)}`, color: '#eab308' },
@@ -422,10 +443,15 @@ const FeesManager = ({ students, tenantId, grades: propGrades, onAlert, onConfir
                     {/* Filters */}
                     <div className="glass-panel" style={{ display: 'flex', gap: '12px', padding: '20px', flexWrap: 'wrap', alignItems: 'center' }}>
                         <span style={{ fontWeight: 600, marginRight: '4px' }}>Filter:</span>
-                        <select value={filterGrade} onChange={e => setFilterGrade(e.target.value)}
+                        <select value={filterGrade} onChange={e => { setFilterGrade(e.target.value); setFilterBatch('All'); }}
                             style={{ padding: '8px 12px', background: 'var(--bg-input)', border: '1px solid var(--border)', color: '#fff', borderRadius: '8px' }}>
                             <option value="All">All Grades</option>
                             {grades.map(g => <option key={g} value={g}>{g}</option>)}
+                        </select>
+                        <select value={filterBatch} onChange={e => setFilterBatch(e.target.value)}
+                            style={{ padding: '8px 12px', background: 'var(--bg-input)', border: '1px solid var(--border)', color: '#fff', borderRadius: '8px' }}>
+                            <option value="All">All Batches</option>
+                            {(batches[filterGrade] || []).map(b => <option key={b} value={b}>{b}</option>)}
                         </select>
                         <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
                             style={{ padding: '8px 12px', background: 'var(--bg-input)', border: '1px solid var(--border)', color: '#fff', borderRadius: '8px' }}>
@@ -515,29 +541,39 @@ const FeesManager = ({ students, tenantId, grades: propGrades, onAlert, onConfir
                             <p style={{ color: 'var(--text-secondary)' }}>Define a reusable fee template for a grade.</p>
                         </div>
                         <form onSubmit={handleSaveStructure} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                            <div className="grid-2">
-                                <div className="form-group">
-                                    <label className="label">Structure Name</label>
-                                    <input placeholder="e.g. Monthly Tuition March 2026"
-                                        value={newStructure.name} onChange={e => setNewStructure(s => ({ ...s, name: e.target.value }))}
-                                        style={{ width: '100%', padding: '12px', background: 'var(--bg-input)', border: '1px solid var(--border)', color: '#fff', borderRadius: '10px' }} />
-                                </div>
+                            <div className="form-group">
+                                <label className="label">Structure Name</label>
+                                <input placeholder="e.g. Monthly Tuition March 2026"
+                                    value={newStructure.name} onChange={e => setNewStructure(s => ({ ...s, name: e.target.value }))}
+                                    style={{ width: '100%', padding: '12px', background: 'var(--bg-input)', border: '1px solid var(--border)', color: '#fff', borderRadius: '10px' }} />
+                            </div>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '20px' }}>
                                 <div className="form-group">
                                     <label className="label">Grade</label>
-                                    <select value={newStructure.grade} onChange={e => setNewStructure(s => ({ ...s, grade: e.target.value }))}
+                                    <select value={newStructure.grade} onChange={e => setNewStructure(s => ({ ...s, grade: e.target.value, batch: 'All' }))}
                                         style={{ width: '100%', padding: '12px', background: 'var(--bg-input)', border: '1px solid var(--border)', color: '#fff', borderRadius: '10px' }}>
                                         <option value="">Select Grade</option>
                                         <option value="All">All Grades</option>
                                         {grades.map(g => <option key={g} value={g}>{g}</option>)}
                                     </select>
                                 </div>
-                            </div>
-                            <div className="form-group">
-                                <label className="label">Billing Period</label>
-                                <select value={newStructure.period} onChange={e => setNewStructure(s => ({ ...s, period: e.target.value }))}
-                                    style={{ width: '100%', padding: '12px', background: 'var(--bg-input)', border: '1px solid var(--border)', color: '#fff', borderRadius: '10px' }}>
-                                    {['one-time', 'monthly', 'quarterly', 'annual'].map(p => <option key={p} value={p}>{p.charAt(0).toUpperCase() + p.slice(1)}</option>)}
-                                </select>
+                                <div className="form-group">
+                                    <label className="label">Batch</label>
+                                    <select value={newStructure.batch} onChange={e => setNewStructure(s => ({ ...s, batch: e.target.value }))}
+                                        style={{ width: '100%', padding: '12px', background: 'var(--bg-input)', border: '1px solid var(--border)', color: '#fff', borderRadius: '10px' }}>
+                                        <option value="All">All Batches (Wildcard)</option>
+                                        {(batches[newStructure.grade] || []).map(b => (
+                                            <option key={b} value={b}>{b}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <div className="form-group">
+                                    <label className="label">Billing Period</label>
+                                    <select value={newStructure.period} onChange={e => setNewStructure(s => ({ ...s, period: e.target.value }))}
+                                        style={{ width: '100%', padding: '12px', background: 'var(--bg-input)', border: '1px solid var(--border)', color: '#fff', borderRadius: '10px' }}>
+                                        {['one-time', 'monthly', 'quarterly', 'annual'].map(p => <option key={p} value={p}>{p.charAt(0).toUpperCase() + p.slice(1)}</option>)}
+                                    </select>
+                                </div>
                             </div>
                             <div className="form-group">
                                 <label className="label">Fee Line Items</label>
@@ -575,14 +611,30 @@ const FeesManager = ({ students, tenantId, grades: propGrades, onAlert, onConfir
                     {/* Existing Structures */}
                     {structures.length > 0 && (
                         <div>
-                            <h3 style={{ marginBottom: '16px' }}>Saved Structures</h3>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '16px' }}>
+                                <h3>Saved Structures</h3>
+                                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                                    <select value={structFilterGrade} onChange={e => { setStructFilterGrade(e.target.value); setStructFilterBatch('All'); }}
+                                        style={{ padding: '8px', background: 'var(--bg-input)', border: '1px solid var(--border)', color: '#fff', borderRadius: '8px', fontSize: '0.85rem' }}>
+                                        <option value="All">All Grades</option>
+                                        {grades.map(g => <option key={g} value={g}>{g}</option>)}
+                                    </select>
+                                    <select value={structFilterBatch} onChange={e => setStructFilterBatch(e.target.value)}
+                                        style={{ padding: '8px', background: 'var(--bg-input)', border: '1px solid var(--border)', color: '#fff', borderRadius: '8px', fontSize: '0.85rem' }}>
+                                        <option value="All">All Batches</option>
+                                        {(batches[structFilterGrade] || []).map(b => <option key={b} value={b}>{b}</option>)}
+                                    </select>
+                                </div>
+                            </div>
                             <div className="grid-3">
-                                {structures.filter(s => !s.deleted).map(s => (
+                                {structures.filter(s => !s.deleted && (structFilterGrade === 'All' || s.grade === structFilterGrade) && (structFilterBatch === 'All' || s.batch === structFilterBatch)).map(s => (
                                     <div key={s.id} className="glass-panel animate-fade-in" style={{ padding: '24px' }}>
                                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
                                             <div>
                                                 <div style={{ fontWeight: 700, fontSize: '1.1rem' }}>{s.name}</div>
-                                                <div style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>{s.grade} · {s.period}</div>
+                                                <div style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
+                                                    {s.grade} {s.batch && s.batch !== 'All' ? `(${s.batch})` : '· All Batches'} · {s.period}
+                                                </div>
                                             </div>
                                             <div style={{ fontWeight: 700, color: '#22c55e', fontSize: '1.1rem' }}>RM {(s.totalAmount || 0).toFixed(2)}</div>
                                         </div>
@@ -642,13 +694,22 @@ const FeesManager = ({ students, tenantId, grades: propGrades, onAlert, onConfir
                             </div>
                         )}
 
-                        <div className="grid-2">
                             <div className="form-group">
                                 <label className="label">Grade</label>
-                                <select value={assignGrade} onChange={e => setAssignGrade(e.target.value)}
+                                <select value={assignGrade} onChange={e => { setAssignGrade(e.target.value); setAssignBatch('All'); }}
                                     style={{ width: '100%', padding: '12px', background: 'var(--bg-input)', border: '1px solid var(--border)', color: '#fff', borderRadius: '10px' }}>
                                     <option value="">Select Grade</option>
                                     {grades.map(g => <option key={g} value={g}>{g}</option>)}
+                                </select>
+                            </div>
+                            <div className="form-group">
+                                <label className="label">Target Batch</label>
+                                <select value={assignBatch} onChange={e => setAssignBatch(e.target.value)}
+                                    style={{ width: '100%', padding: '12px', background: 'var(--bg-input)', border: '1px solid var(--border)', color: '#fff', borderRadius: '10px' }}>
+                                    <option value="All">All Batches (Wildcard)</option>
+                                    {(batches[assignGrade] || []).map(b => (
+                                        <option key={b} value={b}>{b}</option>
+                                    ))}
                                 </select>
                             </div>
                             <div className="form-group">
@@ -656,13 +717,12 @@ const FeesManager = ({ students, tenantId, grades: propGrades, onAlert, onConfir
                                 <input type="date" value={assignDueDate} onChange={e => setAssignDueDate(e.target.value)}
                                     style={{ width: '100%', padding: '12px', background: 'var(--bg-input)', border: '1px solid var(--border)', color: '#fff', borderRadius: '10px' }} />
                             </div>
-                        </div>
 
                         {assignGrade && (
                             <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', background: 'rgba(255,255,255,0.04)', padding: '12px 16px', borderRadius: '10px' }}>
                                 📌 Will assign to <strong style={{ color: '#fff' }}>
-                                    {students.filter(s => s.grade === assignGrade && (s.role === 'student' || s.role === 'STUDENT')).length}
-                                </strong> active students in {assignGrade}
+                                    {students.filter(s => s.grade === assignGrade && (assignBatch === 'All' || s.batch === assignBatch) && (s.role === 'student' || s.role === 'STUDENT')).length}
+                                </strong> active students in {assignGrade} {assignBatch !== 'All' ? `(${assignBatch})` : ''}
                             </div>
                         )}
 
@@ -684,15 +744,23 @@ const FeesManager = ({ students, tenantId, grades: propGrades, onAlert, onConfir
                     </div>
 
                     {/* Pending/Partial fees quick-action list */}
-                    {feesList.filter(f => ['PENDING', 'OVERDUE', 'PARTIAL'].includes(f.status)).length === 0 ? (
+                    {feesList.filter(f =>
+                        ['PENDING', 'OVERDUE', 'PARTIAL'].includes(f.status) &&
+                        (filterGrade === 'All' || f.grade === filterGrade) &&
+                        (filterBatch === 'All' || (f.batch || 'General Batch') === filterBatch)
+                    ).length === 0 ? (
                         <div className="glass-panel" style={{ padding: '80px', textAlign: 'center', color: 'var(--text-secondary)' }}>
                             <div style={{ fontSize: '3rem', marginBottom: '16px', opacity: 0.5 }}>✅</div>
                             <h3>All Caught Up!</h3>
-                            <p>No pending or partial fees at the moment.</p>
+                            <p>No pending or partial fees matching these filters.</p>
                         </div>
                     ) : (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                            {feesList.filter(f => ['PENDING', 'OVERDUE', 'PARTIAL'].includes(f.status)).map(fee => {
+                            {feesList.filter(f =>
+                                ['PENDING', 'OVERDUE', 'PARTIAL'].includes(f.status) &&
+                                (filterGrade === 'All' || f.grade === filterGrade) &&
+                                (filterBatch === 'All' || (f.batch || 'General Batch') === filterBatch)
+                            ).map(fee => {
                                 const sc = STATUS_COLORS[fee.status];
                                 const remaining = (fee.totalAmount || 0) - (fee.paidAmount || 0);
                                 return (

@@ -39,12 +39,17 @@ export default function AdminDashboard() {
         checkAdmin();
     }, []);
 
+    const [batches, setBatches] = useState<any>({});
+    const [selectedBatchFilter, setSelectedBatchFilter] = useState("All");
+
     // Fetch Institute Config
     useEffect(() => {
         if (!tenantId) return;
         getDoc(doc(db, "tenants", tenantId, "metadata", "lists")).then(snap => {
-            if (snap.exists() && snap.data().grades && Array.isArray(snap.data().grades)) {
-                setGrades(snap.data().grades);
+            if (snap.exists()) {
+                const data = snap.data();
+                if (data.grades && Array.isArray(data.grades)) setGrades(data.grades);
+                if (data.batches) setBatches(data.batches);
             }
         }).catch(e => console.log("Config fetch error", e));
     }, [tenantId]);
@@ -80,6 +85,8 @@ export default function AdminDashboard() {
                     map[data.homeworkId][data.studentId] = { id: d.id, ...data };
                 });
                 setSubmissions(map);
+            }, (err) => {
+                console.error("Submissions snapshot error:", err);
             });
             return () => unsub();
         }
@@ -152,7 +159,7 @@ export default function AdminDashboard() {
 
     // MODAL STATE
     const [addStudentVisible, setAddStudentVisible] = useState(false);
-    const [newStudent, setNewStudent] = useState({ name: '', phoneNumber: '', grade: '', password: '' });
+    const [newStudent, setNewStudent] = useState({ name: '', phoneNumber: '', grade: '', batch: 'General Batch', password: '' });
 
     const saveNewStudent = async () => {
         if (!newStudent.name || !newStudent.phoneNumber || !newStudent.grade) {
@@ -173,7 +180,7 @@ export default function AdminDashboard() {
             });
             Alert.alert("Success", "Student Added!");
             setAddStudentVisible(false);
-            setNewStudent({ name: '', phoneNumber: '', grade: '', password: '' });
+            setNewStudent({ name: '', phoneNumber: '', grade: '', batch: 'General Batch', password: '' });
         } catch (e: any) {
             Alert.alert("Error", "Failed to add student. Please check the details.");
         } finally {
@@ -226,7 +233,7 @@ export default function AdminDashboard() {
 
     // HOMEWORK CREATE STATE
     const [createHomeworkVisible, setCreateHomeworkVisible] = useState(false);
-    const [newHomework, setNewHomework] = useState({ title: '', description: '', subject: '', grade: '', dueDate: new Date().toISOString().split('T')[0], file: null as string | null });
+    const [newHomework, setNewHomework] = useState({ title: '', description: '', subject: '', grade: '', batch: 'General Batch', dueDate: new Date().toISOString().split('T')[0], file: null as string | null });
     const [uploading, setUploading] = useState(false);
     const [homeworkDateFilter, setHomeworkDateFilter] = useState(new Date().toISOString().split('T')[0]);
 
@@ -265,7 +272,7 @@ export default function AdminDashboard() {
 
         setLoading(true);
         try {
-            let fileUrl = null;
+            let fileUrl: string | null = null;
             if (newHomework.file) {
                 setUploading(true);
                 fileUrl = await uploadFile(newHomework.file);
@@ -287,10 +294,20 @@ export default function AdminDashboard() {
                 // 1. Get all students in this grade
                 const studentsQuery = query(collection(db, "users"), where("tenantId", "==", tenantId), where("grade", "==", newHomework.grade));
                 const studentSnaps = await getDocs(studentsQuery);
-                const studentPhones = studentSnaps.docs.map(d => d.data().phoneNumber).filter(Boolean);
+                
+                // 2. Filter by Batch
+                const targetBatch = newHomework.batch || 'General Batch';
+                const studentPhones = studentSnaps.docs
+                    .map(d => ({ ...d.data(), id: d.id }))
+                    .filter((s: any) => {
+                        const sBatch = s.batch || 'General Batch';
+                        return sBatch === targetBatch;
+                    })
+                    .map((s: any) => s.phoneNumber)
+                    .filter(Boolean);
 
                 if (studentPhones.length > 0) {
-                    // 2. Get all parents for this tenant
+                    // 3. Get all parents for this tenant
                     const parentsQuery = query(collection(db, "users"), where("tenantId", "==", tenantId), where("role", "==", "PARENT"));
                     const parentSnaps = await getDocs(parentsQuery);
 
@@ -325,7 +342,7 @@ export default function AdminDashboard() {
 
             Alert.alert("Success", "Homework Created!");
             setCreateHomeworkVisible(false);
-            setNewHomework({ title: '', description: '', subject: '', grade: '', dueDate: new Date().toISOString().split('T')[0], file: null });
+            setNewHomework({ title: '', description: '', subject: '', grade: '', batch: 'General Batch', dueDate: new Date().toISOString().split('T')[0], file: null });
         } catch (e: any) {
             Alert.alert("Error", "Failed to create homework. Please try again.");
         } finally {
@@ -345,6 +362,9 @@ export default function AdminDashboard() {
             const filtered = list.filter((u: any) => u.role !== 'admin' && u.role !== 'ADMIN');
             setStudents(filtered);
             setLoading(false);
+        }, (err) => {
+            console.error("Students snapshot error:", err);
+            setLoading(false);
         });
 
         return () => unsub();
@@ -356,6 +376,8 @@ export default function AdminDashboard() {
             const q = query(collection(db, "homework"), where("tenantId", "==", tenantId));
             const unsub = onSnapshot(q, (snapshot) => {
                 setAssignments(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+            }, (err) => {
+                console.error("Homework snapshot error:", err);
             });
             return () => unsub();
         }
@@ -372,6 +394,8 @@ export default function AdminDashboard() {
                 } else {
                     setAttendanceMap({});
                 }
+            }, (err) => {
+                console.error("Attendance doc snapshot error:", err);
             });
             return () => unsub();
         }
@@ -406,7 +430,12 @@ export default function AdminDashboard() {
     };
 
     // ATTENDANCE FUNCTIONS
-    const activeStudentList = students.filter(s => s.status === 'ACTIVE' && (s.role === 'student' || s.role === 'STUDENT') && (selectedGradeFilter === 'All' || s.grade === selectedGradeFilter));
+    const activeStudentList = students.filter(s => 
+        s.status === 'ACTIVE' && 
+        (s.role === 'student' || s.role === 'STUDENT') && 
+        (selectedGradeFilter === 'All' || s.grade === selectedGradeFilter) &&
+        (selectedBatchFilter === 'All' || (s.batch || "General Batch") === selectedBatchFilter)
+    );
 
     const changeDate = (days: number) => {
         const newDate = new Date(attendanceDate);
@@ -480,7 +509,7 @@ export default function AdminDashboard() {
                                     parent.pushToken,
                                     `⚠️ Attendance Alert: ${sData.name}`,
                                     `${sData.name} was marked ${status} today (${dateStr}).`,
-                                    { screen: 'parent-dashboard' }
+                                    { screen: '(tabs)' }
                                 );
                             }
                         }
@@ -575,8 +604,8 @@ export default function AdminDashboard() {
         );
     };
 
-    const pendingStudents = students.filter(s => s.status === 'PENDING' && (selectedGradeFilter === 'All' || s.grade === selectedGradeFilter));
-    const activeStudents = students.filter(s => s.status !== 'PENDING' && (selectedGradeFilter === 'All' || s.grade === selectedGradeFilter));
+    const pendingStudents = students.filter(s => s.status === 'PENDING' && (selectedGradeFilter === 'All' || s.grade === selectedGradeFilter) && (selectedBatchFilter === 'All' || (s.batch || "General Batch") === selectedBatchFilter));
+    const activeStudents = students.filter(s => s.status !== 'PENDING' && (selectedGradeFilter === 'All' || s.grade === selectedGradeFilter) && (selectedBatchFilter === 'All' || (s.batch || "General Batch") === selectedBatchFilter));
 
     return (
         <View style={styles.container}>
@@ -619,7 +648,7 @@ export default function AdminDashboard() {
                         {['All', ...grades].map(g => (
                             <TouchableOpacity
                                 key={g}
-                                onPress={() => setSelectedGradeFilter(g)}
+                                onPress={() => { setSelectedGradeFilter(g); setSelectedBatchFilter('All'); }}
                                 style={{
                                     paddingVertical: 6, paddingHorizontal: 12, borderRadius: 20, borderWidth: 1,
                                     borderColor: selectedGradeFilter === g ? colors.primary : colors.border,
@@ -631,6 +660,29 @@ export default function AdminDashboard() {
                         ))}
                     </ScrollView>
                 </View>
+
+                {selectedGradeFilter !== 'All' && (
+                    <View style={{ marginBottom: 15 }}>
+                        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingHorizontal: 5 }}>
+                            {['All', ...(batches[selectedGradeFilter] || ["General Batch"])].map(b => (
+                                <TouchableOpacity
+                                    key={b}
+                                    onPress={() => setSelectedBatchFilter(b)}
+                                    style={{
+                                        paddingVertical: 6, paddingHorizontal: 12, borderRadius: 20, borderWidth: 1,
+                                        borderColor: selectedBatchFilter === b ? colors.primaryLight : colors.border,
+                                        backgroundColor: selectedBatchFilter === b ? colors.primaryLight : 'transparent'
+                                    }}
+                                >
+                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                                        <Text style={{ color: selectedBatchFilter === b ? colors.primary : colors.textSecondary, fontSize: 11, fontWeight: '600' }}>BATCH:</Text>
+                                        <Text style={{ color: selectedBatchFilter === b ? colors.primary : colors.text, fontSize: 12, fontWeight: '500' }}>{b}</Text>
+                                    </View>
+                                </TouchableOpacity>
+                            ))}
+                        </ScrollView>
+                    </View>
+                )}
 
                 {loading ? (
                     <ActivityIndicator size="large" color={colors.primary} style={{ marginTop: 50 }} />
@@ -708,7 +760,7 @@ export default function AdminDashboard() {
                                     <FlatList
                                         data={
                                             (selectedGradeFilter === 'All' ? assignments : assignments.filter(a => a.grade === selectedGradeFilter))
-                                                .filter(a => a.dueDate === homeworkDateFilter)
+                                                .filter(a => a.dueDate === homeworkDateFilter && (selectedBatchFilter === 'All' || (a.batch || "General Batch") === selectedBatchFilter))
                                         }
                                         keyExtractor={item => item.id}
                                         renderItem={({ item }) => {
@@ -853,6 +905,26 @@ export default function AdminDashboard() {
                                 </TouchableOpacity>
                             ))}
                         </View>
+                        {newStudent.grade !== '' && (
+                            <>
+                                <Text style={{ color: colors.textSecondary, marginBottom: 5, fontSize: 12 }}>Assign Batch:</Text>
+                                <View style={{ flexDirection: 'row', gap: 10, marginBottom: 10, flexWrap: 'wrap' }}>
+                                    {['General Batch', ...(batches[newStudent.grade] || [])].map(b => (
+                                        <TouchableOpacity
+                                            key={b}
+                                            onPress={() => setNewStudent({ ...newStudent, batch: b })}
+                                            style={{
+                                                padding: 8, borderRadius: 8, borderWidth: 1,
+                                                borderColor: newStudent.batch === b ? colors.primary : colors.border,
+                                                backgroundColor: newStudent.batch === b ? colors.primary + '20' : 'transparent'
+                                            }}
+                                        >
+                                            <Text style={{ color: colors.text, fontSize: 12 }}>{b}</Text>
+                                        </TouchableOpacity>
+                                    ))}
+                                </View>
+                            </>
+                        )}
                         <TextInput
                             placeholder="Password (Optional)"
                             placeholderTextColor={colors.textSecondary}
@@ -907,6 +979,26 @@ export default function AdminDashboard() {
                                 </TouchableOpacity>
                             ))}
                         </View>
+                        {editingStudent?.grade && (
+                            <>
+                                <Text style={{ color: colors.textSecondary, marginBottom: 5, fontSize: 12 }}>Batch:</Text>
+                                <View style={{ flexDirection: 'row', gap: 10, marginBottom: 20, flexWrap: 'wrap' }}>
+                                    {['General Batch', ...(batches[editingStudent.grade] || [])].map(b => (
+                                        <TouchableOpacity
+                                            key={b}
+                                            onPress={() => setEditingStudent({ ...editingStudent, batch: b })}
+                                            style={{
+                                                padding: 8, borderRadius: 8, borderWidth: 1,
+                                                borderColor: editingStudent.batch === b ? colors.primary : colors.border,
+                                                backgroundColor: editingStudent.batch === b ? colors.primary + '20' : 'transparent'
+                                            }}
+                                        >
+                                            <Text style={{ color: colors.text, fontSize: 12 }}>{b}</Text>
+                                        </TouchableOpacity>
+                                    ))}
+                                </View>
+                            </>
+                        )}
                         <TextInput
                             placeholder="New Password (Optional)"
                             placeholderTextColor={colors.textSecondary}
@@ -961,7 +1053,7 @@ export default function AdminDashboard() {
                             {grades.map(g => (
                                 <TouchableOpacity
                                     key={g}
-                                    onPress={() => setNewHomework({ ...newHomework, grade: g })}
+                                    onPress={() => setNewHomework({ ...newHomework, grade: g, batch: 'General Batch' })}
                                     style={{
                                         padding: 8, borderRadius: 8, borderWidth: 1,
                                         borderColor: newHomework.grade === g ? colors.primary : colors.border,
@@ -972,6 +1064,27 @@ export default function AdminDashboard() {
                                 </TouchableOpacity>
                             ))}
                         </View>
+
+                        {newHomework.grade !== '' && (
+                            <>
+                                <Text style={{ color: colors.textSecondary, marginBottom: 5, fontSize: 12 }}>Select Batch:</Text>
+                                <View style={{ flexDirection: 'row', gap: 10, marginBottom: 15, flexWrap: 'wrap' }}>
+                                    {['General Batch', ...(batches[newHomework.grade] || [])].map(b => (
+                                        <TouchableOpacity
+                                            key={b}
+                                            onPress={() => setNewHomework({ ...newHomework, batch: b })}
+                                            style={{
+                                                padding: 8, borderRadius: 8, borderWidth: 1,
+                                                borderColor: newHomework.batch === b ? colors.primary : colors.border,
+                                                backgroundColor: newHomework.batch === b ? colors.primary + '20' : 'transparent'
+                                            }}
+                                        >
+                                            <Text style={{ color: colors.text, fontSize: 12 }}>{b}</Text>
+                                        </TouchableOpacity>
+                                    ))}
+                                </View>
+                            </>
+                        )}
                         <TextInput
                             placeholder="Description"
                             placeholderTextColor={colors.textSecondary}

@@ -49,6 +49,8 @@ export default function FeeDetailScreen() {
                 setCurrentPaid(data.paidAmount || 0);
                 setCurrentTotal(data.totalAmount || 0);
             }
+        }, (err) => {
+            console.error("Fee detail doc snapshot error:", err);
         });
         return unsub;
     }, [id]);
@@ -60,6 +62,8 @@ export default function FeeDetailScreen() {
         return onSnapshot(q, snap => {
             const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
             setPendingReceipts(list);
+        }, (err) => {
+            console.error("Payment receipts snapshot error:", err);
         });
     }, [id, tenantId]);
 
@@ -143,7 +147,7 @@ export default function FeeDetailScreen() {
             setProofUri(null);
             setPayAmount('');
         } catch (error: any) {
-            Alert.alert('Upload Failed', error.message);
+            Alert.alert('Submission Failed', error.message);
         } finally {
             setSubmitting(false);
         }

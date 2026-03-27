@@ -2,7 +2,9 @@ import { initializeApp, getApp, getApps } from "firebase/app";
 import { Platform } from 'react-native';
 import { initializeAuth, getAuth, Auth, browserLocalPersistence } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
+import { getDatabase } from "firebase/database";
 import { getStorage } from "firebase/storage";
+import { getFunctions } from "firebase/functions";
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const firebaseConfig = {
@@ -39,3 +41,5 @@ if (getApps().length === 0) {
 export { auth };
 export const db = getFirestore(app);
 export const storage = getStorage(app);
+export const functions = getFunctions(app);
+export const realtimeDb = getDatabase(app);

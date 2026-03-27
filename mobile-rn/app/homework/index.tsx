@@ -49,7 +49,12 @@ export default function HomeworkListScreen() {
 
                         unsubHomework = onSnapshot(q, (snapshot) => {
                             const list = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-                            setHomework(list);
+                            const filteredList = list.filter((hw: any) => 
+                                !hw.batch || 
+                                hw.batch === "All" || 
+                                hw.batch === (userData.batch || "General Batch")
+                            );
+                            setHomework(filteredList);
                             setLoading(false);
                         }, (error) => {
                             console.error("Homework snapshot error:", error);

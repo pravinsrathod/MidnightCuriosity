@@ -1,17 +1,88 @@
 import React, { useState, useEffect } from 'react';
-import { db, storage } from './firebase'; // Ensure storage is imported
+import { db, storage } from '../firebase'; // Ensure storage is imported
 import { doc, getDoc, setDoc, updateDoc, arrayUnion, serverTimestamp, collection, query, where, onSnapshot, addDoc, orderBy, getDocs } from 'firebase/firestore';
-import { sendPushNotification } from './notificationService';
+import { sendPushNotification } from '../notificationService';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 
-const HomeworkManager = ({ students, tenantId, onAlert, grades: propGrades, subjects: propSubjects, topics: propTopics, filterGrade }) => {
+
+const HomeworkCalendar = ({ selectedDate, onDateSelect, homeworkList }) => {
+    const [currentMonth, setCurrentMonth] = useState(new Date(selectedDate));
+    
+    // Normalize date for comparison: YYYY-MM-DD
+    const formatDate = (date) => {
+        const d = new Date(date);
+        return new Date(d.getTime() - (d.getTimezoneOffset() * 60000)).toISOString().split('T')[0];
+    };
+
+    const daysInMonth = (year, month) => new Date(year, month + 1, 0).getDate();
+    const firstDayOfMonth = (year, month) => new Date(year, month, 1).getDay();
+
+    const year = currentMonth.getFullYear();
+    const month = currentMonth.getMonth();
+    const days = daysInMonth(year, month);
+    const startDay = firstDayOfMonth(year, month);
+
+    const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+
+    const prevMonth = () => setCurrentMonth(new Date(year, month - 1, 1));
+    const nextMonth = () => setCurrentMonth(new Date(year, month + 1, 1));
+
+    // Get set of dates that have homework
+    const homeworkDates = new Set(homeworkList.map(hw => hw.dueDate));
+
+    const renderDays = () => {
+        const dayElements = [];
+        // Empty cells for days before the 1st of the month
+        for (let i = 0; i < startDay; i++) {
+            dayElements.push(<div key={`empty-${i}`} className="calendar-day empty"></div>);
+        }
+        // Day cells
+        for (let day = 1; day <= days; day++) {
+            const dateStr = formatDate(new Date(year, month, day));
+            const isSelected = dateStr === selectedDate;
+            const isToday = formatDate(new Date()) === dateStr;
+            const hasHomework = homeworkDates.has(dateStr);
+
+            dayElements.push(
+                <div 
+                    key={day} 
+                    className={`calendar-day ${isSelected ? 'selected' : ''} ${isToday ? 'today' : ''}`}
+                    onClick={() => onDateSelect(dateStr)}
+                >
+                    {day}
+                    {hasHomework && <div className="has-homework-dot"></div>}
+                </div>
+            );
+        }
+        return dayElements;
+    };
+
+    return (
+        <div className="homework-calendar animate-fade-in">
+            <div className="calendar-header">
+                <button className="calendar-nav-btn" onClick={prevMonth}>←</button>
+                <h4>{monthNames[month]} {year}</h4>
+                <button className="calendar-nav-btn" onClick={nextMonth}>→</button>
+            </div>
+            <div className="calendar-grid">
+                {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map(d => (
+                    <div key={d} className="calendar-day-label">{d}</div>
+                ))}
+                {renderDays()}
+            </div>
+        </div>
+    );
+};
+
+const HomeworkManager = ({ students = [], tenantId, onAlert = () => {}, grades: propGrades, subjects: propSubjects, topics: propTopics, filterGrade, filterBatch, batches = {} }) => {
+
     const [selectedDate, setSelectedDate] = useState(new Date(new Date().getTime() - (new Date().getTimezoneOffset() * 60000)).toISOString().split('T')[0]);
     const [homeworkList, setHomeworkList] = useState([]);
     const [submissions, setSubmissions] = useState({}); // Map: homeworkId -> { studentId -> submissionData }
     const [loading, setLoading] = useState(false);
 
     // Create Homework State
-    const [newHomework, setNewHomework] = useState({ title: "", description: "", grade: "", subject: "", topic: "" });
+    const [newHomework, setNewHomework] = useState({ title: "", description: "", grade: "", batch: "All", subject: "", topic: "" });
     const [homeworkFile, setHomeworkFile] = useState(null);
     const [creating, setCreating] = useState(false);
 
@@ -22,9 +93,9 @@ const HomeworkManager = ({ students, tenantId, onAlert, grades: propGrades, subj
     const [teacherFile, setTeacherFile] = useState(null);
 
     // Config options
-    const grades = propGrades && propGrades.length > 0 ? propGrades : Array.from({ length: 12 }, (_, i) => "Grade " + (i + 1));
-    const subjects = propSubjects && propSubjects.length > 0 ? propSubjects : ["Maths", "Physics", "Chemistry", "Biology"];
-    const topics = propTopics && propTopics.length > 0 ? propTopics : ["General"];
+    const grades = (propGrades && propGrades.length > 0) ? propGrades : Array.from({ length: 12 }, (_, i) => "Grade " + (i + 1));
+    const subjects = (propSubjects && propSubjects.length > 0) ? propSubjects : ["Maths", "Physics", "Chemistry", "Biology"];
+    const topics = (propTopics && propTopics.length > 0) ? propTopics : ["General"];
 
     useEffect(() => {
         if (!tenantId) return;
@@ -104,6 +175,7 @@ const HomeworkManager = ({ students, tenantId, onAlert, grades: propGrades, subj
 
             const docRef = await addDoc(collection(db, "homework"), {
                 ...newHomework,
+                batch: newHomework.batch || "All",
                 dueDate: selectedDate,
                 tenantId,
                 attachmentUrl: fileUrl,
@@ -116,7 +188,12 @@ const HomeworkManager = ({ students, tenantId, onAlert, grades: propGrades, subj
                 // 1. Get all students in this grade
                 const studentsQuery = query(collection(db, "users"), where("tenantId", "==", tenantId), where("grade", "==", newHomework.grade));
                 const studentSnaps = await getDocs(studentsQuery);
-                const studentPhones = studentSnaps.docs.map(d => d.data().phoneNumber).filter(Boolean);
+                const assignedBatch = newHomework.batch || "All";
+                const studentPhones = studentSnaps.docs
+                    .map(d => d.data())
+                    .filter(data => assignedBatch === "All" || (data.batch || "General Batch") === assignedBatch)
+                    .map(data => data.phoneNumber)
+                    .filter(Boolean);
 
                 if (studentPhones.length > 0) {
                     // 2. Get all parents for this tenant
@@ -153,7 +230,7 @@ const HomeworkManager = ({ students, tenantId, onAlert, grades: propGrades, subj
             }
 
             onAlert("Homework Assigned Successfully! 📝", "Success");
-            setNewHomework({ title: "", description: "", grade: "", subject: "", topic: "" });
+            setNewHomework({ title: "", description: "", grade: "", batch: "All", subject: "", topic: "" });
             setHomeworkFile(null);
         } catch (error) {
             console.error(error);
@@ -256,7 +333,11 @@ const HomeworkManager = ({ students, tenantId, onAlert, grades: propGrades, subj
     const [activeSubTab, setActiveSubTab] = useState('create');
 
     // Helper to filtered homework by date
-    const filteredHomework = homeworkList.filter(hw => hw.dueDate === selectedDate && (!filterGrade || filterGrade === 'All' || hw.grade === filterGrade));
+    const filteredHomework = homeworkList.filter(hw => 
+        hw.dueDate === selectedDate && 
+        (!filterGrade || filterGrade === 'All' || hw.grade === filterGrade) &&
+        (!filterBatch || filterBatch === 'All' || hw.batch === filterBatch)
+    );
 
     return (
         <div className="animate-fade-in" style={{ maxWidth: '1200px', margin: '0 auto' }}>
@@ -313,6 +394,22 @@ const HomeworkManager = ({ students, tenantId, onAlert, grades: propGrades, subj
                                         {grades.map(g => <option key={g} value={g}>{g}</option>)}
                                     </select>
                                 </div>
+                                {newHomework.grade && (
+                                    <div className="form-group">
+                                        <label className="label">Batch Assignment</label>
+                                        <select
+                                            value={newHomework.batch}
+                                            onChange={e => setNewHomework({ ...newHomework, batch: e.target.value })}
+                                            style={{ width: '100%', padding: '12px', background: 'var(--bg-input)', border: '1px solid var(--border)', color: '#fff', borderRadius: '10px' }}
+                                        >
+                                            <option value="">Select Batch (Defaults to All)</option>
+                                            <option value="All">All Batches</option>
+                                            {(batches[newHomework.grade] || ["General Batch"]).map((b, idx) => (
+                                                <option key={idx} value={b}>{b}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                )}
                                 <div className="form-group">
                                     <label className="label">Subject</label>
                                     <select
@@ -385,105 +482,121 @@ const HomeworkManager = ({ students, tenantId, onAlert, grades: propGrades, subj
 
                 {/* 2. Assess Homework Section */}
                 {activeSubTab === 'assess' && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
-                        <div className="glass-panel" style={{ padding: '20px 32px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '20px', flexWrap: 'wrap' }}>
-                            <div>
-                                <h3 style={{ margin: 0 }}>Filter by Due Date</h3>
-                                <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Browsing submissions for tasks due on this date.</p>
-                            </div>
-                            <input
-                                type="date"
-                                max={new Date(new Date().getTime() - (new Date().getTimezoneOffset() * 60000)).toISOString().split('T')[0]} // Max Today
-                                value={selectedDate}
-                                onChange={e => setSelectedDate(e.target.value)}
-                                style={{ padding: '10px 16px', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border)', color: '#fff', borderRadius: '10px' }}
+                    <div className="homework-review-layout">
+                        {/* Sidebar: Calendar & Instructions */}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', position: 'sticky', top: '20px' }}>
+                            <HomeworkCalendar 
+                                selectedDate={selectedDate} 
+                                onDateSelect={setSelectedDate} 
+                                homeworkList={homeworkList} 
                             />
+                            
+                            <div className="glass-panel" style={{ padding: '20px' }}>
+                                <h4 style={{ margin: '0 0 8px 0', fontSize: '0.9rem', color: 'var(--text-primary)' }}>Tips</h4>
+                                <ul style={{ margin: 0, paddingLeft: '20px', fontSize: '0.8rem', color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                    <li>Dates with <span style={{ color: 'var(--accent-light)', fontWeight: 'bold' }}>dots</span> have active assignments.</li>
+                                    <li>Click any date to see all tasks due that day.</li>
+                                    <li>Use the tabs above to switch between assigning and reviewing.</li>
+                                </ul>
+                            </div>
                         </div>
 
-                        {filteredHomework.length === 0 ? (
-                            <div className="glass-panel" style={{ padding: '80px 20px', textAlign: 'center', color: 'var(--text-secondary)' }}>
-                                <div style={{ fontSize: '3rem', marginBottom: '16px', opacity: 0.5 }}>📭</div>
-                                <h3>No Assignments Found</h3>
-                                <p>There were no homework tasks due on {selectedDate}.</p>
+                        {/* Main Content: Homework List & Submissions */}
+                        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '24px' }}>
+                            <div className="glass-panel" style={{ padding: '20px 32px' }}>
+                                <h3 style={{ margin: 0 }}>Submissions for {new Date(selectedDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' })}</h3>
+                                <p style={{ margin: '4px 0 0 0', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                                    {filteredHomework.length} {filteredHomework.length === 1 ? 'assignment' : 'assignments'} found for this date.
+                                </p>
                             </div>
-                        ) : (
-                            <div className="grid-3">
-                                {filteredHomework.map(hw => (
-                                    <div key={hw.id} className="glass-panel animate-fade-in" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px' }}>
-                                            <div style={{ flex: 1, minWidth: 0 }}>
-                                                <h4 style={{ margin: 0, fontSize: '1.25rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{hw.title}</h4>
-                                                <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
-                                                    <span className="badge" style={{ background: 'var(--bg-tertiary)' }}>{hw.grade}</span> • {hw.subject}
+
+                            {filteredHomework.length === 0 ? (
+                                <div className="glass-panel" style={{ padding: '80px 20px', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                                    <div style={{ fontSize: '3rem', marginBottom: '16px', opacity: 0.5 }}>📭</div>
+                                    <h3>No Assignments Found</h3>
+                                    <p>There were no homework tasks due on this date.</p>
+                                </div>
+                            ) : (
+                                <div className="grid-2">
+                                    {filteredHomework.map(hw => (
+                                        <div key={hw.id} className="glass-panel animate-fade-in" style={{ display: 'flex', flexDirection: 'column', height: '100%', padding: '24px' }}>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px' }}>
+                                                <div style={{ flex: 1, minWidth: 0 }}>
+                                                    <h4 style={{ margin: 0, fontSize: '1.25rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{hw.title}</h4>
+                                                    <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '4px', display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                                                        <span className="badge" style={{ background: 'var(--bg-tertiary)' }}>{hw.grade}</span>
+                                                        {(hw.batch && hw.batch !== 'General Batch') && <span className="badge" style={{ background: 'var(--bg-tertiary)' }}>{hw.batch}</span>}
+                                                        <span>• {hw.subject}</span>
+                                                    </div>
+                                                </div>
+                                                {hw.attachmentUrl && (
+                                                    <a href={hw.attachmentUrl} target="_blank" rel="noreferrer" className="btn btn-ghost" style={{ padding: '8px', borderRadius: '8px' }} title="View Resource">
+                                                        📎
+                                                    </a>
+                                                )}
+                                            </div>
+
+                                            <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', marginBottom: '24px', flex: 1, lineClamp: 3, display: '-webkit-box', WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{hw.description}</p>
+
+                                            {/* Submission Progress */}
+                                            <div style={{ background: 'rgba(0,0,0,0.2)', padding: '16px', borderRadius: '12px' }}>
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: '12px' }}>
+                                                    <span>Submissions</span>
+                                                    <span style={{ color: 'var(--accent)' }}>
+                                                        {Object.keys(submissions[hw.id] || {}).length} / {students.filter(s => s.grade === hw.grade && s.status === 'ACTIVE' && ((hw.batch === 'All' || !hw.batch) || (s.batch || 'General Batch') === hw.batch)).length}
+                                                    </span>
+                                                </div>
+
+                                                <div style={{ maxHeight: '250px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                                    {students.filter(s => s.grade === hw.grade && s.status === 'ACTIVE' && (s.role === 'student' || s.role === 'STUDENT') && ((hw.batch === 'All' || !hw.batch) || (s.batch || 'General Batch') === hw.batch)).map(student => {
+                                                        const sub = submissions[hw.id]?.[student.id];
+                                                        const isChecked = sub?.status === 'CHECKED';
+                                                        const isIncomplete = sub?.status === 'INCOMPLETE';
+
+                                                        return (
+                                                            <div key={student.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', background: 'rgba(255,255,255,0.02)', borderRadius: '8px', border: '1px solid var(--border)' }}>
+                                                                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0, flex: 1 }}>
+                                                                    <div style={{
+                                                                        width: '8px', height: '8px', borderRadius: '50%', flexShrink: 0,
+                                                                        background: sub ? (isChecked ? 'var(--success)' : (isIncomplete ? 'var(--danger)' : 'var(--warning)')) : 'rgba(255,255,255,0.1)'
+                                                                    }}></div>
+                                                                    <span style={{ fontSize: '0.85rem', fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{student.name}</span>
+                                                                </div>
+                                                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                                    {sub?.fileUrl && (
+                                                                        <a href={sub.fileUrl} target="_blank" rel="noreferrer" style={{ fontSize: '0.9rem', color: 'var(--accent)' }} title="View Submission">👁️</a>
+                                                                    )}
+                                                                    <button
+                                                                        className="btn btn-ghost"
+                                                                        style={{
+                                                                            fontSize: '0.75rem', padding: '4px 10px', minWidth: '85px',
+                                                                            borderColor: isChecked ? 'var(--success-border)' : (isIncomplete ? 'var(--danger-border)' : 'var(--border)'),
+                                                                            color: isChecked ? 'var(--success)' : (isIncomplete ? 'var(--danger)' : 'var(--text-primary)')
+                                                                        }}
+                                                                        onClick={() => {
+                                                                            setReviewingSubmission({
+                                                                                homeworkId: hw.id,
+                                                                                studentId: student.id,
+                                                                                studentName: student.name,
+                                                                                ...sub
+                                                                            });
+                                                                            setReviewStatus(sub?.status || 'CHECKED');
+                                                                            setTeacherComment(sub?.teacherComment || "");
+                                                                        }}
+                                                                    >
+                                                                        {isChecked ? "Verified" : (isIncomplete ? "Redo" : (sub ? "Review" : "Mark"))}
+                                                                    </button>
+                                                                </div>
+                                                            </div>
+                                                        )
+                                                    })}
                                                 </div>
                                             </div>
-                                            {hw.attachmentUrl && (
-                                                <a href={hw.attachmentUrl} target="_blank" rel="noreferrer" className="btn btn-ghost" style={{ padding: '8px', borderRadius: '8px' }} title="View Resource">
-                                                    📎
-                                                </a>
-                                            )}
                                         </div>
-
-                                        <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', marginBottom: '24px', flex: 1, lineClamp: 3, display: '-webkit-box', WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{hw.description}</p>
-
-                                        {/* Submission Progress */}
-                                        <div style={{ background: 'rgba(0,0,0,0.2)', padding: '16px', borderRadius: '12px' }}>
-                                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: '12px' }}>
-                                                <span>Submissions</span>
-                                                <span style={{ color: 'var(--accent)' }}>
-                                                    {Object.keys(submissions[hw.id] || {}).length} / {students.filter(s => s.grade === hw.grade && s.status === 'ACTIVE').length}
-                                                </span>
-                                            </div>
-
-                                            <div style={{ maxHeight: '250px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                                                {students.filter(s => s.grade === hw.grade && s.status === 'ACTIVE' && (s.role === 'student' || s.role === 'STUDENT')).map(student => {
-                                                    const sub = submissions[hw.id]?.[student.id];
-                                                    const isChecked = sub?.status === 'CHECKED';
-                                                    const isIncomplete = sub?.status === 'INCOMPLETE';
-
-                                                    return (
-                                                        <div key={student.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', background: 'rgba(255,255,255,0.02)', borderRadius: '8px', border: '1px solid var(--border)' }}>
-                                                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0, flex: 1 }}>
-                                                                <div style={{
-                                                                    width: '8px', height: '8px', borderRadius: '50%', flexShrink: 0,
-                                                                    background: sub ? (isChecked ? 'var(--success)' : (isIncomplete ? 'var(--danger)' : 'var(--warning)')) : 'rgba(255,255,255,0.1)'
-                                                                }}></div>
-                                                                <span style={{ fontSize: '0.85rem', fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{student.name}</span>
-                                                            </div>
-                                                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                                                {sub?.fileUrl && (
-                                                                    <a href={sub.fileUrl} target="_blank" rel="noreferrer" style={{ fontSize: '0.9rem', color: 'var(--accent)' }} title="View Submission">👁️</a>
-                                                                )}
-                                                                <button
-                                                                    className="btn btn-ghost"
-                                                                    style={{
-                                                                        fontSize: '0.75rem', padding: '4px 10px', minWidth: '85px',
-                                                                        borderColor: isChecked ? 'var(--success-border)' : (isIncomplete ? 'var(--danger-border)' : 'var(--border)'),
-                                                                        color: isChecked ? 'var(--success)' : (isIncomplete ? 'var(--danger)' : 'var(--text-primary)')
-                                                                    }}
-                                                                    onClick={() => {
-                                                                        setReviewingSubmission({
-                                                                            homeworkId: hw.id,
-                                                                            studentId: student.id,
-                                                                            studentName: student.name,
-                                                                            ...sub
-                                                                        });
-                                                                        setReviewStatus(sub?.status || 'CHECKED');
-                                                                        setTeacherComment(sub?.teacherComment || "");
-                                                                    }}
-                                                                >
-                                                                    {isChecked ? "Verified" : (isIncomplete ? "Redo" : (sub ? "Review" : "Mark"))}
-                                                                </button>
-                                                            </div>
-                                                        </div>
-                                                    )
-                                                })}
-                                            </div>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
+                                    ))}
+                                </div>
+                            )}
+                        </div>
                     </div>
                 )}
             </div>

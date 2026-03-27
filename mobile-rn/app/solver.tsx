@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, Image, Alert, Share, TextInput } from 'react-native';
+import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
@@ -10,6 +11,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function SolverScreen() {
+    const router = useRouter();
     const { colors } = useTheme();
     const styles = useMemo(() => makeStyles(colors), [colors]);
 
@@ -164,15 +166,17 @@ export default function SolverScreen() {
     return (
         <SafeAreaView style={styles.container} edges={['top']}>
             <View style={styles.header}>
-                <View>
-                    <Text style={styles.headerSubtitle}>AI Homework Helper</Text>
-                    <Text style={styles.headerTitle}>Snap & Solve</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+                        <Ionicons name="arrow-back" size={24} color={colors.text} />
+                    </TouchableOpacity>
+                    <Text style={styles.headerTitle}>Solver</Text>
                 </View>
                 <TouchableOpacity
                     style={styles.historyBtn}
-                    onPress={() => Alert.alert("History", "Feature coming soon!")}
+                    onPress={() => router.push('/solver-history')}
                 >
-                    <Ionicons name="time-outline" size={24} color={colors.textSecondary} />
+                    <Ionicons name="time-outline" size={24} color={colors.primary} />
                 </TouchableOpacity>
             </View>
 
@@ -363,6 +367,7 @@ const makeStyles = (colors: any) => StyleSheet.create({
     },
     headerTitle: { fontSize: 28, fontWeight: '800', color: colors.text, letterSpacing: -0.5 },
     headerSubtitle: { fontSize: 13, color: colors.primary, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 1 },
+    backBtn: { padding: 8, borderRadius: 12, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, marginRight: 15 },
     historyBtn: { padding: 8, borderRadius: 12, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border },
 
     content: { padding: 20, paddingBottom: 100 },

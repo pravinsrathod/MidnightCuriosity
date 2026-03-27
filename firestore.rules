@@ -2,31 +2,42 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     
-    // Safely get user data if they exist
-    function getUserData() {
-      let path = /databases/$(database)/documents/users/$(request.auth.uid);
-      return (request.auth != null && exists(path)) ? get(path).data : null;
-    }
-
-    function isAdmin() {
-      let data = getUserData();
-      return data != null && data.role == 'admin';
-    }
-
     function isSuperAdmin() {
-      return request.auth != null && request.auth.token.email == 'prowintechs@gmail.com';
+      return request.auth != null && 
+             (request.auth.token.email == 'prowintechs@gmail.com' || 
+              request.auth.token.email == 'Prowintechs@gmail.com');
     }
+
+    match /{document=**} {
+      allow read, write: if isSuperAdmin();
+    }
+    
+    function isAdmin() {
+      return isSuperAdmin() || (
+        request.auth != null && 
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', 'user').lower() == 'admin'
+      );
+    }
+
 
     function isTenantUser(tid) {
-      let data = getUserData();
-      return data != null && data.tenantId == tid;
+      return isSuperAdmin() || (
+        request.auth != null && (
+          // Standard check for authenticated users with documents
+          (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('tenantId', 'default') == tid) ||
+          // Backward compatibility for legacy binaries using anonymous auth
+          request.auth.token.firebase.sign_in_provider == 'anonymous'
+        )
+      );
     }
 
     // --- TENANTS ---
     match /tenants/{tenantId} {
       allow read: if true; // Public for validation
       allow create: if request.auth != null; // Admin signup
-      allow update: if request.auth != null && (isSuperAdmin() || (isAdmin() && getUserData().tenantId == tenantId));
+      allow update: if request.auth != null && (isSuperAdmin() || (isAdmin() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.tenantId == tenantId));
       
       match /metadata/{any=**} {
         allow read: if true; 
@@ -41,13 +52,18 @@ service cloud.firestore {
       // Allow self-registration or admin creation
       allow create: if request.auth != null && (
         (request.auth.uid == userId && 
-         // Prevent self-granting admin/superadmin roles
-         !(request.resource.data.role in ['admin', 'ADMIN', 'superadmin'])
+         (
+           !(request.resource.data.role in ['admin', 'ADMIN', 'superadmin']) ||
+           (request.resource.data.role in ['admin', 'ADMIN'] && request.resource.data.get('status', '') == 'PENDING_APPROVAL')
+         )
         ) 
         || 
-        (isAdmin() && request.resource.data.tenantId == getUserData().tenantId) 
+        (isAdmin() && request.resource.data.tenantId == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.tenantId) 
         || 
         isSuperAdmin()
+        ||
+        // Legacy: support custom OTP where auth.uid != userId
+        request.auth.token.firebase.sign_in_provider == 'anonymous'
       );
 
       // Protect sensitive fields during self-update
@@ -57,15 +73,12 @@ service cloud.firestore {
          (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'tenantId', 'status', 'isAdmin']))
         ) 
         ||
-        (isAdmin() && resource.data.tenantId == getUserData().tenantId) 
+        (isAdmin() && resource.data.get('tenantId', '') == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('tenantId', '')) 
         ||
         isSuperAdmin() 
         ||
-        // Allow fallback OTP login to set deviceId ONLY IF it is currently empty/unknown
-        // and they are not trying to change other fields
-        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['deviceId']) &&
-         (!('deviceId' in resource.data) || resource.data.deviceId == null || resource.data.deviceId == '' || resource.data.deviceId == 'unknown' || resource.data.deviceId == 'ios-unknown' || resource.data.deviceId == 'android-unknown')
-        )
+        // Legacy fallback: allow deviceId updates even if UID doesn't match
+        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['deviceId']))
       );
 
       allow delete: if isAdmin() || isSuperAdmin();
@@ -73,42 +86,42 @@ service cloud.firestore {
 
     // --- CONTENT (Lectures, Polls, Exams) ---
     match /lectures/{id} {
-      allow read: if request.auth != null && (resource.data.tenantId == 'default' || isTenantUser(resource.data.tenantId));
-      allow write: if isAdmin() && request.resource.data.tenantId == getUserData().tenantId;
+      allow read: if request.auth != null && (resource.data.get('tenantId', 'default') == 'default' || isTenantUser(resource.data.get('tenantId', 'default')));
+      allow write: if isAdmin() && request.resource.data.tenantId == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.tenantId;
       allow delete: if isAdmin();
     }
     match /polls/{id} {
-      allow read: if request.auth != null && (resource.data.tenantId == 'default' || isTenantUser(resource.data.tenantId));
-      allow create: if isAdmin() && request.resource.data.tenantId == getUserData().tenantId;
-      allow update: if request.auth != null && (resource.data.tenantId == 'default' || isTenantUser(resource.data.tenantId));
+      allow read: if request.auth != null && (resource.data.get('tenantId', 'default') == 'default' || isTenantUser(resource.data.get('tenantId', 'default')));
+      allow create: if isAdmin() && request.resource.data.tenantId == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.tenantId;
+      allow update: if request.auth != null && (resource.data.get('tenantId', 'default') == 'default' || isTenantUser(resource.data.get('tenantId', 'default')));
       allow delete: if isAdmin();
     }
     match /exams/{id} {
-      allow read: if request.auth != null && (resource.data.tenantId == 'default' || isTenantUser(resource.data.tenantId));
-      allow write: if isAdmin() && request.resource.data.tenantId == getUserData().tenantId;
+      allow read: if request.auth != null && (resource.data.get('tenantId', 'default') == 'default' || isTenantUser(resource.data.get('tenantId', 'default')));
+      allow write: if isAdmin() && request.resource.data.tenantId == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.tenantId;
       allow delete: if isAdmin();
     }
 
     // --- ATTENDANCE ---
     match /attendance/{id} {
-      allow read: if request.auth != null && (resource == null || resource.data.tenantId == 'default' || isTenantUser(resource.data.tenantId));
-      allow create: if isAdmin() && request.resource.data.tenantId == getUserData().tenantId;
-      allow update: if isAdmin() && (request.resource.data.tenantId == getUserData().tenantId || resource.data.tenantId == getUserData().tenantId);
-      allow delete: if isAdmin() && resource.data.tenantId == getUserData().tenantId;
+      allow read: if request.auth != null && (resource == null || resource.data.get('tenantId', 'default') == 'default' || isTenantUser(resource.data.get('tenantId', 'default')));
+      allow create: if isAdmin() && request.resource.data.tenantId == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.tenantId;
+      allow update: if isAdmin() && (request.resource.data.tenantId == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.tenantId || resource.data.tenantId == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.tenantId);
+      allow delete: if isAdmin() && resource.data.tenantId == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.tenantId;
     }
 
     // --- DOUBTS ---
     match /doubts/{id} {
-      allow read, update: if request.auth != null && isTenantUser(resource.data.tenantId);
-      allow create: if request.auth != null && request.resource.data.tenantId == getUserData().tenantId;
+      allow read, update: if request.auth != null && isTenantUser(resource.data.get('tenantId', 'default'));
+      allow create: if request.auth != null && request.resource.data.get('tenantId', 'default') == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('tenantId', 'default');
       allow delete: if isAdmin();
     }
 
     // --- HOMEWORK ---
     match /homework/{id} {
-        allow read: if request.auth != null && isTenantUser(resource.data.tenantId);
-        allow create, update: if isAdmin() && request.resource.data.tenantId == getUserData().tenantId;
-        allow delete: if isAdmin() && resource.data.tenantId == getUserData().tenantId;
+        allow read: if request.auth != null && (resource.data.get('tenantId', 'default') == 'default' || isTenantUser(resource.data.get('tenantId', 'default')));
+        allow create, update: if isAdmin() && request.resource.data.tenantId == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.tenantId;
+        allow delete: if isAdmin() && resource.data.tenantId == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.tenantId;
     }
 
     // --- SUBMISSIONS ---
@@ -116,19 +129,23 @@ service cloud.firestore {
         // Read: Student (Self), Admin (Tenant), Parent (Tenant - simplified)
         allow read: if request.auth != null && (
           resource.data.studentId == request.auth.uid || 
-          isTenantUser(resource.data.tenantId)
+          isTenantUser(resource.data.get('tenantId', 'default'))
         );
 
         // Create: Student (Self) OR Admin (Manual Entry)
         allow create: if request.auth != null && (
-          (request.resource.data.studentId == request.auth.uid && request.resource.data.tenantId == getUserData().tenantId) ||
-          (isAdmin() && request.resource.data.tenantId == getUserData().tenantId)
+          (request.resource.data.studentId == request.auth.uid && request.resource.data.tenantId == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.tenantId) ||
+          (isAdmin() && request.resource.data.tenantId == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.tenantId) ||
+          // Fallback legacy
+          request.auth.token.firebase.sign_in_provider == 'anonymous'
         );
 
         // Update: Student (Self) OR Admin
         allow update: if request.auth != null && (
           resource.data.studentId == request.auth.uid || 
-          isAdmin()
+          isAdmin() ||
+          // Fallback legacy
+          request.auth.token.firebase.sign_in_provider == 'anonymous'
         );
 
         // Delete: Admin only
@@ -137,27 +154,21 @@ service cloud.firestore {
 
     // --- FEES ---
     match /fees/{id} {
-      // Students: read their own fees only
-      // Parents: read fees for their tenant (Admin verification check)
-      // Admins: full read/write for their tenant
       allow read: if request.auth != null && (
-        resource.data.studentId == request.auth.uid ||
-        isAdmin() ||
-        (isTenantUser(resource.data.tenantId) && getUserData().role == 'parent' && 
-         (resource.data.studentId == getUserData().phoneNumber || 
-          resource.data.studentId == getUserData().linkedStudentPhone ||
-          resource.data.studentId in (getUserData().linkedStudentPhones || [])))
+        isSuperAdmin() || 
+        resource.data.studentId == request.auth.uid || 
+        // Allow if same tenant OR if anonymous (relying on client filtering for legacy)
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('tenantId', 'default') == resource.data.get('tenantId', 'default')) ||
+        request.auth.token.firebase.sign_in_provider == 'anonymous'
       );
-      allow create: if isAdmin() && request.resource.data.tenantId == getUserData().tenantId;
-      allow update: if isAdmin() && resource.data.tenantId == getUserData().tenantId;
-      allow delete: if isAdmin() && resource.data.tenantId == getUserData().tenantId;
+      allow write: if isAdmin() && (isSuperAdmin() || request.resource.data.tenantId == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.tenantId);
     }
 
     // --- FEE STRUCTURES ---
     match /feeStructures/{id} {
-      allow read: if request.auth != null && isTenantUser(resource.data.tenantId);
-      allow create: if isAdmin() && request.resource.data.tenantId == getUserData().tenantId;
-      allow update, delete: if isAdmin() && resource.data.tenantId == getUserData().tenantId;
+      allow read: if request.auth != null && (isSuperAdmin() || isTenantUser(resource.data.get('tenantId', 'default')));
+      allow create, update, delete: if (isAdmin() || isSuperAdmin()) && (request.resource.data.tenantId == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.tenantId || (isSuperAdmin() && resource.data.tenantId != null));
     }
 
     // --- LEGACY ---
@@ -170,18 +181,41 @@ service cloud.firestore {
       // Read: Owner, or Admin of same tenant
       allow read: if request.auth != null && (
         resource.data.studentId == request.auth.uid || 
-        (isAdmin() && resource.data.tenantId == getUserData().tenantId)
+        isTenantUser(resource.data.get('tenantId', 'default'))
       );
-      // Create: Self only, matching tenant
-      allow create: if request.auth != null && 
-        request.resource.data.studentId == request.auth.uid &&
-        request.resource.data.tenantId == getUserData().tenantId;
+      // Create: Tenant users (Parents/Students)
+      allow create: if request.auth != null && isTenantUser(request.resource.data.tenantId);
       // Update: Admin (to verify) OR Owner (if still pending/rejected to re-submit or cancel)
       allow update: if request.auth != null && (
-        (isAdmin() && resource.data.tenantId == getUserData().tenantId) ||
-        (resource.data.studentId == request.auth.uid && resource.data.status != 'APPROVED')
+        (isAdmin() && resource.data.get('tenantId', 'default') == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('tenantId', 'default')) ||
+        (resource.data.studentId == request.auth.uid && resource.data.status != 'APPROVED') ||
+        isTenantUser(resource.data.get('tenantId', 'default'))
       );
-      allow delete: if isAdmin() && resource.data.tenantId == getUserData().tenantId;
+      allow delete: if isAdmin() && resource.data.get('tenantId', 'default') == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('tenantId', 'default');
+    }
+
+    // --- LIVE SESSIONS ---
+    match /liveSessions/{sessionId} {
+      allow read: if request.auth != null && (resource == null || isTenantUser(resource.data.get('tenantId', 'default')));
+      allow write, delete: if isAdmin();
+    }
+
+    // --- LIVE SESSIONS PRIVATE (Stream Keys) ---
+    match /liveSessions_private/{sessionId} {
+      allow read: if isAdmin();
+      allow write, delete: if isAdmin();
+    }
+
+    // --- RECORDINGS ---
+    match /recordings/{id} {
+      allow read: if request.auth != null && (resource == null || isTenantUser(resource.data.get('tenantId', 'default')));
+      // Writes are handled by Cloud Functions (Admin SDK)
+    }
+
+    // --- PASSWORD RESET REQUESTS ---
+    match /password_reset_requests/{requestId} {
+      allow create: if request.auth != null;
+      allow read, update, delete: if isAdmin() && (isSuperAdmin() || resource.data.tenantId == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.tenantId);
     }
   }
 }

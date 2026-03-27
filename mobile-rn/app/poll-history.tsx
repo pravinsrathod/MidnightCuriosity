@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { View, Text, StyleSheet, SafeAreaView, FlatList, ActivityIndicator, TouchableOpacity } from 'react-native';
 import { useRouter } from 'expo-router';
 import { db, auth } from '../services/firebaseConfig';
-import { collection, query, orderBy, getDocs, where } from 'firebase/firestore';
+import { collection, query, orderBy, getDocs, where, getDoc, doc } from 'firebase/firestore';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '../context/ThemeContext';
@@ -17,19 +17,36 @@ export default function PollHistoryScreen() {
     const [polls, setPolls] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [currentUid, setCurrentUid] = useState<string | null>(null);
+    const [userGrade, setUserGrade] = useState<string | null>(null);
+    const [userBatch, setUserBatch] = useState<string | null>(null);
 
     useEffect(() => {
-        const loadUid = async () => {
+        const loadUser = async () => {
             const stored = await AsyncStorage.getItem('user_uid');
             const finalUid = auth.currentUser?.uid || stored;
             setCurrentUid(finalUid || null);
+
+            if (finalUid) {
+                try {
+                    const userDoc = await getDoc(doc(db, "users", finalUid));
+                    if (userDoc.exists()) {
+                        const userData = userDoc.data();
+                        setUserGrade(userData.grade || null);
+                        setUserBatch(userData.batch || "General Batch");
+                    }
+                } catch (e) {
+                    console.error("Error fetching user profile for history:", e);
+                }
+            }
         };
-        loadUid();
+        loadUser();
     }, []);
 
     useEffect(() => {
-        fetchPolls();
-    }, []);
+        if (currentUid && userGrade) {
+            fetchPolls();
+        }
+    }, [currentUid, userGrade, userBatch]);
 
     const fetchPolls = async () => {
         try {
@@ -40,8 +57,15 @@ export default function PollHistoryScreen() {
             const snapshot = await getDocs(q);
             const loadedPolls = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
+            // Filter by Grade and Batch
+            const filtered = loadedPolls.filter((p: any) => {
+                const matchesGrade = !p.grade || p.grade === 'All' || p.grade === userGrade;
+                const matchesBatch = !p.batch || p.batch === 'All' || p.batch === userBatch;
+                return matchesGrade && matchesBatch;
+            });
+
             // Client-side sort to avoid composite index
-            const sorted = loadedPolls.sort((a: any, b: any) => {
+            const sorted = filtered.sort((a: any, b: any) => {
                 const timeA = a.createdAt?.seconds ? a.createdAt.seconds * 1000 : new Date(a.createdAt).getTime();
                 const timeB = b.createdAt?.seconds ? b.createdAt.seconds * 1000 : new Date(b.createdAt).getTime();
                 return timeB - timeA; // desc
