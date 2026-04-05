@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Keyboard, ScrollView, Image } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { auth, db } from '../services/firebaseConfig';
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile, signInAnonymously, sendPasswordResetEmail } from "firebase/auth";
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -15,9 +16,10 @@ import * as LocalAuthentication from 'expo-local-authentication';
 
 export default function AuthScreen() {
     const router = useRouter();
+    const insets = useSafeAreaInsets();
     const { colors, toggleTheme, isDark } = useTheme();
     const { tenantId, setTenantId, tenantName, tenantLogo } = useTenant();
-    const styles = useMemo(() => makeStyles(colors), [colors]);
+    const styles = useMemo(() => makeStyles(colors, insets), [colors, insets]);
 
     const [isSignUp, setIsSignUp] = useState(true);
     const [isParent, setIsParent] = useState(false); // New Parent Mode
@@ -32,7 +34,6 @@ export default function AuthScreen() {
     const [name, setName] = useState('');
     const [selectedGrade, setSelectedGrade] = useState("");
     const [selectedBatch, setSelectedBatch] = useState<string>("General Batch");
-    const [otpCode, setOtpCode] = useState('');
     const [loading, setLoading] = useState(false);
     const [isAdminMode, setIsAdminMode] = useState(false);
     const [isInstituteSignUp, setIsInstituteSignUp] = useState(false);
@@ -45,10 +46,10 @@ export default function AuthScreen() {
             if (!batchList[selectedGrade].includes(selectedBatch)) {
                 setSelectedBatch(batchList[selectedGrade][0]);
             }
-        } else {
+        } else if (selectedBatch !== "General Batch") {
             setSelectedBatch("General Batch");
         }
-    }, [selectedGrade, batchList]);
+    }, [selectedGrade, batchList, selectedBatch]);
 
     // Student Search State
     const [studentSearchQuery, setStudentSearchQuery] = useState('');
@@ -64,7 +65,6 @@ export default function AuthScreen() {
     const [isSearchingTenant, setIsSearchingTenant] = useState(false);
     const [showManualCode, setShowManualCode] = useState(false);
     const [isForgot, setIsForgot] = useState(false);
-    const [resetEmail, setResetEmail] = useState('');
 
     // Fetch institutes when in TENANT stage
     useEffect(() => {
@@ -74,7 +74,12 @@ export default function AuthScreen() {
                 try {
                     // Check if authenticated to read, else sign in anonymously
                     if (!auth.currentUser) {
-                        await signInAnonymously(auth);
+                        try {
+                            await signInAnonymously(auth);
+                            console.log("[Auth] Signed in anonymously for public read.");
+                        } catch (anonErr) {
+                            console.warn("[Auth] Anonymous sign-in failed, proceeding with public read:", anonErr);
+                        }
                     }
                     // Query for isActive true as primary filter, status might be missing on older records
                     const q = query(collection(db, "tenants"), where("isActive", "==", true));
@@ -89,7 +94,7 @@ export default function AuthScreen() {
             };
             fetchInstitutes();
         }
-    }, [authStage, isAdminMode]);
+    }, [authStage, isAdminMode, tenantListCache.length]);
 
     const handleTenantSearch = (text: string) => {
         setTenantSearchQuery(text);
@@ -126,7 +131,7 @@ export default function AuthScreen() {
             }
             Keyboard.dismiss();
             setAuthStage('FORM');
-        } catch(e) {
+        } catch (e) {
             console.error("Error setting up tenant defaults:", e);
             Alert.alert("Error", "Could not load institute configuration.");
         } finally {
@@ -140,10 +145,14 @@ export default function AuthScreen() {
             const fetchStudents = async () => {
                 console.log(`[Auth] Fetching students for tenant: ${resolvedTenantId}`);
                 try {
-                    // Ensure we are authenticated (anonymously) to read Firestore
+                    // Ensure we are authenticated (anonymously) to read Firestore if needed
                     if (!auth.currentUser) {
-                        console.log("[Auth] Signing in anonymously for search access...");
-                        await signInAnonymously(auth);
+                        try {
+                            console.log("[Auth] Signing in anonymously for search access...");
+                            await signInAnonymously(auth);
+                        } catch (anonErr) {
+                            console.warn("[Auth] Anonymous sign-in failed (students search), proceeding anyway:", anonErr);
+                        }
                     }
 
                     // Fetch all users for tenant to avoid case-sensitivity issues in 'role'
@@ -170,7 +179,7 @@ export default function AuthScreen() {
             };
             fetchStudents();
         }
-    }, [authStage, isParent, resolvedTenantId]);
+    }, [authStage, isParent, resolvedTenantId, studentListCache.length]);
 
     const handleStudentSearch = (text: string) => {
         setStudentSearchQuery(text);
@@ -214,7 +223,7 @@ export default function AuthScreen() {
             } else {
                 Alert.alert('Invalid Code', `No institute found with code: "${trimmedCode}"`);
             }
-        } catch (e: any) {
+        } catch (e) {
             console.error("Validation Error:", e);
             Alert.alert('Institute Validation Failed', 'Could not connect to the server.');
         } finally {
@@ -281,7 +290,7 @@ export default function AuthScreen() {
                     await setTenantId(generatedTenantId);
                     await AsyncStorage.setItem('user_uid', user.uid);
                     
-                    try { await updateProfile(user, { displayName: name }); } catch (e) { }
+                    try { await updateProfile(user, { displayName: name }); } catch { }
 
                     router.replace('/approval-pending');
 
@@ -405,7 +414,7 @@ export default function AuthScreen() {
                 await AsyncStorage.setItem('user_uid', userUid);
 
                 // Update Display Name
-                try { await updateProfile(user, { displayName: name }); } catch (e) { }
+                try { await updateProfile(user, { displayName: name }); } catch { }
 
                 router.replace('/approval-pending');
 
@@ -452,8 +461,13 @@ export default function AuthScreen() {
                 await AsyncStorage.setItem('user_uid', userUid);
                 await setTenantId(userData.tenantId);
 
-                if (isParent || userData.role?.toUpperCase() === 'PARENT') {
-                    userData.role = 'PARENT'; // Standardize
+                // FIX: Only use isParent state for NEW signups. For existing users (login),
+                // we MUST trust the Firestore role exclusively to avoid role-leaking.
+                if (!userData.role) {
+                    if (isParent) userData.role = 'PARENT';
+                    else userData.role = 'STUDENT';
+                } else {
+                     userData.role = userData.role.toUpperCase();
                 }
 
                 // CHECK BIOMETRICS
@@ -526,21 +540,7 @@ export default function AuthScreen() {
             setLoading(false);
         }
     };
-    useEffect(() => {
-        const checkSupport = async () => {
-            const hasHardware = await LocalAuthentication.hasHardwareAsync();
-            const isEnrolled = await LocalAuthentication.isEnrolledAsync();
-            const bioEnabled = await AsyncStorage.getItem('biometric_enabled');
-            setIsBiometricSupported(hasHardware && isEnrolled && bioEnabled === 'true');
-
-            if (params.autoauth === 'true' && hasHardware && isEnrolled && bioEnabled === 'true' && auth.currentUser) {
-                performBiometricAuth();
-            }
-        };
-        checkSupport();
-    }, [params.autoauth]);
-
-    const performBiometricAuth = async () => {
+    const performBiometricAuth = React.useCallback(async () => {
         try {
             const result = await LocalAuthentication.authenticateAsync({
                 promptMessage: `Login to ${process.env.EXPO_PUBLIC_APP_NAME || "EduPro"}`,
@@ -563,7 +563,21 @@ export default function AuthScreen() {
         } catch (e) {
             console.error("Biometric auth error:", e);
         }
-    };
+    }, [auth.currentUser, router]);
+
+    useEffect(() => {
+        const checkSupport = async () => {
+            const hasHardware = await LocalAuthentication.hasHardwareAsync();
+            const isEnrolled = await LocalAuthentication.isEnrolledAsync();
+            const bioEnabled = await AsyncStorage.getItem('biometric_enabled');
+            setIsBiometricSupported(hasHardware && isEnrolled && bioEnabled === 'true');
+
+            if (params.autoauth === 'true' && hasHardware && isEnrolled && bioEnabled === 'true' && auth.currentUser) {
+                performBiometricAuth();
+            }
+        };
+        checkSupport();
+    }, [params.autoauth, performBiometricAuth]);
 
 
     const handleNavigation = async (userData: any) => {
@@ -758,7 +772,11 @@ export default function AuthScreen() {
                             </TouchableOpacity>
                             <TouchableOpacity
                                 style={[styles.toggleButton, !isSignUp && styles.toggleButtonActive]}
-                                onPress={() => { setIsSignUp(false); setAuthStage('FORM'); }}
+                                onPress={() => { 
+                                    setIsSignUp(false); 
+                                    setIsParent(false); // Reset isParent when going to Login
+                                    setAuthStage('FORM'); 
+                                }}
                             >
                                 <Text style={[styles.toggleText, !isSignUp && styles.toggleTextActive]}>Login</Text>
                             </TouchableOpacity>
@@ -814,7 +832,7 @@ export default function AuthScreen() {
 
                                 {tenantSearchQuery.length > 0 && tenantSearchResults.length === 0 && !isSearchingTenant && !showManualCode && (
                                     <View style={{ padding: 16, alignItems: 'center' }}>
-                                        <Text style={{ color: colors.textSecondary }}>No institutes found matching "{tenantSearchQuery}".</Text>
+                                        <Text style={{ color: colors.textSecondary }}>No institutes found matching &quot;{tenantSearchQuery}&quot;.</Text>
                                         <TouchableOpacity onPress={() => setShowManualCode(true)}>
                                           <Text style={{ color: colors.primary, marginTop: 8, fontSize: 13, fontWeight: '600' }}>Have an Institute Code? Enter manually ⌨️</Text>
                                         </TouchableOpacity>
@@ -844,7 +862,7 @@ export default function AuthScreen() {
                                             onPress={validateTenant}
                                             disabled={loading}
                                         >
-                                            {loading ? <ActivityIndicator color="#FFF" /> : <Text style={styles.mainButtonText}>Validate Code</Text>}
+                                            {loading ? <ActivityIndicator color={colors.background} /> : <Text style={styles.mainButtonText}>Validate Code</Text>}
                                         </TouchableOpacity>
                                     </View>
                                 )}
@@ -1069,7 +1087,7 @@ export default function AuthScreen() {
                             disabled={loading}
                         >
                             {loading ? (
-                                <ActivityIndicator color="#FFFFFF" />
+                                <ActivityIndicator color={colors.background} />
                             ) : (
                                 <Text style={styles.mainButtonText}>
                                     {isForgot ? 'Send Reset Link' : (isAdminMode ? (isInstituteSignUp ? 'Register Institute' : 'Login as Admin') : (isSignUp ? 'Sign Up' : 'Login'))}
@@ -1108,7 +1126,7 @@ export default function AuthScreen() {
     );
 }
 
-const makeStyles = (colors: any) => StyleSheet.create({
+const makeStyles = (colors: any, insets: any) => StyleSheet.create({
     container: {
         flex: 1,
         backgroundColor: colors.background,
@@ -1117,11 +1135,12 @@ const makeStyles = (colors: any) => StyleSheet.create({
         flexGrow: 1,
         justifyContent: 'center',
         padding: 24,
-        paddingBottom: 100,
+        paddingTop: insets.top + 20,
+        paddingBottom: insets.bottom + 40,
     },
     themeToggle: {
         position: 'absolute',
-        top: 60,
+        top: insets.top + 10,
         right: 20,
         zIndex: 10,
         padding: 8,
@@ -1266,7 +1285,7 @@ const makeStyles = (colors: any) => StyleSheet.create({
         }),
     },
     mainButtonText: {
-        color: '#FFFFFF',
+        color: colors.background,
         fontSize: 16,
         fontWeight: 'bold',
     },
@@ -1299,7 +1318,7 @@ const makeStyles = (colors: any) => StyleSheet.create({
         fontWeight: '500',
     },
     gradeTextActive: {
-        color: '#FFFFFF',
+        color: colors.background,
         fontWeight: 'bold',
     },
     infoBox: {

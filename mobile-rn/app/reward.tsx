@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, Platform, SafeAreaView } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Platform, SafeAreaView } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { auth, db } from '../services/firebaseConfig';
@@ -8,11 +8,14 @@ import { onAuthStateChanged } from 'firebase/auth';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '../context/ThemeContext';
 
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
 export default function RewardScreen() {
     const router = useRouter();
     const { topic } = useLocalSearchParams<{ topic: string }>();
     const { colors } = useTheme();
-    const styles = useMemo(() => makeStyles(colors), [colors]);
+    const insets = useSafeAreaInsets();
+    const styles = useMemo(() => makeStyles(colors, insets), [colors, insets]);
 
     useEffect(() => {
         const unsubscribe = onAuthStateChanged(auth, async (user) => {
@@ -40,7 +43,7 @@ export default function RewardScreen() {
             }
         });
         return () => unsubscribe();
-    }, [topic]);
+    }, [topic, router]);
 
     return (
         <SafeAreaView style={styles.container}>
@@ -56,7 +59,7 @@ export default function RewardScreen() {
                 </View>
 
                 <Text style={styles.title}>Great Job!</Text>
-                <Text style={styles.subtitle}>You've completed the lesson.</Text>
+                <Text style={styles.subtitle}>You&apos;ve completed the lesson.</Text>
 
                 <View style={styles.xpCard}>
                     <Text style={styles.xpText}>+50 XP</Text>
@@ -73,12 +76,12 @@ export default function RewardScreen() {
     );
 }
 
-const makeStyles = (colors: any) => StyleSheet.create({
+const makeStyles = (colors: any, insets: any) => StyleSheet.create({
     container: {
         flex: 1,
         justifyContent: 'center',
         alignItems: 'center',
-        backgroundColor: colors.background, // Removed LinearGradient for simplicity with themes for now, can add back if needed
+        backgroundColor: colors.background,
     },
     content: {
         alignItems: 'center',
@@ -144,13 +147,13 @@ const makeStyles = (colors: any) => StyleSheet.create({
         }),
     },
     buttonText: {
-        color: '#FFFFFF',
+        color: colors.onPrimary,
         fontSize: 18,
         fontWeight: 'bold',
     },
     closeBtn: {
         position: 'absolute',
-        top: Platform.OS === 'ios' ? 10 : 20,
+        top: Platform.OS === 'ios' ? insets.top : 20,
         right: 20,
         zIndex: 10,
         padding: 8,

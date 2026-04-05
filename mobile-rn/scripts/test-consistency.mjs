@@ -34,6 +34,10 @@ async function runTest() {
     console.log(`🚀 Starting Full Consistency Check (${TIMESTAMP})...`);
     console.log(`Roles: Admin(${ADMIN_PHONE}), Student(${STUDENT_PHONE}), Parent(${PARENT_PHONE})`);
 
+    const adminEmail = getEmail(ADMIN_PHONE);
+    const studentEmail = getEmail(STUDENT_PHONE);
+    const parentEmail = getEmail(PARENT_PHONE);
+
     let adminUid, studentUid, parentUid;
 
     try {
@@ -42,10 +46,9 @@ async function runTest() {
         // ==========================================
 
         // --- ADMIN SETUP ---
-        const adminEmail = getEmail(ADMIN_PHONE);
         adminUid = (await createUserWithEmailAndPassword(auth, adminEmail, PASSWORD)).user.uid;
         await setDoc(doc(db, "users", adminUid), {
-            email: adminEmail, phoneNumber: ADMIN_PHONE, role: 'admin', tenantId: TENANT_ID, createdAt: serverTimestamp()
+            email: adminEmail, phoneNumber: ADMIN_PHONE, role: 'admin', status: 'PENDING_APPROVAL', tenantId: TENANT_ID, createdAt: serverTimestamp()
         });
         await setDoc(doc(db, "tenants", TENANT_ID), {
             name: "Consistency Institute", code: TENANT_ID, adminUid: adminUid, isActive: true

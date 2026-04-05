@@ -37,7 +37,7 @@ export default function AdminDashboard() {
             }
         };
         checkAdmin();
-    }, []);
+    }, [router]);
 
     const [batches, setBatches] = useState<any>({});
     const [selectedBatchFilter, setSelectedBatchFilter] = useState("All");
@@ -152,7 +152,7 @@ export default function AdminDashboard() {
             } catch (notifyErr) {
                 console.warn("Review notification failed", notifyErr);
             }
-        } catch (e) {
+        } catch {
             Alert.alert("Error", "Failed to update status");
         }
     };
@@ -181,7 +181,7 @@ export default function AdminDashboard() {
             Alert.alert("Success", "Student Added!");
             setAddStudentVisible(false);
             setNewStudent({ name: '', phoneNumber: '', grade: '', batch: 'General Batch', password: '' });
-        } catch (e: any) {
+        } catch {
             Alert.alert("Error", "Failed to add student. Please check the details.");
         } finally {
             setLoading(false);
@@ -211,7 +211,7 @@ export default function AdminDashboard() {
             await updateDoc(doc(db, "users", editingStudent.id), updates);
             Alert.alert("Success", "Student Updated");
             setEditStudentVisible(false);
-        } catch (e: any) {
+        } catch {
             Alert.alert("Error", "Failed to update student profile.");
         } finally {
             setLoading(false);
@@ -225,7 +225,7 @@ export default function AdminDashboard() {
                 text: "Delete", style: "destructive", onPress: async () => {
                     try {
                         await deleteDoc(doc(db, "users", id));
-                    } catch (e) { Alert.alert("Error", "Failed to delete"); }
+                    } catch { Alert.alert("Error", "Failed to delete"); }
                 }
             }
         ]);
@@ -343,7 +343,7 @@ export default function AdminDashboard() {
             Alert.alert("Success", "Homework Created!");
             setCreateHomeworkVisible(false);
             setNewHomework({ title: '', description: '', subject: '', grade: '', batch: 'General Batch', dueDate: new Date().toISOString().split('T')[0], file: null });
-        } catch (e: any) {
+        } catch {
             Alert.alert("Error", "Failed to create homework. Please try again.");
         } finally {
             setLoading(false);
@@ -416,7 +416,7 @@ export default function AdminDashboard() {
         try {
             await updateDoc(doc(db, "users", id), { status: 'ACTIVE' });
             Alert.alert("Success", `Approved ${name}`);
-        } catch (e) {
+        } catch {
             Alert.alert("Error", "Failed to approve.");
         }
     };
@@ -424,7 +424,7 @@ export default function AdminDashboard() {
     const handleReject = async (id: string) => {
         try {
             await updateDoc(doc(db, "users", id), { status: 'REJECTED' });
-        } catch (e) {
+        } catch {
             Alert.alert("Error", "Failed to reject.");
         }
     };
@@ -520,7 +520,7 @@ export default function AdminDashboard() {
             }
 
             Alert.alert("Success", "Attendance Saved!");
-        } catch (e: any) {
+        } catch {
             Alert.alert("Error", "Failed to save attendance record.");
         } finally {
             setSaving(false);
@@ -577,27 +577,27 @@ export default function AdminDashboard() {
             <View style={[styles.card, { paddingVertical: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }]}>
                 <View style={{ flex: 1 }}>
                     <Text style={styles.cardTitle}>{item.name}</Text>
-                    <Text style={[styles.cardSubtitle, { fontSize: 10 }]}>{item.grade}</Text>
+                    <Text style={styles.cardSubtitle}>{item.grade}</Text>
                 </View>
 
-                <View style={{ flexDirection: 'row', gap: 8 }}>
+                <View style={styles.attendanceBtnContainer}>
                     <TouchableOpacity
                         onPress={() => markStatus(item.id, 'PRESENT')}
                         style={[styles.attBtn, status === 'PRESENT' && { backgroundColor: colors.success, borderColor: colors.success }]}
                     >
-                        <Text style={[styles.attBtnText, status === 'PRESENT' && { color: '#FFF' }]}>P</Text>
+                        <Text style={[styles.attBtnText, status === 'PRESENT' && { color: colors.background }]}>P</Text>
                     </TouchableOpacity>
                     <TouchableOpacity
                         onPress={() => markStatus(item.id, 'ABSENT')}
                         style={[styles.attBtn, status === 'ABSENT' && { backgroundColor: colors.danger, borderColor: colors.danger }]}
                     >
-                        <Text style={[styles.attBtnText, status === 'ABSENT' && { color: '#FFF' }]}>A</Text>
+                        <Text style={[styles.attBtnText, status === 'ABSENT' && { color: colors.background }]}>A</Text>
                     </TouchableOpacity>
                     <TouchableOpacity
                         onPress={() => markStatus(item.id, 'LATE')}
                         style={[styles.attBtn, status === 'LATE' && { backgroundColor: colors.warning, borderColor: colors.warning }]}
                     >
-                        <Text style={[styles.attBtnText, status === 'LATE' && { color: '#FFF' }]}>L</Text>
+                        <Text style={[styles.attBtnText, status === 'LATE' && { color: colors.background }]}>L</Text>
                     </TouchableOpacity>
                 </View>
             </View>
@@ -649,13 +649,9 @@ export default function AdminDashboard() {
                             <TouchableOpacity
                                 key={g}
                                 onPress={() => { setSelectedGradeFilter(g); setSelectedBatchFilter('All'); }}
-                                style={{
-                                    paddingVertical: 6, paddingHorizontal: 12, borderRadius: 20, borderWidth: 1,
-                                    borderColor: selectedGradeFilter === g ? colors.primary : colors.border,
-                                    backgroundColor: selectedGradeFilter === g ? colors.primary : 'transparent'
-                                }}
+                                style={[styles.filterChip, selectedGradeFilter === g && styles.activeFilterChip]}
                             >
-                                <Text style={{ color: selectedGradeFilter === g ? '#FFF' : colors.text, fontSize: 13, fontWeight: '500' }}>{g}</Text>
+                                <Text style={[styles.filterChipText, selectedGradeFilter === g && styles.activeFilterChipText]}>{g}</Text>
                             </TouchableOpacity>
                         ))}
                     </ScrollView>
@@ -668,15 +664,11 @@ export default function AdminDashboard() {
                                 <TouchableOpacity
                                     key={b}
                                     onPress={() => setSelectedBatchFilter(b)}
-                                    style={{
-                                        paddingVertical: 6, paddingHorizontal: 12, borderRadius: 20, borderWidth: 1,
-                                        borderColor: selectedBatchFilter === b ? colors.primaryLight : colors.border,
-                                        backgroundColor: selectedBatchFilter === b ? colors.primaryLight : 'transparent'
-                                    }}
+                                    style={[styles.batchChip, selectedBatchFilter === b && styles.activeBatchChip]}
                                 >
                                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                                        <Text style={{ color: selectedBatchFilter === b ? colors.primary : colors.textSecondary, fontSize: 11, fontWeight: '600' }}>BATCH:</Text>
-                                        <Text style={{ color: selectedBatchFilter === b ? colors.primary : colors.text, fontSize: 12, fontWeight: '500' }}>{b}</Text>
+                                        <Text style={[styles.batchChipText, selectedBatchFilter === b && styles.activeBatchChipText]}>BATCH:</Text>
+                                        <Text style={[styles.batchChipText, selectedBatchFilter === b && styles.activeBatchChipText]}>{b}</Text>
                                     </View>
                                 </TouchableOpacity>
                             ))}
@@ -718,7 +710,7 @@ export default function AdminDashboard() {
                                                 style={[styles.saveBtn, { marginBottom: 15, flexDirection: 'row', justifyContent: 'center', gap: 10 }]}
                                                 onPress={() => setAddStudentVisible(true)}
                                             >
-                                                <Ionicons name="person-add" size={20} color="#FFF" />
+                                                <Ionicons name="person-add" size={20} color={colors.background} />
                                                 <Text style={styles.saveBtnText}>Add New {studentSubTab === 'STUDENTS' ? 'Student' : 'Parent'}</Text>
                                             </TouchableOpacity>
                                             {studentSubTab === 'STUDENTS' && pendingStudents.length > 0 && <Text style={styles.sectionHeader}>Pending Approvals ({pendingStudents.length})</Text>}
@@ -862,7 +854,7 @@ export default function AdminDashboard() {
                                     onPress={saveAttendance}
                                     disabled={saving}
                                 >
-                                    {saving ? <ActivityIndicator color="#FFF" /> : <Text style={styles.saveBtnText}>Save Attendance</Text>}
+                                    {saving ? <ActivityIndicator color={colors.background} /> : <Text style={styles.saveBtnText}>Save Attendance</Text>}
                                 </TouchableOpacity>
                             </View>
                         )}
@@ -872,7 +864,7 @@ export default function AdminDashboard() {
 
             {/* ADD STUDENT MODAL */}
             <Modal visible={addStudentVisible} animationType="slide" transparent>
-                <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 20 }}>
+                <View style={styles.modalContent}>
                     <View style={styles.card}>
                         <Text style={styles.sectionTitle}>Add New Student</Text>
                         <TextInput
@@ -937,8 +929,8 @@ export default function AdminDashboard() {
                             <TouchableOpacity onPress={() => setAddStudentVisible(false)} style={{ flex: 1, padding: 12, borderWidth: 1, borderColor: colors.border, borderRadius: 8, alignItems: 'center' }}>
                                 <Text style={{ color: colors.text }}>Cancel</Text>
                             </TouchableOpacity>
-                            <TouchableOpacity onPress={saveNewStudent} style={{ flex: 1, padding: 12, backgroundColor: colors.primary, borderRadius: 8, alignItems: 'center' }}>
-                                <Text style={{ color: '#FFF', fontWeight: 'bold' }}>Save</Text>
+                            <TouchableOpacity onPress={saveNewStudent} style={styles.modalPrimaryBtn}>
+                                <Text style={styles.modalPrimaryBtnText}>Save</Text>
                             </TouchableOpacity>
                         </View>
                     </View>
@@ -946,7 +938,7 @@ export default function AdminDashboard() {
             </Modal>
             {/* EDIT STUDENT MODAL */}
             <Modal visible={editStudentVisible} animationType="slide" transparent>
-                <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 20 }}>
+                <View style={styles.modalContent}>
                     <View style={styles.card}>
                         <Text style={styles.sectionTitle}>Edit Student</Text>
                         <TextInput
@@ -1011,8 +1003,8 @@ export default function AdminDashboard() {
                             <TouchableOpacity onPress={() => setEditStudentVisible(false)} style={{ flex: 1, padding: 12, borderWidth: 1, borderColor: colors.border, borderRadius: 8, alignItems: 'center' }}>
                                 <Text style={{ color: colors.text }}>Cancel</Text>
                             </TouchableOpacity>
-                            <TouchableOpacity onPress={saveEditStudent} style={{ flex: 1, padding: 12, backgroundColor: colors.primary, borderRadius: 8, alignItems: 'center' }}>
-                                <Text style={{ color: '#FFF', fontWeight: 'bold' }}>Update</Text>
+                            <TouchableOpacity onPress={saveEditStudent} style={styles.modalPrimaryBtn}>
+                                <Text style={styles.modalPrimaryBtnText}>Update</Text>
                             </TouchableOpacity>
                         </View>
                     </View>
@@ -1021,7 +1013,7 @@ export default function AdminDashboard() {
 
             {/* CREATE HOMEWORK MODAL */}
             <Modal visible={createHomeworkVisible} animationType="slide" transparent>
-                <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 20 }}>
+                <View style={styles.modalContent}>
                     <View style={styles.card}>
                         <Text style={styles.sectionTitle}>Assign Homework</Text>
                         <View style={{ flexDirection: 'row', gap: 10, marginBottom: 10 }}>
@@ -1103,8 +1095,8 @@ export default function AdminDashboard() {
                             <TouchableOpacity onPress={() => setCreateHomeworkVisible(false)} style={{ flex: 1, padding: 12, borderWidth: 1, borderColor: colors.border, borderRadius: 8, alignItems: 'center' }}>
                                 <Text style={{ color: colors.text }}>Cancel</Text>
                             </TouchableOpacity>
-                            <TouchableOpacity onPress={saveNewHomework} style={{ flex: 1, padding: 12, backgroundColor: colors.primary, borderRadius: 8, alignItems: 'center' }}>
-                                <Text style={{ color: '#FFF', fontWeight: 'bold' }}>Assign</Text>
+                            <TouchableOpacity onPress={saveNewHomework} style={[styles.modalPrimaryBtn, uploading && { opacity: 0.7 }]} disabled={uploading}>
+                                {uploading ? <ActivityIndicator color="#FFF" size="small" /> : <Text style={styles.modalPrimaryBtnText}>Assign</Text>}
                             </TouchableOpacity>
                         </View>
                     </View>
@@ -1281,8 +1273,69 @@ const makeStyles = (colors: any) => StyleSheet.create({
         marginBottom: 20
     },
     saveBtnText: {
-        color: '#FFF',
+        color: colors.background,
         fontWeight: 'bold',
         fontSize: 16
+    },
+    modalContent: {
+        flex: 1,
+        backgroundColor: colors.modalOverlay,
+        justifyContent: 'center',
+        padding: 20
+    },
+    modalPrimaryBtn: {
+        flex: 1,
+        padding: 12,
+        backgroundColor: colors.primary,
+        borderRadius: 8,
+        alignItems: 'center'
+    },
+    modalPrimaryBtnText: {
+        color: colors.background,
+        fontWeight: 'bold'
+    },
+    attendanceBtnContainer: {
+        flexDirection: 'row',
+        gap: 8
+    },
+    filterChip: {
+        paddingVertical: 6,
+        paddingHorizontal: 12,
+        borderRadius: 20,
+        borderWidth: 1,
+        borderColor: colors.border,
+        backgroundColor: 'transparent'
+    },
+    activeFilterChip: {
+        backgroundColor: colors.primary,
+        borderColor: colors.primary
+    },
+    filterChipText: {
+        color: colors.text,
+        fontSize: 13,
+        fontWeight: '500'
+    },
+    activeFilterChipText: {
+        color: colors.background
+    },
+    batchChip: {
+        paddingVertical: 6,
+        paddingHorizontal: 12,
+        borderRadius: 20,
+        borderWidth: 1,
+        borderColor: colors.border,
+        backgroundColor: 'transparent'
+    },
+    activeBatchChip: {
+        backgroundColor: colors.primaryLight,
+        borderColor: colors.primaryLight
+    },
+    batchChipText: {
+        color: colors.textSecondary,
+        fontSize: 11,
+        fontWeight: '600'
+    },
+    activeBatchChipText: {
+        color: colors.primary
     }
 });

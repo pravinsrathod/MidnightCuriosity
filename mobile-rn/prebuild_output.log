@@ -1,0 +1,17 @@
+env: load .env.development .env
+env: export EXPO_PUBLIC_FIREBASE_API_KEY EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN EXPO_PUBLIC_FIREBASE_PROJECT_ID EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID EXPO_PUBLIC_FIREBASE_APP_ID EXPO_PUBLIC_GEMINI_API_KEY EXPO_PUBLIC_APP_ENV CLIENT_ID APP_NAME EXPO_PUBLIC_APP_NAME EXPO_PUBLIC_USE_EMULATORS
+! Git branch has uncommitted file changes
+› It's recommended to commit all changes before proceeding in case you want to revert generated changes.
+Git status is dirty but the command will continue because the terminal is not interactive.
+- Clearing ios
+✔ Cleared ios code
+- Creating native directory (./ios)
+✔ Created native directory
+- Updating package.json
+✔ Updated package.json | no changes
+- Running prebuild
+Injecting MLKit version overrides...
+- Running prebuild
+Injecting Xcode 26 compatibility patch AFTER react_native_post_install...
+- Running prebuild
+✔ Finished prebuild

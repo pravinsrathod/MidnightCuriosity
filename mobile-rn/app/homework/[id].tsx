@@ -207,7 +207,7 @@ export default function HomeworkDetailScreen() {
                     <View style={[styles.card, { borderColor: colors.success }]}>
                         <View style={styles.sectionHeader}>
                             <Ionicons name="school-outline" size={20} color={colors.success} />
-                            <Text style={[styles.sectionTitle, { color: colors.success }]}>Teacher's Feedback</Text>
+                            <Text style={[styles.sectionTitle, { color: colors.success }]}>Teacher&apos;s Feedback</Text>
                         </View>
 
                         <Text style={styles.feedbackText}>
@@ -220,7 +220,7 @@ export default function HomeworkDetailScreen() {
                                 onPress={() => Linking.openURL(submission.teacherFileUrl!)}
                             >
                                 <Ionicons name="attach" size={20} color={colors.text} />
-                                <Text style={{ color: colors.text, fontWeight: '600' }}>View Teacher's Correction</Text>
+                                <Text style={{ color: colors.text, fontWeight: '600' }}>View Teacher&apos;s Correction</Text>
                             </TouchableOpacity>
                         )}
                     </View>
@@ -253,7 +253,7 @@ export default function HomeworkDetailScreen() {
                         <View style={{ alignItems: 'center', marginBottom: 15 }}>
                             <Image source={{ uri: image }} style={{ width: 200, height: 200, borderRadius: 8 }} />
                             <TouchableOpacity onPress={() => setImage(null)} style={{ position: 'absolute', top: -10, right: -10, backgroundColor: colors.danger, borderRadius: 15, padding: 5 }}>
-                                <Ionicons name="close" size={16} color="white" />
+                                <Ionicons name="close" size={16} color={colors.onPrimary} />
                             </TouchableOpacity>
                         </View>
                     )}
@@ -274,9 +274,9 @@ export default function HomeworkDetailScreen() {
                                 </View>
                             ) : (
                                 <TouchableOpacity style={styles.btnPrimary} onPress={handleSubmit} disabled={uploading}>
-                                    {uploading ? <ActivityIndicator color="#fff" /> : (
+                                    {uploading ? <ActivityIndicator color={colors.onPrimary} /> : (
                                         <>
-                                            <Ionicons name="paper-plane" size={20} color="#fff" style={{ marginRight: 8 }} />
+                                            <Ionicons name="paper-plane" size={20} color={colors.onPrimary} style={{ marginRight: 8 }} />
                                             <Text style={styles.btnTextPrimary}>{submission ? "Resubmit Homework" : "Submit Homework"}</Text>
                                         </>
                                     )}
@@ -407,7 +407,7 @@ const makeStyles = (colors: any) => StyleSheet.create({
         backgroundColor: colors.primary,
     },
     btnTextPrimary: {
-        color: '#fff',
+        color: colors.onPrimary,
         fontWeight: 'bold',
     }
 });

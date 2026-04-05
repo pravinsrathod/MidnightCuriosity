@@ -6,6 +6,7 @@ import { auth, db } from '../../services/firebaseConfig';
 import { doc, getDoc } from 'firebase/firestore';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '../../context/ThemeContext';
+import { useFeature } from '../../context/TenantContext';
 
 interface Assignment {
     id: string;
@@ -17,7 +18,14 @@ interface Assignment {
 export default function AssignmentsScreen() {
     const router = useRouter();
     const { colors } = useTheme();
+    const isEnabled = useFeature('enableExams');
     const styles = useMemo(() => makeStyles(colors), [colors]);
+
+    React.useEffect(() => {
+        if (!isEnabled) {
+            router.replace('/grade');
+        }
+    }, [isEnabled, router]);
 
     const [assignments, setAssignments] = useState<Assignment[]>([]);
     const [loading, setLoading] = useState(true);
@@ -198,7 +206,7 @@ const makeStyles = (colors: any) => StyleSheet.create({
         fontWeight: '600',
     },
     activeTabText: {
-        color: '#FFFFFF',
+        color: colors.onPrimary,
     },
     listContent: {
         paddingHorizontal: 16,

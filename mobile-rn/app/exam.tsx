@@ -6,13 +6,20 @@ import { db, auth } from '../services/firebaseConfig'; // Ensure auth is importe
 import { collection, query, orderBy, onSnapshot, where, doc, updateDoc, setDoc, getDoc } from 'firebase/firestore';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '../context/ThemeContext';
-import { useTenant } from '../context/TenantContext';
+import { useTenant, useFeature } from '../context/TenantContext';
 
 export default function ExamScreen() {
     const router = useRouter();
     const { colors } = useTheme();
     const { tenantId } = useTenant();
+    const isEnabled = useFeature('enableExams');
     const styles = useMemo(() => makeStyles(colors), [colors]);
+
+    React.useEffect(() => {
+        if (!isEnabled) {
+            router.replace('/(tabs)/parent-home' as any);
+        }
+    }, [isEnabled]);
 
     const [exams, setExams] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
@@ -340,5 +347,5 @@ const makeStyles = (colors: any) => StyleSheet.create({
     resultScore: { fontSize: 16, color: colors.textSecondary, marginTop: 10 },
     scoreValue: { fontSize: 48, fontWeight: 'bold', color: colors.success, marginVertical: 20 },
     btnPrimary: { backgroundColor: colors.primary, paddingVertical: 12, paddingHorizontal: 32, borderRadius: 8 },
-    btnText: { color: '#FFF', fontWeight: 'bold', fontSize: 16 }
+    btnText: { color: colors.background, fontWeight: 'bold', fontSize: 16 }
 });

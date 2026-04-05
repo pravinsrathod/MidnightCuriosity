@@ -29,11 +29,24 @@ export const Colors = {
     dangerLight: 'rgba(239, 68, 68, 0.1)',
     warning: '#F59E0B', // Amber 500
     warningLight: 'rgba(245, 158, 11, 0.1)',
+    info: '#0EA5E9', // Sky 500
+    infoLight: 'rgba(14, 165, 233, 0.1)',
+    purple: '#8B5CF6', // Violet 500
+    purpleLight: 'rgba(139, 92, 246, 0.1)',
+    pink: '#EC4899', // Pink 500
+    pinkLight: 'rgba(236, 72, 153, 0.1)',
+    orange: '#F97316', // Orange 500
+    orangeLight: 'rgba(249, 115, 22, 0.1)',
+    indigo: '#6366F1', // Indigo 500
+    indigoLight: 'rgba(99, 102, 241, 0.1)',
 
     // Specific
     headerBorder: '#E2E8F0',
     inputBackground: '#F1F5F9', // Slate 100
     inputBorder: '#CBD5E1', // Slate 300
+    modalOverlay: 'rgba(0, 0, 0, 0.5)',
+    shadow: '#000000',
+    onPrimary: '#FFFFFF',
   },
   dark: {
     text: '#F8FAFC', // Slate 50
@@ -55,11 +68,24 @@ export const Colors = {
     dangerLight: 'rgba(239, 68, 68, 0.15)',
     warning: '#F59E0B',
     warningLight: 'rgba(245, 158, 11, 0.15)',
+    info: '#0EA5E9',
+    infoLight: 'rgba(14, 165, 233, 0.15)',
+    purple: '#8B5CF6',
+    purpleLight: 'rgba(139, 92, 246, 0.15)',
+    pink: '#EC4899',
+    pinkLight: 'rgba(236, 72, 153, 0.15)',
+    orange: '#F97316',
+    orangeLight: 'rgba(249, 115, 22, 0.15)',
+    indigo: '#6366F1',
+    indigoLight: 'rgba(99, 102, 241, 0.15)',
 
     // Specific
     headerBorder: '#334155',
     inputBackground: '#334155',
     inputBorder: '#475569',
+    modalOverlay: 'rgba(0, 0, 0, 0.7)',
+    shadow: '#000000',
+    onPrimary: '#FFFFFF',
   },
 };
 

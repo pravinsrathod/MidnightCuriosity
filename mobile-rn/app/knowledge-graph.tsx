@@ -3,7 +3,7 @@ import { View, Text, TouchableOpacity, ScrollView, StyleSheet, SafeAreaView, Dim
 import { useRouter, useFocusEffect } from 'expo-router';
 import Svg, { Line } from 'react-native-svg';
 import { auth, db } from '../services/firebaseConfig';
-import { collection, query, where, getDocs, orderBy, doc, getDoc } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc, getDoc } from 'firebase/firestore';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '../context/ThemeContext';
@@ -23,10 +23,16 @@ interface TopicNode {
 export default function KnowledgeGraphScreen() {
     const router = useRouter();
     const { colors } = useTheme();
-    const { tenantId } = useTenant();
+    const { tenantId, features } = useTenant();
     const styles = useMemo(() => makeStyles(colors), [colors]);
 
-    const [userName, setUserName] = useState("Student");
+    // Feature gating
+    useEffect(() => {
+        if (features && features.enableLectures === false) {
+            router.replace('/grade');
+        }
+    }, [features, router]);
+
     const [grade, setGrade] = useState("Grade 10");
     const [subjects, setSubjects] = useState<string[]>([]);
     const [selectedSubject, setSelectedSubject] = useState<string | null>(null);
@@ -54,7 +60,7 @@ export default function KnowledgeGraphScreen() {
                         const userDoc = await getDoc(doc(db, 'users', uid));
                         if (userDoc.exists()) {
                             const data = userDoc.data();
-                            setUserName(data.name || "Student");
+                            // setUserName(data.name || "Student");
                             const userGrade = data.grade || "Grade 10";
                             setGrade(userGrade);
                             setCompletedTopicIds(data.completedTopics || []);
@@ -92,7 +98,7 @@ export default function KnowledgeGraphScreen() {
             };
 
             fetchProfile();
-        }, [])
+        }, [tenantId])
     );
 
     // Fetch Topics when subject changes
@@ -129,7 +135,7 @@ export default function KnowledgeGraphScreen() {
             }
         };
         fetchTopics();
-    }, [selectedSubject, grade]);
+    }, [selectedSubject, grade, studentBatch, tenantId]);
 
     const pattern = [
         { x: 0.5, y: 0 },
@@ -268,7 +274,7 @@ export default function KnowledgeGraphScreen() {
                         const bgColor = node.isCompleted ? colors.success : (node.isLocked ? colors.card : colors.warning);
                         const borderColor = node.isLocked ? colors.border : 'transparent';
                         const icon = node.isCompleted ? '✓' : (node.isLocked ? '🔒' : '★');
-                        const iconColor = node.isLocked ? colors.icon : '#FFF';
+                        const iconColor = node.isLocked ? colors.icon : colors.onPrimary;
                         const titleColor = node.isLocked ? colors.textSecondary : colors.text;
 
                         return (
@@ -430,7 +436,7 @@ const makeStyles = (colors: any) => StyleSheet.create({
         marginBottom: 8,
         ...Platform.select({
             ios: {
-                shadowColor: '#000',
+                shadowColor: colors.shadow,
                 shadowOffset: { width: 0, height: 4 },
                 shadowOpacity: 0.3,
                 shadowRadius: 8,

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { View, Text, StyleSheet, SafeAreaView, FlatList, ActivityIndicator, TouchableOpacity } from 'react-native';
 import { useRouter } from 'expo-router';
 import { db, auth } from '../services/firebaseConfig';
-import { collection, query, orderBy, getDocs, where, getDoc, doc } from 'firebase/firestore';
+import { collection, query, getDocs, where, getDoc, doc, onSnapshot } from 'firebase/firestore';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '../context/ThemeContext';
@@ -20,35 +20,7 @@ export default function PollHistoryScreen() {
     const [userGrade, setUserGrade] = useState<string | null>(null);
     const [userBatch, setUserBatch] = useState<string | null>(null);
 
-    useEffect(() => {
-        const loadUser = async () => {
-            const stored = await AsyncStorage.getItem('user_uid');
-            const finalUid = auth.currentUser?.uid || stored;
-            setCurrentUid(finalUid || null);
-
-            if (finalUid) {
-                try {
-                    const userDoc = await getDoc(doc(db, "users", finalUid));
-                    if (userDoc.exists()) {
-                        const userData = userDoc.data();
-                        setUserGrade(userData.grade || null);
-                        setUserBatch(userData.batch || "General Batch");
-                    }
-                } catch (e) {
-                    console.error("Error fetching user profile for history:", e);
-                }
-            }
-        };
-        loadUser();
-    }, []);
-
-    useEffect(() => {
-        if (currentUid && userGrade) {
-            fetchPolls();
-        }
-    }, [currentUid, userGrade, userBatch]);
-
-    const fetchPolls = async () => {
+    const fetchPolls = React.useCallback(async () => {
         try {
             const q = query(
                 collection(db, "polls"),
@@ -77,7 +49,35 @@ export default function PollHistoryScreen() {
         } finally {
             setLoading(false);
         }
-    };
+    }, [tenantId, userGrade, userBatch]);
+
+    useEffect(() => {
+        const loadUser = async () => {
+            const stored = await AsyncStorage.getItem('user_uid');
+            const finalUid = auth.currentUser?.uid || stored;
+            setCurrentUid(finalUid || null);
+
+            if (finalUid) {
+                try {
+                    const userDoc = await getDoc(doc(db, "users", finalUid));
+                    if (userDoc.exists()) {
+                        const userData = userDoc.data();
+                        setUserGrade(userData.grade || null);
+                        setUserBatch(userData.batch || "General Batch");
+                    }
+                } catch (e) {
+                    console.error("Error fetching user profile for history:", e);
+                }
+            }
+        };
+        loadUser();
+    }, [fetchPolls]);
+
+    useEffect(() => {
+        if (currentUid && userGrade) {
+            fetchPolls();
+        }
+    }, [currentUid, userGrade, fetchPolls]);
 
     const renderPollItem = ({ item }: { item: any }) => {
         const totalVotes = item.totalVotes || 0;

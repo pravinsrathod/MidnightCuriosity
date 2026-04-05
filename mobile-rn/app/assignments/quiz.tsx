@@ -5,6 +5,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { auth, db } from '../../services/firebaseConfig';
 import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useTheme } from '../../context/ThemeContext';
+import { useMemo } from 'react';
 
 interface Question {
     id: number;
@@ -50,6 +52,8 @@ const generateQuestions = (topic: string): Question[] => [
 export default function QuizScreen() {
     const router = useRouter();
     const { topic } = useLocalSearchParams();
+    const { colors } = useTheme();
+    const styles = useMemo(() => makeStyles(colors), [colors]);
     const topicName = Array.isArray(topic) ? topic[0] : topic;
 
     const [questions, setQuestions] = useState<Question[]>([]);
@@ -121,35 +125,18 @@ export default function QuizScreen() {
         }
     };
 
-    if (!topicName) return <View style={styles.container}><Text style={{ color: '#fff' }}>No topic selected</Text></View>;
+    if (!topicName) return <View style={styles.container}><Text style={{ color: colors.text }}>No topic selected</Text></View>;
 
     if (quizCompleted) {
-        const percentage = (score / questions.length) * 100;
-        // Adjust for the last question check which might not be in state yet if we used `finishQuiz` logic differently. 
-        // Actually, let's recalculate based on UI to be safe or use a ref. 
-        // Logic fix: In `finishQuiz` we calculated `finalScore`. But `score` state hasn't updated for the last question yet.
-        // It's safer to show the calculated percentage from a variable if we passed it, but typically we just show the Result Screen content.
-
-        // Let's assume the calculate in finishQuiz was correct for Saving, but for Render we need to be careful.
-        // Simplified: The state `score` was NOT incremented for the last question in `handleNext` because `finishQuiz` was called instead.
-        // So we need to account for it here?
-        // Actually `handleNext` logic:
-        // if (last question) -> finishQuiz().
-        // finishQuiz checks the LAST answer manually.
-        // So `score` state is missing the last point.
-        // Let's fix display info by checking selectedOption again? Or better, store finalScore in state.
-
-        // Quick fix: Just use a generic success screen.
-
         return (
             <SafeAreaView style={styles.container}>
                 <View style={styles.resultContainer}>
-                    <Ionicons name="trophy" size={80} color="#FBBF24" />
+                    <Ionicons name="trophy" size={80} color={colors.warning} />
                     <Text style={styles.resultTitle}>Assessment Complete!</Text>
                     <Text style={styles.resultText}>You have completed the assessment for {topicName}.</Text>
 
                     {saving ? (
-                        <ActivityIndicator color="#3B82F6" style={{ marginTop: 20 }} />
+                        <ActivityIndicator color={colors.primary} style={{ marginTop: 20 }} />
                     ) : (
                         <TouchableOpacity style={styles.primaryBtn} onPress={() => router.back()}>
                             <Text style={styles.btnText}>Back to Assignments</Text>
@@ -167,7 +154,7 @@ export default function QuizScreen() {
             {/* Header */}
             <View style={styles.header}>
                 <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-                    <Ionicons name="close" size={24} color="#F8FAFC" />
+                    <Ionicons name="close" size={24} color={colors.text} />
                 </TouchableOpacity>
                 <Text style={styles.headerTitle}>{topicName}</Text>
                 <View style={{ width: 24 }} />
@@ -220,10 +207,10 @@ export default function QuizScreen() {
     );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: any) => StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#0F172A',
+        backgroundColor: colors.background,
     },
     header: {
         flexDirection: 'row',
@@ -231,28 +218,28 @@ const styles = StyleSheet.create({
         justifyContent: 'space-between',
         padding: 16,
         borderBottomWidth: 1,
-        borderBottomColor: '#1E293B',
+        borderBottomColor: colors.border,
     },
     headerTitle: {
         fontSize: 18,
         fontWeight: 'bold',
-        color: '#F8FAFC',
+        color: colors.text,
     },
     backBtn: {
         padding: 4,
     },
     progressContainer: {
         height: 4,
-        backgroundColor: '#334155',
+        backgroundColor: colors.border,
         width: '100%',
     },
     progressBar: {
         height: '100%',
-        backgroundColor: '#3B82F6',
+        backgroundColor: colors.primary,
     },
     progressText: {
         textAlign: 'center',
-        color: '#94A3B8',
+        color: colors.textSecondary,
         fontSize: 12,
         marginTop: 8,
     },
@@ -262,7 +249,7 @@ const styles = StyleSheet.create({
     questionText: {
         fontSize: 20,
         fontWeight: 'bold',
-        color: '#F8FAFC',
+        color: colors.text,
         marginBottom: 32,
         lineHeight: 28,
     },
@@ -274,51 +261,51 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         padding: 16,
         borderWidth: 1,
-        borderColor: '#334155',
+        borderColor: colors.border,
         borderRadius: 12,
-        backgroundColor: '#1E293B',
+        backgroundColor: colors.card,
     },
     selectedOption: {
-        borderColor: '#3B82F6',
-        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+        borderColor: colors.primary,
+        backgroundColor: colors.primary + '10',
     },
     radioCircle: {
         width: 20,
         height: 20,
         borderRadius: 10,
         borderWidth: 2,
-        borderColor: '#94A3B8',
+        borderColor: colors.textSecondary,
         marginRight: 12,
     },
     selectedRadio: {
-        borderColor: '#3B82F6',
+        borderColor: colors.primary,
         borderWidth: 6,
     },
     optionText: {
         fontSize: 16,
-        color: '#F8FAFC',
+        color: colors.text,
     },
     selectedOptionText: {
-        color: '#3B82F6',
+        color: colors.primary,
         fontWeight: '600',
     },
     footer: {
         padding: 24,
         borderTopWidth: 1,
-        borderTopColor: '#1E293B',
+        borderTopColor: colors.border,
     },
     primaryBtn: {
-        backgroundColor: '#3B82F6',
+        backgroundColor: colors.primary,
         height: 56,
         borderRadius: 12,
         justifyContent: 'center',
         alignItems: 'center',
     },
     disabledBtn: {
-        backgroundColor: '#334155',
+        backgroundColor: colors.border,
     },
     btnText: {
-        color: '#FFF',
+        color: colors.background,
         fontSize: 18,
         fontWeight: 'bold',
     },
@@ -331,13 +318,13 @@ const styles = StyleSheet.create({
     resultTitle: {
         fontSize: 24,
         fontWeight: 'bold',
-        color: '#F8FAFC',
+        color: colors.text,
         marginTop: 20,
         marginBottom: 10,
     },
     resultText: {
         fontSize: 16,
-        color: '#94A3B8',
+        color: colors.textSecondary,
         textAlign: 'center',
         marginBottom: 40,
     }

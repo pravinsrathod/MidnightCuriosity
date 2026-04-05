@@ -34,8 +34,8 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
             if (storedTheme === 'light' || storedTheme === 'dark') {
                 setTheme(storedTheme);
             } else {
-                // If no preference, use system but default to dark if unsure
-                setTheme(systemScheme === 'light' ? 'light' : 'dark');
+                // Default to dark theme for new users/unconfigured sessions
+                setTheme('dark');
             }
         } catch (e) {
             console.log('Failed to load theme', e);

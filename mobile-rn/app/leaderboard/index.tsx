@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, FlatList, Image, SafeAreaView, TouchableOpacity
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { auth, db } from '../../services/firebaseConfig';
-import { collection, query, orderBy, limit, getDocs, where, doc, getDoc } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc, getDoc } from 'firebase/firestore';
 import { useTheme } from '../../context/ThemeContext';
 import { useTenant } from '../../context/TenantContext';
 
@@ -95,7 +95,7 @@ export default function LeaderboardScreen() {
         };
 
         fetchLeaderboard();
-    }, []);
+    }, [tenantId]);
 
 
     const renderItem = ({ item, index }: { item: UserRank; index: number }) => {
@@ -106,17 +106,17 @@ export default function LeaderboardScreen() {
         let borderWidth = 1;
 
         if (index === 0) {
-            rankColor = '#FBBF24'; // Amber 400
+            rankColor =  '#FBBF24'; // Gold
             rankBg = 'rgba(251, 191, 36, 0.1)';
             icon = 'trophy';
             borderColor = '#FBBF24';
         } else if (index === 1) {
-            rankColor = '#94A3B8'; // Slate 400
+            rankColor = '#94A3B8'; // Silver
             rankBg = 'rgba(148, 163, 184, 0.1)';
             icon = 'medal';
             borderColor = '#94A3B8';
         } else if (index === 2) {
-            rankColor = '#B45309'; // Amber 700
+            rankColor = '#B45309'; // Bronze
             rankBg = 'rgba(180, 83, 9, 0.1)';
             icon = 'medal';
             borderColor = '#B45309';
@@ -227,12 +227,12 @@ const makeStyles = (colors: any) => StyleSheet.create({
         }),
     },
     bannerText: {
-        color: '#FFF',
+        color: colors.background,
         fontSize: 22,
         fontWeight: 'bold',
     },
     bannerSubtext: {
-        color: 'rgba(255, 255, 255, 0.8)',
+        color: colors.background + 'CC',
         marginTop: 5,
     },
     listContent: {

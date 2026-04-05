@@ -1,20 +1,29 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, SafeAreaView, ActivityIndicator, Platform, Alert } from 'react-native';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, SafeAreaView, ActivityIndicator, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { auth, db } from '../../services/firebaseConfig';
 import { collection, query, where, onSnapshot, getDoc, doc, orderBy } from 'firebase/firestore';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '../../context/ThemeContext';
+import { useFeature } from '../../context/TenantContext';
 
 export default function HomeworkListScreen() {
     const router = useRouter();
     const { colors } = useTheme();
+    const isEnabled = useFeature('enableHomework');
     const styles = useMemo(() => makeStyles(colors), [colors]);
+
+    React.useEffect(() => {
+        if (!isEnabled) {
+            // For students, the home is /grade. For others (like parents), it might be different, 
+            // but homework/index is primarily student-facing.
+            router.replace('/grade');
+        }
+    }, [isEnabled, router]);
 
     const [homework, setHomework] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
-    const [studentData, setStudentData] = useState<any>(null);
 
     useEffect(() => {
         let unsubHomework: any;
@@ -36,7 +45,7 @@ export default function HomeworkListScreen() {
                 const userDoc = await getDoc(doc(db, 'users', uid));
                 if (userDoc.exists()) {
                     const userData = userDoc.data();
-                    setStudentData(userData);
+
 
                     if (userData.tenantId && userData.grade) {
                         // Query Homework

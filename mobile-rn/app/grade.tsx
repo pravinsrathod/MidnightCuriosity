@@ -1,6 +1,7 @@
 import React, { useState, useCallback, useEffect, useMemo } from 'react'; // v2
-import { View, Text, TouchableOpacity, ScrollView, StyleSheet, SafeAreaView, Image, ActivityIndicator, Platform, Alert } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, StyleSheet, Image, ActivityIndicator, Platform, Alert } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { auth, db, storage } from '../services/firebaseConfig';
 import { doc, getDoc, updateDoc, setDoc, collection, query, where, onSnapshot, orderBy, limit, getDocs } from 'firebase/firestore';
 import { onAuthStateChanged } from 'firebase/auth';
@@ -14,9 +15,13 @@ import LiveClassroomView from '../components/LiveClassroomView';
 
 export default function GradeSelectionScreen() {
     const router = useRouter();
+    const insets = useSafeAreaInsets();
     const { colors, toggleTheme, isDark } = useTheme();
-    const { tenantId, tenantName, tenantLogo } = useTenant();
-    const styles = useMemo(() => makeStyles(colors), [colors]);
+    const { tenantId, tenantName, tenantLogo, features } = useTenant();
+    const styles = useMemo(() => makeStyles(colors, insets), [colors, insets]);
+
+    // Use default-allow strategy
+    const hasFeature = useCallback((key: string) => features ? features[key] !== false : true, [features]);
 
     const [userName, setUserName] = useState("Student");
     const [userGrade, setUserGrade] = useState("Grade 10");
@@ -38,10 +43,14 @@ export default function GradeSelectionScreen() {
     const [liveSession, setLiveSession] = useState<any>(null);
     const [isJoining, setIsJoining] = useState(false);
 
+    const showLivePolls = hasFeature('enableLivePolls');
+    const showLiveLectures = hasFeature('enableLiveLectures');
+    const showFees = hasFeature('enableFees');
+
     // Listen for Active Polls
     // Listen for Active Polls (Multi-tenant)
     useEffect(() => {
-        if (!tenantId) return;
+        if (!tenantId || !showLivePolls) return;
         const q = query(
             collection(db, "polls"),
             where("active", "==", true),
@@ -71,7 +80,7 @@ export default function GradeSelectionScreen() {
 
     // Listen for Live Sessions
     useEffect(() => {
-        if (!tenantId || !userGrade || !userBatch) return;
+        if (!tenantId || !userGrade || !userBatch || !showLiveLectures) return;
         const normalizedGrade = userGrade.trim().replace(/\s+/g, '_');
         const normalizedBatch = userBatch.trim().replace(/\s+/g, '_');
         const sessionKey = `${tenantId}_${normalizedGrade}_${normalizedBatch}`;
@@ -94,7 +103,7 @@ export default function GradeSelectionScreen() {
     // Listen for Pending Fees
     useEffect(() => {
         const uid = auth.currentUser?.uid;
-        if (!uid) return;
+        if (!uid || !showFees) return;
         const q = query(
             collection(db, 'fees'),
             where('studentId', '==', uid)
@@ -365,9 +374,9 @@ export default function GradeSelectionScreen() {
     };
 
     return (
-        <SafeAreaView style={styles.container}>
+        <View style={styles.container}>
             {liveSession && isJoining && (
-                <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 1000, backgroundColor: '#000', overflow: 'hidden' }}>
+                <View style={[styles.liveOverlay, { backgroundColor: colors.modalOverlay }]}>
                     <LiveClassroomView 
                         batchId={liveSession.id} 
                         onEnd={() => setIsJoining(false)} 
@@ -380,15 +389,15 @@ export default function GradeSelectionScreen() {
             >
                 {/* Header */}
                 <View style={styles.header}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                    <View style={styles.headerBrand}>
                         {tenantLogo ? (
-                            <Image source={{ uri: tenantLogo }} style={{ width: 30, height: 30, borderRadius: 6 }} />
+                            <Image source={{ uri: tenantLogo }} style={styles.tenantLogo} />
                         ) : (
-                            <Text style={{ fontSize: 20 }}>🚀</Text>
+                            <Text style={styles.brandEmoji}>🚀</Text>
                         )}
                         <Text style={styles.brand}>{tenantName || "EduPro"}</Text>
                     </View>
-                    <View style={{ flexDirection: 'row', gap: 16, alignItems: 'center' }}>
+                    <View style={styles.headerActions}>
                         <TouchableOpacity onPress={toggleTheme}>
                             <Ionicons name={isDark ? "sunny-outline" : "moon-outline"} size={24} color={colors.text} />
                         </TouchableOpacity>
@@ -410,7 +419,7 @@ export default function GradeSelectionScreen() {
                             </View>
                         )}
                         <View style={styles.editIcon}>
-                            <Ionicons name="camera" size={14} color="#FFF" />
+                            <Ionicons name="camera" size={14} color={colors.background} />
                         </View>
                     </TouchableOpacity>
 
@@ -454,7 +463,7 @@ export default function GradeSelectionScreen() {
 
 
                 {/* Live Session Banner - Prominent and High Priority */}
-                {liveSession && (
+                {liveSession && showLiveLectures && (
                     <TouchableOpacity
                         style={[styles.pollBanner, { 
                             borderColor: colors.danger, 
@@ -482,13 +491,13 @@ export default function GradeSelectionScreen() {
                             </Text>
                         </View>
                         <View style={{ backgroundColor: colors.danger, borderRadius: 20, padding: 8 }}>
-                            <Ionicons name="videocam" size={24} color="#FFF" />
+                            <Ionicons name="videocam" size={24} color={colors.onPrimary} />
                         </View>
                     </TouchableOpacity>
                 )}
 
                 {/* LIVE POLL BANNER */}
-                {activePoll && (
+                {activePoll && showLivePolls && (
                     <TouchableOpacity
                         style={styles.pollBanner}
                         onPress={() => router.push('/poll')}
@@ -515,69 +524,86 @@ export default function GradeSelectionScreen() {
                 <View style={styles.quickActionsContainer}>
                     <Text style={styles.sectionTitle}>Quick Actions</Text>
                     <View style={styles.quickActionRow}>
-                        <TouchableOpacity style={styles.quickActionCard} onPress={handleStartLearning}>
-                            <View style={[styles.actionIcon, { backgroundColor: colors.primaryLight }]}>
-                                <Ionicons name="book" size={24} color={colors.primary} />
-                            </View>
-                            <Text style={styles.quickActionText}>Lectures</Text>
-                        </TouchableOpacity>
+                        {hasFeature('enableLectures') && (
+                            <TouchableOpacity style={styles.quickActionCard} onPress={handleStartLearning}>
+                                <View style={[styles.actionIcon, { backgroundColor: colors.primaryLight }]}>
+                                    <Ionicons name="book" size={24} color={colors.primary} />
+                                </View>
+                                <Text style={styles.quickActionText}>Lectures</Text>
+                            </TouchableOpacity>
+                        )}
 
                         <TouchableOpacity style={styles.quickActionCard} onPress={() => router.push('/leaderboard')}>
-                            <View style={[styles.actionIcon, { backgroundColor: 'rgba(234, 179, 8, 0.15)' }]}>
-                                <Ionicons name="podium" size={24} color="#EAB308" />
+                            <View style={[styles.actionIcon, { backgroundColor: colors.warningLight }]}>
+                                <Ionicons name="podium" size={24} color={colors.warning} />
                             </View>
                             <Text style={styles.quickActionText}>Leaderboard</Text>
                         </TouchableOpacity>
 
-                        <TouchableOpacity style={styles.quickActionCard} onPress={() => router.push('/homework')}>
-                            <View style={[styles.actionIcon, { backgroundColor: 'rgba(59, 130, 246, 0.1)' }]}>
-                                <Ionicons name="pencil" size={24} color="#3B82F6" />
-                            </View>
-                            <Text style={styles.quickActionText}>Homework</Text>
-                        </TouchableOpacity>
+                        {hasFeature('enableHomework') && (
+                            <TouchableOpacity style={styles.quickActionCard} onPress={() => router.push('/homework')}>
+                                <View style={[styles.actionIcon, { backgroundColor: colors.infoLight }]}>
+                                    <Ionicons name="pencil" size={24} color={colors.info} />
+                                </View>
+                                <Text style={styles.quickActionText}>Homework</Text>
+                            </TouchableOpacity>
+                        )}
 
-                        <TouchableOpacity style={styles.quickActionCard} onPress={() => router.push('/assignments')}>
-                            <View style={[styles.actionIcon, { backgroundColor: 'rgba(168, 85, 247, 0.1)' }]}>
-                                <Ionicons name="checkbox-outline" size={24} color="#A855F7" />
-                            </View>
-                            <Text style={styles.quickActionText}>Quizzes</Text>
-                        </TouchableOpacity>
+                        {hasFeature('enableExams') && (
+                            <TouchableOpacity style={styles.quickActionCard} onPress={() => router.push('/assignments')}>
+                                <View style={[styles.actionIcon, { backgroundColor: colors.purpleLight }]}>
+                                    <Ionicons name="checkbox-outline" size={24} color={colors.purple} />
+                                </View>
+                                <Text style={styles.quickActionText}>Quizzes</Text>
+                            </TouchableOpacity>
+                        )}
 
-                        <TouchableOpacity style={styles.quickActionCard} onPress={() => router.push('/doubts')}>
-                            <View style={[styles.actionIcon, { backgroundColor: 'rgba(236, 72, 153, 0.1)' }]}>
-                                <Ionicons name="chatbubbles" size={24} color="#EC4899" />
-                            </View>
-                            <Text style={styles.quickActionText}>Doubts</Text>
-                        </TouchableOpacity>
+                        {hasFeature('enableDoubts') && (
+                            <TouchableOpacity style={styles.quickActionCard} onPress={() => router.push('/doubts')}>
+                                <View style={[styles.actionIcon, { backgroundColor: colors.pinkLight }]}>
+                                    <Ionicons name="chatbubbles" size={24} color={colors.pink} />
+                                </View>
+                                <Text style={styles.quickActionText}>Doubts</Text>
+                            </TouchableOpacity>
+                        )}
 
-                        <TouchableOpacity style={styles.quickActionCard} onPress={() => router.push('/exam')}>
-                            <View style={[styles.actionIcon, { backgroundColor: 'rgba(234, 88, 12, 0.1)' }]}>
-                                <Ionicons name="clipboard" size={24} color="#EA580C" />
-                            </View>
-                            <Text style={styles.quickActionText}>Exams</Text>
-                        </TouchableOpacity>
+                        {hasFeature('enableExams') && (
+                            <TouchableOpacity style={styles.quickActionCard} onPress={() => router.push('/exam')}>
+                                <View style={[styles.actionIcon, { backgroundColor: colors.orangeLight }]}>
+                                    <Ionicons name="clipboard" size={24} color={colors.orange} />
+                                </View>
+                                <Text style={styles.quickActionText}>Exams</Text>
+                            </TouchableOpacity>
+                        )}
 
-                        <TouchableOpacity style={styles.quickActionCard} onPress={() => router.push('/solver')}>
-                            <View style={[styles.actionIcon, { backgroundColor: 'rgba(99, 102, 241, 0.15)' }]}>
-                                <Ionicons name="camera" size={24} color="#6366F1" />
-                            </View>
-                            <Text style={styles.quickActionText}>AI Solve</Text>
-                        </TouchableOpacity>
 
-                        <TouchableOpacity style={styles.quickActionCard} onPress={() => router.push('/poll-history')}>
-                            <View style={[styles.actionIcon, { backgroundColor: colors.successLight }]}>
-                                <Ionicons name="stats-chart" size={24} color={colors.success} />
-                            </View>
-                            <Text style={styles.quickActionText}>Polls</Text>
-                        </TouchableOpacity>
+                        {hasFeature('enableLivePolls') && (
+                            <TouchableOpacity style={styles.quickActionCard} onPress={() => router.push('/poll-history')}>
+                                <View style={[styles.actionIcon, { backgroundColor: colors.successLight }]}>
+                                    <Ionicons name="stats-chart" size={24} color={colors.success} />
+                                </View>
+                                <Text style={styles.quickActionText}>Polls</Text>
+                            </TouchableOpacity>
+                        )}
 
-                        <TouchableOpacity style={styles.quickActionCard} onPress={() => router.push('/fees')}>
-                            <View style={[styles.actionIcon, { backgroundColor: 'rgba(234, 179, 8, 0.15)' }]}>
-                                <Ionicons name="card" size={24} color="#EAB308" />
-                                {pendingFees.length > 0 && <View style={styles.dot} />}
-                            </View>
-                            <Text style={styles.quickActionText}>Fees</Text>
-                        </TouchableOpacity>
+                        {hasFeature('enableFees') && (
+                            <TouchableOpacity style={styles.quickActionCard} onPress={() => router.push('/fees')}>
+                                <View style={[styles.actionIcon, { backgroundColor: colors.warningLight }]}>
+                                    <Ionicons name="card" size={24} color={colors.warning} />
+                                    {pendingFees.length > 0 && <View style={styles.dot} />}
+                                </View>
+                                <Text style={styles.quickActionText}>Fees</Text>
+                            </TouchableOpacity>
+                        )}
+
+                        {hasFeature('enableAttendance') && (
+                            <TouchableOpacity style={styles.quickActionCard} onPress={() => router.push('/attendance')}>
+                                <View style={[styles.actionIcon, { backgroundColor: colors.infoLight }]}>
+                                    <Ionicons name="calendar-outline" size={24} color={colors.info} />
+                                </View>
+                                <Text style={styles.quickActionText}>Attendance</Text>
+                            </TouchableOpacity>
+                        )}
                     </View>
                 </View>
 
@@ -585,25 +611,27 @@ export default function GradeSelectionScreen() {
 
                 {/* Account Deletion (Apple Compliance) */}
                 <TouchableOpacity
-                    style={{ marginTop: 20, marginBottom: 40, alignSelf: 'center', padding: 10 }}
+                    style={styles.deleteAccountBtn}
                     onPress={handleDeleteAccount}
                 >
-                    <Text style={{ color: colors.danger, fontSize: 13, textDecorationLine: 'underline', opacity: 0.7 }}>
+                    <Text style={styles.deleteAccountText}>
                         Delete Educational Account
                     </Text>
                 </TouchableOpacity>
             </ScrollView>
-        </SafeAreaView >
+        </View >
     );
 }
 
-const makeStyles = (colors: any) => StyleSheet.create({
+const makeStyles = (colors: any, insets: any) => StyleSheet.create({
     container: {
         flex: 1,
         backgroundColor: colors.background,
+        paddingTop: insets.top,
     },
     scrollContent: {
         padding: 24,
+        paddingBottom: insets.bottom + 24,
     },
     content: {
         flex: 1,
@@ -619,6 +647,34 @@ const makeStyles = (colors: any) => StyleSheet.create({
         color: colors.text,
         fontWeight: 'bold',
         fontSize: 22,
+    },
+    headerBrand: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 10
+    },
+    tenantLogo: {
+        width: 30,
+        height: 30,
+        borderRadius: 6
+    },
+    brandEmoji: {
+        fontSize: 20
+    },
+    headerActions: {
+        flexDirection: 'row',
+        gap: 16,
+        alignItems: 'center'
+    },
+    liveOverlay: {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        zIndex: 1000,
+        backgroundColor: colors.modalOverlay,
+        overflow: 'hidden'
     },
     heroText: {
         fontSize: 24,
@@ -802,9 +858,21 @@ const makeStyles = (colors: any) => StyleSheet.create({
         width: 12,
         height: 12,
         borderRadius: 6,
-        backgroundColor: '#ef4444',
+        backgroundColor: colors.danger,
         borderWidth: 2,
         borderColor: colors.card,
+    },
+    deleteAccountBtn: {
+        marginTop: 20,
+        marginBottom: 40,
+        alignSelf: 'center',
+        padding: 10
+    },
+    deleteAccountText: {
+        color: colors.danger,
+        fontSize: 13,
+        textDecorationLine: 'underline',
+        opacity: 0.7
     },
     pollBanner: {
         backgroundColor: colors.card,

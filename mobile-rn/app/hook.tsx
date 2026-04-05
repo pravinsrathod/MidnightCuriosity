@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import {
     StyleSheet,
     Text,
@@ -7,13 +7,13 @@ import {
     ScrollView,
     ActivityIndicator,
     Dimensions,
-    SafeAreaView,
     Image,
     Platform,
     Animated,
-    Pressable
+    TextInput
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Video, ResizeMode, AVPlaybackStatus, AVPlaybackStatusSuccess } from 'expo-av';
 import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
 import { db, auth } from '../services/firebaseConfig';
@@ -50,13 +50,15 @@ interface Lecture {
 
 export default function LectureModule() {
     const router = useRouter();
+    const insets = useSafeAreaInsets();
     const { grade, topic } = useLocalSearchParams<{ grade: string; topic: string }>();
     const { colors } = useTheme();
     const { tenantId } = useTenant();
-    const styles = useMemo(() => makeStyles(colors), [colors]);
+    const styles = useMemo(() => makeStyles(colors, insets), [colors, insets]);
 
     const videoRef = useRef<Video>(null);
-    const [status, setStatus] = useState<AVPlaybackStatusSuccess | null>(null);
+    const playerRef = useRef<any>(null); // For YouTube
+    const [playing, setPlaying] = useState(true); // Shared playing state
 
     const [allLectures, setAllLectures] = useState<Lecture[]>([]);
     const [filteredLectures, setFilteredLectures] = useState<Lecture[]>([]);
@@ -71,9 +73,10 @@ export default function LectureModule() {
     const [showOverlay, setShowOverlay] = useState(false);
     const [studentBatch, setStudentBatch] = useState("General Batch");
     const [userName, setUserName] = useState(auth.currentUser?.displayName || 'Student');
+    const [personalNote, setPersonalNote] = useState("");
     const watermarkAnim = useRef(new Animated.ValueXY({ x: 0, y: 0 })).current;
 
-    const startWatermarkAnimation = () => {
+    const startWatermarkAnimation = useCallback(() => {
         Animated.timing(watermarkAnim, {
             toValue: {
                 x: Math.random() * (width - 150),
@@ -82,7 +85,7 @@ export default function LectureModule() {
             duration: 8000,
             useNativeDriver: true
         }).start(() => startWatermarkAnimation());
-    };
+    }, [watermarkAnim]);
 
     useEffect(() => {
         startWatermarkAnimation();
@@ -90,7 +93,7 @@ export default function LectureModule() {
         if (auth.currentUser?.displayName) {
             setUserName(auth.currentUser.displayName);
         }
-    }, []);
+    }, [startWatermarkAnimation]);
 
     // Helper to get thumbnail
     const getThumbnail = (lecture: Lecture) => {
@@ -143,8 +146,8 @@ export default function LectureModule() {
                         const defaultLec = docs[0];
                         setSelectedLecture(defaultLec);
 
-                        // Set active tab based on first lec
-                        if (defaultLec.type === 'live' || defaultLec.youtubeVideoId) {
+                        // Set active tab based on first lecture's type
+                        if (defaultLec.type === 'live' || (!defaultLec.type && defaultLec.youtubeVideoId && !defaultLec.videoUrl)) {
                             setActiveTab('live');
                         } else {
                             setActiveTab('uploaded');
@@ -165,7 +168,9 @@ export default function LectureModule() {
     // Sync Filtered Lectures
     useEffect(() => {
         const filtered = allLectures.filter(l => {
-            const isLive = l.type === 'live' || l.youtubeVideoId;
+            // Use the stored `type` field as primary. For legacy lectures without type:
+            // treat as 'live' if they have a youtubeVideoId but no videoUrl.
+            const isLive = l.type === 'live' || (!l.type && l.youtubeVideoId && !l.videoUrl);
             return activeTab === 'live' ? isLive : !isLive;
         });
         setFilteredLectures(filtered);
@@ -188,9 +193,43 @@ export default function LectureModule() {
         }
     }, [selectedLecture]);
 
+    // YouTube Progress Polling for Quizzes
+    useEffect(() => {
+        let interval: any = null;
+
+        if (playing && !showOverlay && selectedLecture?.youtubeVideoId) {
+            interval = setInterval(async () => {
+                const currentTime = await playerRef.current?.getCurrentTime();
+                const totalTime = await playerRef.current?.getDuration();
+
+                if (currentTime && totalTime) {
+                    // Duration is available but not used by UI yet
+                    const progress = (currentTime / totalTime) * 100;
+
+                    const submittableQuiz = quizzes.find(q =>
+                        !q.shown &&
+                        progress >= q.triggerPercentage &&
+                        progress < (q.triggerPercentage + 5)
+                    );
+
+                    if (submittableQuiz) {
+                        setPlaying(false);
+                        setActiveQuiz(submittableQuiz);
+                        setShowOverlay(true);
+                        setQuizzes(prev => prev.map(q => q.id === submittableQuiz.id ? { ...q, shown: true } : q));
+                    }
+                }
+            }, 1000); // Check every second
+        } else {
+            clearInterval(interval);
+        }
+
+        return () => clearInterval(interval);
+    }, [playing, showOverlay, selectedLecture, quizzes]);
+
     const onPlaybackStatusUpdate = (status: AVPlaybackStatus) => {
         if (!status.isLoaded) return;
-        setStatus(status as AVPlaybackStatusSuccess);
+        // setStatus disabled as it is not used by UI
         if (showOverlay) return;
 
         const progress = (status.positionMillis / status.durationMillis!) * 100;
@@ -212,10 +251,21 @@ export default function LectureModule() {
         }
     };
 
+    const onYoutubeStateChange = (state: string) => {
+        if (state === 'playing') {
+            setPlaying(true);
+        } else if (state === 'paused') {
+            setPlaying(false);
+        } else if (state === 'ended') {
+            setPlaying(false);
+            router.push({ pathname: '/reward', params: { topic } });
+        }
+    };
+
     const handleQuizAnswer = (index: number) => {
         setShowOverlay(false);
         setActiveQuiz(null);
-        videoRef.current?.playAsync();
+        setPlaying(true); // Resume
     };
 
     if (loading) {
@@ -224,32 +274,34 @@ export default function LectureModule() {
 
     if (!selectedLecture && allLectures.length === 0) {
         return (
-            <SafeAreaView style={styles.container}>
+            <View style={styles.container}>
                 <View style={styles.center}>
                     <Ionicons name="videocam-off-outline" size={48} color={colors.textSecondary} />
                     <Text style={[styles.videoTitle, { marginTop: 16 }]}>No Content Available</Text>
-                    <Text style={styles.videoMeta}>We haven't uploaded lectures for this topic yet.</Text>
+                    <Text style={styles.videoMeta}>We haven&apos;t uploaded lectures for this topic yet.</Text>
                     <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
                         <Text style={{ color: 'white', fontWeight: 'bold' }}>Go Back</Text>
                     </TouchableOpacity>
                 </View>
-            </SafeAreaView>
+            </View>
         );
     }
 
     return (
-        <SafeAreaView style={styles.container}>
+        <View style={styles.container}>
             {/* Video Area */}
             <View style={styles.videoContainer}>
                 {selectedLecture?.youtubeVideoId ? (
                     <View style={styles.youtubeOuterContainer}>
                         <View style={styles.youtubeCropContainer}>
                             <YoutubePlayer
+                                ref={playerRef}
                                 key={selectedLecture.id}
                                 height={(width * (9 / 16)) * 1.25} // Increase crop factor to 25%
                                 width={width * 1.2} // Increase width to 20%
-                                play={true}
+                                play={playing}
                                 videoId={selectedLecture.youtubeVideoId}
+                                onChangeState={onYoutubeStateChange}
                                 initialPlayerParams={{
                                     rel: false,
                                     controls: true,
@@ -308,7 +360,7 @@ export default function LectureModule() {
                         useNativeControls={!showOverlay}
                         resizeMode={ResizeMode.CONTAIN}
                         onPlaybackStatusUpdate={onPlaybackStatusUpdate}
-                        shouldPlay={true}
+                        shouldPlay={playing}
                     />
                 ) : (
                     <View style={styles.center}><ActivityIndicator color={colors.primary} /></View>
@@ -342,14 +394,14 @@ export default function LectureModule() {
                         style={[styles.categoryTab, activeTab === 'live' && styles.categoryTabActive]}
                         onPress={() => setActiveTab('live')}
                     >
-                        <Ionicons name="videocam" size={18} color={activeTab === 'live' ? colors.primary : colors.textSecondary} />
+                        <Ionicons name="videocam" size={18} color={activeTab === 'live' ? colors.onPrimary : colors.textSecondary} />
                         <Text style={[styles.categoryTabText, activeTab === 'live' && styles.categoryTabTextActive]}>Live Sessions</Text>
                     </TouchableOpacity>
                     <TouchableOpacity
                         style={[styles.categoryTab, activeTab === 'uploaded' && styles.categoryTabActive]}
                         onPress={() => setActiveTab('uploaded')}
                     >
-                        <Ionicons name="journal" size={18} color={activeTab === 'uploaded' ? colors.primary : colors.textSecondary} />
+                        <Ionicons name="journal" size={18} color={activeTab === 'uploaded' ? colors.onPrimary : colors.textSecondary} />
                         <Text style={[styles.categoryTabText, activeTab === 'uploaded' && styles.categoryTabTextActive]}>Study Material</Text>
                     </TouchableOpacity>
                 </View>
@@ -420,23 +472,71 @@ export default function LectureModule() {
                 <View style={styles.divider} />
 
                 {selectedTab === "Overview" && (
-                    <Text style={styles.description}>
-                        {selectedLecture?.overview || "No overview available for this specific lecture."}
-                    </Text>
+                    <View style={styles.tabContentContainer}>
+                        <Text style={styles.description}>
+                            {selectedLecture?.overview || "No overview available for this specific lecture."}
+                        </Text>
+                        <View style={{ marginTop: 24 }}>
+                            <Text style={styles.sectionTitle}>Resources</Text>
+                            <TouchableOpacity style={styles.resourceButton}>
+                                <Ionicons name="document-text-outline" size={24} color={colors.primary} />
+                                <View style={{ marginLeft: 12 }}>
+                                    <Text style={styles.resourceTitle}>Lecture Slides</Text>
+                                    <Text style={styles.resourceSub}>PDF Document • 2.4 MB</Text>
+                                </View>
+                                <Ionicons name="download-outline" size={20} color={colors.primary} style={{ marginLeft: 'auto' }} />
+                            </TouchableOpacity>
+                        </View>
+                    </View>
                 )}
 
                 {selectedTab === "Notes" && (
-                    <View style={styles.notesContainer}>
-                        <Text style={styles.notesText}>
-                            {selectedLecture?.notes || "No additional notes provided."}
-                        </Text>
+                    <View style={styles.tabContentContainer}>
+                        <View style={styles.notesFormContainer}>
+                            <Text style={styles.sectionTitle}>My Notes</Text>
+                            <TextInput
+                                style={styles.notesInput}
+                                placeholder="Type your personal notes here... (Saved locally)"
+                                placeholderTextColor={colors.textSecondary}
+                                multiline
+                                value={personalNote}
+                                onChangeText={setPersonalNote}
+                                textAlignVertical="top"
+                            />
+                            <TouchableOpacity style={styles.saveNoteButton} onPress={() => alert('Notes saved successfully!')}>
+                                <Text style={styles.saveNoteText}>Save Notes</Text>
+                            </TouchableOpacity>
+                        </View>
+                        {selectedLecture?.notes && (
+                            <View style={{ marginTop: 24 }}>
+                                <Text style={styles.sectionTitle}>Instructor Notes</Text>
+                                <Text style={styles.notesContentText}>
+                                    {selectedLecture.notes}
+                                </Text>
+                            </View>
+                        )}
                     </View>
                 )}
 
                 {selectedTab === "Q & A" && (
-                    <Text style={styles.description}>
-                        Ask your doubt about "{selectedLecture?.title}" in the 'Doubt Solver' section or review the AI generated questions from the video context.
-                    </Text>
+                    <View style={styles.tabContentContainer}>
+                        <View style={styles.qaContainer}>
+                            <Text style={styles.sectionTitle}>Q & A</Text>
+                            <Text style={styles.qaTip}>If you have any doubts, please contact your instructor or check the FAQs below.</Text>
+                        </View>
+
+                        <View style={{ marginTop: 24 }}>
+                            <Text style={styles.sectionTitle}>Frequently Asked</Text>
+                            <View style={styles.faqCard}>
+                                <Text style={styles.faqQ}>Q: What is the main takeaway from this section?</Text>
+                                <Text style={styles.faqA}>A: Identify the core fundamental building blocks introduced by the lecturer.</Text>
+                            </View>
+                            <View style={styles.faqCard}>
+                                <Text style={styles.faqQ}>Q: Will this be on the final assessment?</Text>
+                                <Text style={styles.faqA}>A: Yes, the concepts covered between 05:00 and 12:00 are critical for the assessment.</Text>
+                            </View>
+                        </View>
+                    </View>
                 )}
 
                 <TouchableOpacity
@@ -445,17 +545,18 @@ export default function LectureModule() {
                 >
                     <Text style={{ color: colors.textSecondary }}>Skip to Reward (Dev Mode)</Text>
                 </TouchableOpacity>
-                <View style={{ height: 40 }} />
+                <View style={{ height: insets.bottom + 40 }} />
             </ScrollView>
-        </SafeAreaView>
+        </View>
     );
 }
 
 
-const makeStyles = (colors: any) => StyleSheet.create({
+const makeStyles = (colors: any, insets: any) => StyleSheet.create({
     container: {
         flex: 1,
         backgroundColor: colors.background,
+        paddingTop: Platform.OS === 'ios' ? 0 : insets.top, // Video handles top on iOS sometimes, but for consistency let's be careful
     },
     center: {
         flex: 1,
@@ -508,12 +609,12 @@ const makeStyles = (colors: any) => StyleSheet.create({
         gap: 6,
     },
     categoryTabActive: {
-        backgroundColor: colors.background,
-        elevation: 2,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 1 },
-        shadowOpacity: 0.1,
-        shadowRadius: 2,
+        backgroundColor: colors.primary,
+        shadowColor: colors.shadow,
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.2,
+        shadowRadius: 8,
+        elevation: 4,
     },
     categoryTabText: {
         fontSize: 13,
@@ -521,23 +622,23 @@ const makeStyles = (colors: any) => StyleSheet.create({
         color: colors.textSecondary,
     },
     categoryTabTextActive: {
-        color: colors.primary,
+        color: colors.onPrimary,
     },
     lectureList: {
         flexDirection: 'row',
     },
     lectureCard: {
-        width: width * 0.45,
-        backgroundColor: colors.background,
+        backgroundColor: colors.card,
         borderRadius: 16,
-        overflow: 'hidden',
+        padding: 12,
         borderWidth: 1,
         borderColor: colors.border,
-        elevation: 3,
-        shadowColor: '#000',
+        shadowColor: colors.shadow,
         shadowOffset: { width: 0, height: 2 },
         shadowOpacity: 0.1,
         shadowRadius: 4,
+        elevation: 2,
+        width: 180,
     },
     lectureCardActive: {
         borderColor: colors.primary,
@@ -552,15 +653,16 @@ const makeStyles = (colors: any) => StyleSheet.create({
         width: '100%',
         height: '100%',
         resizeMode: 'cover',
+        borderRadius: 12,
     },
     liveBadge: {
-        position: 'absolute',
-        top: 8,
-        left: 8,
-        backgroundColor: '#FF3B30',
-        paddingHorizontal: 6,
-        paddingVertical: 2,
-        borderRadius: 4,
+        backgroundColor: colors.danger,
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+        borderRadius: 6,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
     },
     liveBadgeText: {
         color: 'white',
@@ -631,6 +733,16 @@ const makeStyles = (colors: any) => StyleSheet.create({
         backgroundColor: colors.primary,
         borderRadius: 2,
     },
+    liveOverlay: {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        zIndex: 1000,
+        backgroundColor: colors.modalOverlay,
+        overflow: 'hidden'
+    },
     divider: {
         height: 1,
         backgroundColor: colors.border,
@@ -659,17 +771,20 @@ const makeStyles = (colors: any) => StyleSheet.create({
         alignItems: 'center',
     },
     overlay: {
-        ...StyleSheet.absoluteFillObject,
-        backgroundColor: 'rgba(0,0,0,0.9)',
+        flex: 1,
+        backgroundColor: colors.modalOverlay,
         justifyContent: 'center',
         alignItems: 'center',
-        padding: 24,
+        padding: 20,
     },
     youtubeOuterContainer: {
         width: '100%',
-        height: '100%',
-        backgroundColor: '#000',
+        aspectRatio: 16 / 9,
+        backgroundColor: colors.shadow,
+        borderRadius: 12,
         overflow: 'hidden',
+        borderWidth: 1,
+        borderColor: colors.border,
     },
     youtubeCropContainer: {
         width: width,
@@ -699,10 +814,11 @@ const makeStyles = (colors: any) => StyleSheet.create({
         fontWeight: 'bold',
     },
     quizHeader: {
-        fontSize: 24,
+        fontSize: 18,
         fontWeight: 'bold',
-        color: '#fff',
-        marginBottom: 20,
+        color: colors.onPrimary,
+        marginBottom: 10,
+        textAlign: 'center',
     },
     quizQuestion: {
         fontSize: 18,
@@ -722,8 +838,134 @@ const makeStyles = (colors: any) => StyleSheet.create({
         borderColor: 'rgba(255,255,255,0.2)',
     },
     optionText: {
-        color: '#fff',
-        fontSize: 16,
+        color: colors.onPrimary,
+        fontSize: 14,
         textAlign: 'center',
+    },
+    tabContentContainer: {
+        paddingVertical: 16,
+    },
+    sectionTitle: {
+        fontSize: 16,
+        fontWeight: '700',
+        color: colors.text,
+        marginBottom: 12,
+    },
+    resourceButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: colors.surface,
+        padding: 16,
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: colors.border,
+    },
+    resourceTitle: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: colors.text,
+    },
+    resourceSub: {
+        fontSize: 12,
+        color: colors.textSecondary,
+        marginTop: 2,
+    },
+    notesFormContainer: {
+        backgroundColor: colors.surface,
+        padding: 16,
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: colors.border,
+    },
+    notesInput: {
+        backgroundColor: colors.background,
+        borderWidth: 1,
+        borderColor: colors.border,
+        borderRadius: 8,
+        padding: 12,
+        minHeight: 120,
+        color: colors.text,
+        fontSize: 14,
+    },
+    saveNoteButton: {
+        backgroundColor: colors.primary,
+        padding: 12,
+        borderRadius: 8,
+        alignItems: 'center',
+        marginTop: 12,
+    },
+    saveNoteText: {
+        color: colors.onPrimary,
+        fontWeight: '600',
+        fontSize: 14,
+    },
+    notesContentText: {
+        fontSize: 14,
+        lineHeight: 22,
+        color: colors.textSecondary,
+    },
+    qaContainer: {
+        backgroundColor: colors.surface,
+        padding: 16,
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: colors.border,
+    },
+    qaInputBox: {
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+    qaInput: {
+        flex: 1,
+        backgroundColor: colors.background,
+        borderWidth: 1,
+        borderColor: colors.border,
+        borderRadius: 8,
+        padding: 12,
+        minHeight: 60,
+        color: colors.text,
+        marginRight: 10,
+        textAlignVertical: 'center'
+    },
+    sendButton: {
+        backgroundColor: colors.primary,
+        width: 44,
+        height: 44,
+        borderRadius: 22,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    qaTip: {
+        fontSize: 11,
+        color: colors.textSecondary,
+        marginTop: 10,
+        fontStyle: 'italic',
+    },
+    faqCard: {
+        backgroundColor: colors.surface,
+        padding: 16,
+        borderRadius: 12,
+        marginBottom: 12,
+    },
+    faqQ: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: colors.text,
+        marginBottom: 6,
+    },
+    faqA: {
+        fontSize: 13,
+        color: colors.textSecondary,
+        lineHeight: 20,
+    },
+    aiAnswerCard: {
+        marginTop: 16,
+        backgroundColor: colors.card,
+        borderRadius: 12,
+        padding: 16,
+        borderLeftWidth: 3,
+        borderLeftColor: colors.primary,
+        borderWidth: 1,
+        borderColor: colors.border,
     },
 });

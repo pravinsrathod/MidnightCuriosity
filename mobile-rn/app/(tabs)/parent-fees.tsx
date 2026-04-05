@@ -1,66 +1,95 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import {
     View, Text, StyleSheet, FlatList, TouchableOpacity,
-    SafeAreaView, ActivityIndicator, Platform, RefreshControl
+    ActivityIndicator, RefreshControl, Alert, SafeAreaView
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useTheme } from '../../context/ThemeContext';
 import { auth, db } from '../../services/firebaseConfig';
-import { collection, query, where, onSnapshot, getDoc, doc, getDocs } from 'firebase/firestore';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-
-const STATUS_CONFIG: Record<string, { color: string; icon: any; label: string }> = {
-    PENDING: { color: '#eab308', icon: 'time-outline', label: 'Pending' },
-    PARTIAL: { color: '#60a5fa', icon: 'pie-chart-outline', label: 'Partial' },
-    PAID: { color: '#22c55e', icon: 'checkmark-circle-outline', label: 'Paid' },
-    OVERDUE: { color: '#ef4444', icon: 'alert-circle-outline', label: 'Overdue' },
-    WAIVED: { color: '#94a3b8', icon: 'remove-circle-outline', label: 'Waived' },
-};
+import { collection, query, where, onSnapshot, getDoc, doc, getDocs, updateDoc, arrayUnion } from 'firebase/firestore';
+import { ParentHeader } from '../../components/ParentHeader';
+import { useTenant } from '../../context/TenantContext';
+import { useAuth } from '../../context/AuthContext';
 
 export default function FeesTab() {
     const router = useRouter();
+    const insets = useSafeAreaInsets();
     const { colors } = useTheme();
-    const styles = useMemo(() => makeStyles(colors), [colors]);
+    const styles = useMemo(() => makeStyles(colors, insets), [colors, insets]);
+
+    const STATUS_CONFIG: Record<string, { color: string; icon: any; label: string }> = useMemo(() => ({
+        PENDING: { color: colors.warning, icon: 'time-outline', label: 'Pending' },
+        PARTIAL: { color: colors.primary, icon: 'pie-chart-outline', label: 'Partial' },
+        PAID: { color: colors.success, icon: 'checkmark-circle-outline', label: 'Paid' },
+        OVERDUE: { color: colors.danger, icon: 'alert-circle-outline', label: 'Overdue' },
+        WAIVED: { color: colors.textSecondary, icon: 'remove-circle-outline', label: 'Waived' },
+    }), [colors]);
 
     const [fees, setFees] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
+    const [parentName, setParentName] = useState('');
+    const [studentName, setStudentName] = useState('');
+    const [children, setChildren] = useState<any[]>([]);
     const [studentContext, setStudentContext] = useState<any>(null);
+    const { profile, selectedChildId, setSelectedChildId, user: authUser } = useAuth();
+    const { tenantLogo } = useTenant();
 
-    const fetchChildContext = async () => {
+    const fetchIdentity = async () => {
         try {
-            const user = auth.currentUser;
-            let uid = user?.uid;
-            if (!uid) uid = await AsyncStorage.getItem('user_uid') || undefined;
-            if (!uid) return;
+            if (!profile) {
+                if (!authUser) router.replace('/auth');
+                return;
+            }
+            
+            // SELF-HEALING: If a student lands here, redirect them
+            if (profile.role?.toUpperCase() === 'STUDENT') {
+                router.replace('/grade');
+                return;
+            }
 
-            const userDoc = await getDoc(doc(db, "users", uid));
-            if (!userDoc.exists()) return;
-            const userData = userDoc.data();
+            setParentName(profile.firstName || profile.name || profile.displayName || 'Parent');
 
-            let firstChildPhone = userData.linkedStudentPhone || userData.linkedStudentPhones?.[0];
-            if (!firstChildPhone && userData.pendingChildPhones?.length > 0) firstChildPhone = userData.pendingChildPhones[0];
-
-            if (firstChildPhone) {
-                const q = query(collection(db, "users"), where("phoneNumber", "==", firstChildPhone), where("tenantId", "==", userData.tenantId));
+            const linkedPhones = profile.linkedStudentPhones || (profile.linkedStudentPhone ? [profile.linkedStudentPhone] : []);
+            
+            if (linkedPhones.length > 0) {
+                const q = query(collection(db, "users"), where("phoneNumber", "in", linkedPhones), where("tenantId", "==", profile.tenantId));
                 const snap = await getDocs(q);
-                if (!snap.empty) {
-                    const child = snap.docs[0].data();
-                    setStudentContext({ tenantId: child.tenantId, grade: child.grade, studentUid: snap.docs[0].id, batch: child.batch });
+                const kids = snap.docs.map(d => ({ id: d.id, ...d.data() } as any));
+                setChildren(kids);
+
+                const currentChild = kids.find(k => k.id === selectedChildId) || kids[0];
+                if (currentChild) {
+                    if (!selectedChildId) setSelectedChildId(currentChild.id);
+                    
+                    setStudentName(currentChild.firstName || currentChild.displayName || 'Student');
+                    setStudentContext({ 
+                        tenantId: currentChild.tenantId, 
+                        grade: currentChild.grade, 
+                        studentUid: currentChild.id, 
+                        batch: currentChild.batch,
+                        isPending: false 
+                    });
                 }
+            } else if (profile.pendingChildPhones?.length > 0) {
+                setStudentContext({ isPending: true });
             }
         } catch (e) {
             console.error(e);
+        } finally {
+            setLoading(false);
         }
     };
 
     useEffect(() => {
-        fetchChildContext();
-    }, []);
+        fetchIdentity();
+    }, [selectedChildId, profile]);
 
     useEffect(() => {
-        if (!studentContext) return;
+        if (!studentContext || studentContext.isPending) return;
         const { tenantId, studentUid } = studentContext;
 
         const q = query(collection(db, 'fees'), where('tenantId', '==', tenantId), where('studentId', '==', studentUid));
@@ -73,26 +102,84 @@ export default function FeesTab() {
             });
             list.sort((a, b) => (b.dueDate > a.dueDate ? 1 : -1));
             setFees(list);
-            setLoading(false);
             setRefreshing(false);
         }, (err) => {
             console.error("Fees snapshot error:", err);
-            setLoading(false);
             setRefreshing(false);
         });
 
         return () => unsub();
     }, [studentContext]);
 
-    const totalDue = fees
-        .filter(f => ['PENDING', 'OVERDUE', 'PARTIAL'].includes(f.status))
-        .reduce((s, f) => s + ((f.totalAmount || 0) - (f.paidAmount || 0)), 0);
+    const onRefresh = () => {
+        setRefreshing(true);
+        fetchIdentity().then(() => setRefreshing(false));
+    };
 
+    const handlePayNow = () => {
+        // Find the first fee that is not PAID or WAIVED
+        const outstandingFee = fees.find(f => ['PENDING', 'OVERDUE', 'PARTIAL'].includes(f.status));
+        if (outstandingFee) {
+            console.log("Navigating to fee-detail for id:", outstandingFee.id);
+            router.push({
+                pathname: '/fee-detail',
+                params: {
+                    id: String(outstandingFee.id),
+                    label: String(outstandingFee.label || ''),
+                    grade: String(outstandingFee.grade || ''),
+                    totalAmount: String(outstandingFee.totalAmount || 0),
+                    paidAmount: String(outstandingFee.paidAmount || 0),
+                    dueDate: String(outstandingFee.dueDate || ''),
+                    status: String(outstandingFee.status || ''),
+                    paymentMethod: String(outstandingFee.paymentMethod || ''),
+                    receiptNumber: String(outstandingFee.receiptNumber || ''),
+                    notes: String(outstandingFee.notes || ''),
+                    items: JSON.stringify(outstandingFee.items || []),
+                    tenantId: String(outstandingFee.tenantId || ''),
+                    studentId: String(outstandingFee.studentId || ''),
+                }
+            });
+        } else {
+            Alert.alert("No Outstanding Fees", "You don't have any pending or overdue fees to pay at the moment.");
+        }
+    };
 
+    const handleAddChild = async (phone: string) => {
+        try {
+            const cleanPhone = phone.replace(/[^0-9]/g, '');
+            await updateDoc(doc(db, "users", profile.id), {
+                pendingChildPhones: arrayUnion(cleanPhone)
+            });
+            Alert.alert("Success", "Request sent! Once approved, you can switch to this child.");
+            fetchIdentity();
+        } catch (e) {
+            console.error(e);
+            Alert.alert("Error", "Failed to add child.");
+        }
+    };
+
+    const handleLogout = async () => {
+        await auth.signOut();
+        router.replace('/auth');
+    };
+
+    const renderEmptyState = () => (
+        <View style={styles.emptyContainer}>
+            <View style={styles.emptyIconBg}>
+                <Ionicons name="receipt-outline" size={48} color={colors.primary} />
+            </View>
+            <Text style={styles.emptyTitle}>No Fees Found</Text>
+            <Text style={styles.emptySubtitle}>There are currently no fee records associated with this student.</Text>
+            <TouchableOpacity style={styles.refreshBtn} onPress={onRefresh}>
+                <Text style={styles.refreshBtnText}>Refresh Data</Text>
+            </TouchableOpacity>
+        </View>
+    );
 
     const renderFee = ({ item }: { item: any }) => {
         const cfg = STATUS_CONFIG[item.status] || STATUS_CONFIG.PENDING;
         const remaining = (item.totalAmount || 0) - (item.paidAmount || 0);
+
         return (
             <TouchableOpacity
                 style={styles.card}
@@ -117,20 +204,23 @@ export default function FeesTab() {
                 activeOpacity={0.7}
             >
                 <View style={styles.cardRow}>
-                    <View style={[styles.iconBg, { backgroundColor: cfg.color + '20' }]}>
+                    <View style={[styles.iconBg, { backgroundColor: cfg.color + '15' }]}>
                         <Ionicons name={cfg.icon} size={22} color={cfg.color} />
                     </View>
                     <View style={styles.cardInfo}>
                         <Text style={styles.label} numberOfLines={1}>{item.label}</Text>
-                        <Text style={styles.dueDate}>Due: {item.dueDate}</Text>
+                        <View style={styles.row}>
+                            <Ionicons name="calendar-outline" size={12} color={colors.textSecondary} style={{ marginRight: 4 }} />
+                            <Text style={styles.dueDate}>Due {item.dueDate}</Text>
+                        </View>
                     </View>
                     <View style={styles.amountCol}>
                         <Text style={styles.amount}>RM {remaining.toFixed(2)}</Text>
-                        <View style={[styles.badge, { backgroundColor: cfg.color + '20', borderColor: cfg.color + '60' }]}>
+                        <View style={[styles.badge, { backgroundColor: cfg.color + '10', borderColor: cfg.color + '40' }]}>
                             <Text style={[styles.badgeText, { color: cfg.color }]}>{cfg.label}</Text>
                         </View>
                     </View>
-                    <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
+                    <Ionicons name="chevron-forward" size={18} color={colors.border} />
                 </View>
                 {item.status === 'PARTIAL' && (
                     <View style={styles.progressBar}>
@@ -141,31 +231,29 @@ export default function FeesTab() {
         );
     };
 
+    if (loading) return <View style={styles.center}><ActivityIndicator size="large" color={colors.primary} /></View>;
+
     return (
-        <SafeAreaView style={styles.container}>
-            <View style={styles.header}>
-                <Text style={styles.headerTitle}>Fees Management</Text>
-            </View>
+        <View style={styles.container}>
+            <ParentHeader 
+                parentName={parentName}
+                studentName={studentName}
+                childList={children}
+                selectedChildId={selectedChildId}
+                onSelectStudent={(id) => setSelectedChildId(id)}
+                onAddChild={handleAddChild}
+                onLogout={handleLogout}
+                tenantLogo={tenantLogo}
+                showWelcome={false}
+            />
 
-            {totalDue > 0 && (
-                <View style={styles.banner}>
-                    <Ionicons name="alert-circle" size={20} color="#ef4444" />
-                    <Text style={styles.bannerText}>
-                        Total Outstanding: <Text style={{ fontWeight: 'bold' }}>RM {totalDue.toFixed(2)}</Text>
-                    </Text>
-                </View>
-            )}
-
-            {loading ? (
+            {studentContext?.isPending ? (
                 <View style={styles.center}>
-                    <ActivityIndicator size="large" color={colors.primary} />
-                </View>
-            ) : fees.length === 0 ? (
-                <View style={styles.center}>
-                    <Ionicons name="checkmark-done-circle-outline" size={64} color={colors.success} />
-                    <Text style={styles.emptyTitle}>All Clear!</Text>
-                    <Text style={styles.emptySubtitle}>No fees assigned yet.</Text>
-
+                    <View style={styles.pendingCard}>
+                        <Ionicons name="time-outline" size={64} color={colors.warning} />
+                        <Text style={styles.pendingTitle}>Approval Pending</Text>
+                        <Text style={styles.pendingText}>Your link request for {studentName} is waiting for admin approval.</Text>
+                    </View>
                 </View>
             ) : (
                 <FlatList
@@ -173,58 +261,148 @@ export default function FeesTab() {
                     keyExtractor={f => f.id}
                     renderItem={renderFee}
                     contentContainerStyle={styles.list}
-                    refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchChildContext(); }} tintColor={colors.primary} />}
+                    ListHeaderComponent={
+                        <View style={{ paddingHorizontal: 20 }}>
+                            <View style={styles.titleSection}>
+                                <Text style={styles.headerTitle}>School Fees</Text>
+                                <Text style={styles.headerSubtitle}>Manage and track your payments</Text>
+                            </View>
+                            
+                            {fees.length > 0 ? (
+                                <LinearGradient
+                                    colors={[colors.primary, colors.primary + 'CC']}
+                                    start={{ x: 0, y: 0 }}
+                                    end={{ x: 1, y: 1 }}
+                                    style={styles.summaryCard}
+                                >
+                                    <View style={styles.summaryInfo}>
+                                        <Text style={styles.summaryLabel}>Total Outstanding</Text>
+                                        <View style={{ flexDirection: 'row', alignItems: 'baseline' }}>
+                                            <Text style={styles.currencySymbol}>RM</Text>
+                                            <Text style={styles.totalAmount}>
+                                                {fees.reduce((acc, fee) => (fee.status !== 'PAID' ? acc + (Number(fee.totalAmount) - (Number(fee.paidAmount) || 0)) : acc), 0).toFixed(2)}
+                                            </Text>
+                                        </View>
+                                    </View>
+                                    <TouchableOpacity 
+                                        style={styles.payAllBtn}
+                                        onPress={handlePayNow}
+                                    >
+                                        <Text style={styles.payAllText}>Pay Now</Text>
+                                    </TouchableOpacity>
+                                </LinearGradient>
+                            ) : (
+                                renderEmptyState()
+                            )}
+                            {fees.length > 0 && <Text style={styles.sectionTitle}>Payment History</Text>}
+                        </View>
+                    }
+                    refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchIdentity().then(() => setRefreshing(false)); }} tintColor={colors.primary} />}
                     ItemSeparatorComponent={() => <View style={{ height: 12 }} />}
-
                 />
             )}
-        </SafeAreaView>
+        </View>
     );
 }
 
-const makeStyles = (colors: any) => StyleSheet.create({
+const makeStyles = (colors: any, insets: any) => StyleSheet.create({
     container: { flex: 1, backgroundColor: colors.background },
-    header: {
-        paddingHorizontal: 20, paddingVertical: 15,
-        backgroundColor: colors.background,
-        borderBottomWidth: 1, borderBottomColor: colors.border,
-        paddingTop: Platform.OS === 'ios' ? 10 : 40,
+    list: { paddingBottom: insets.bottom + 20 },
+    titleSection: { marginTop: 20, marginBottom: 24, paddingHorizontal: 4 },
+    headerTitle: { fontSize: 32, fontWeight: '800', color: colors.text, letterSpacing: -1 },
+    headerSubtitle: { fontSize: 16, color: colors.textSecondary, marginTop: 4 },
+    sectionTitle: { fontSize: 20, fontWeight: '700', color: colors.text, marginBottom: 16, marginTop: 8 },
+    summaryCard: { 
+        padding: 24, 
+        borderRadius: 24, 
+        flexDirection: 'row', 
+        justifyContent: 'space-between', 
+        alignItems: 'center', 
+        marginBottom: 32,
+        shadowColor: colors.primary,
+        shadowOffset: { width: 0, height: 10 },
+        shadowOpacity: 0.3,
+        shadowRadius: 20,
+        elevation: 10,
     },
-    headerTitle: { fontSize: 24, fontWeight: 'bold', color: colors.text },
-    banner: {
-        flexDirection: 'row', alignItems: 'center', gap: 8,
-        backgroundColor: '#ef444415', margin: 16, padding: 14,
-        borderRadius: 12, borderWidth: 1, borderColor: '#ef444440',
-    },
-    bannerText: { color: '#ef4444', fontSize: 14 },
-    list: { padding: 16 },
+    summaryInfo: { gap: 4 },
+    summaryLabel: { color: '#FFFFFF', opacity: 0.9, fontSize: 13, textTransform: 'uppercase', letterSpacing: 1, fontWeight: '600' },
+    currencySymbol: { color: '#FFFFFF', fontSize: 18, marginRight: 4, fontWeight: '600' },
+    totalAmount: { color: '#FFFFFF', fontSize: 34, fontWeight: '800', letterSpacing: -0.5 },
+    payAllBtn: { backgroundColor: '#FFFFFF', paddingHorizontal: 20, paddingVertical: 12, borderRadius: 14, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 8, elevation: 4 },
+    payAllText: { color: colors.primary, fontWeight: 'bold', fontSize: 15 },
     card: {
-        backgroundColor: colors.card, borderRadius: 16, padding: 16,
-        borderWidth: 1, borderColor: colors.border,
-        ...Platform.select({
-            ios: { shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 6, shadowOffset: { width: 0, height: 2 } },
-            android: { elevation: 2 },
-        }),
+        backgroundColor: colors.card + '80', 
+        borderRadius: 20, 
+        padding: 16,
+        borderWidth: 1, 
+        borderColor: colors.border + '50', 
+        marginHorizontal: 20,
     },
-    cardRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-    iconBg: { width: 44, height: 44, borderRadius: 22, justifyContent: 'center', alignItems: 'center' },
+    cardRow: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+    iconBg: { width: 48, height: 48, borderRadius: 16, justifyContent: 'center', alignItems: 'center' },
     cardInfo: { flex: 1, minWidth: 0 },
-    label: { fontSize: 15, fontWeight: '600', color: colors.text, marginBottom: 3 },
-    dueDate: { fontSize: 12, color: colors.textSecondary },
-    amountCol: { alignItems: 'flex-end', gap: 4 },
-    amount: { fontSize: 16, fontWeight: '700', color: colors.text },
+    label: { fontSize: 16, fontWeight: '700', color: colors.text, marginBottom: 4 },
+    dueDate: { fontSize: 13, color: colors.textSecondary },
+    amountCol: { alignItems: 'flex-end', gap: 6 },
+    amount: { fontSize: 17, fontWeight: '800', color: colors.text },
     badge: {
-        paddingHorizontal: 8, paddingVertical: 2,
-        borderRadius: 10, borderWidth: 1,
+        paddingHorizontal: 10, paddingVertical: 4,
+        borderRadius: 12, borderWidth: 1,
     },
-    badgeText: { fontSize: 11, fontWeight: '600' },
+    badgeText: { fontSize: 10, fontWeight: '800', textTransform: 'uppercase' },
     progressBar: {
-        height: 4, backgroundColor: colors.border,
-        borderRadius: 2, marginTop: 12, overflow: 'hidden',
+        height: 6, backgroundColor: colors.border + '30',
+        borderRadius: 3, marginTop: 16, overflow: 'hidden',
     },
-    progressFill: { height: '100%', backgroundColor: '#60a5fa', borderRadius: 2 },
-    center: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 12 },
-    emptyTitle: { fontSize: 22, fontWeight: 'bold', color: colors.text },
-    emptySubtitle: { fontSize: 14, color: colors.textSecondary, marginBottom: 20 },
-
+    progressFill: { height: '100%', backgroundColor: colors.primary, borderRadius: 3 },
+    row: { flexDirection: 'row', alignItems: 'center' },
+    center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+    emptyContainer: {
+        alignItems: 'center',
+        paddingVertical: 60,
+        paddingHorizontal: 40,
+        backgroundColor: colors.card + '40',
+        borderRadius: 32,
+        borderWidth: 1,
+        borderColor: colors.border + '30',
+        marginTop: 20,
+    },
+    emptyIconBg: {
+        width: 100,
+        height: 100,
+        borderRadius: 50,
+        backgroundColor: colors.primary + '10',
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginBottom: 24,
+    },
+    emptyTitle: {
+        fontSize: 22,
+        fontWeight: '800',
+        color: colors.text,
+        marginBottom: 12,
+        textAlign: 'center',
+    },
+    emptySubtitle: {
+        fontSize: 15,
+        color: colors.textSecondary,
+        textAlign: 'center',
+        lineHeight: 22,
+        marginBottom: 32,
+    },
+    refreshBtn: {
+        backgroundColor: colors.primary,
+        paddingHorizontal: 24,
+        paddingVertical: 14,
+        borderRadius: 16,
+    },
+    refreshBtnText: {
+        color: '#FFFFFF',
+        fontWeight: 'bold',
+        fontSize: 16,
+    },
+    pendingCard: { margin: 20, padding: 30, backgroundColor: colors.card, borderRadius: 30, alignItems: 'center', borderWidth: 1, borderColor: colors.border },
+    pendingTitle: { fontSize: 20, fontWeight: 'bold', color: colors.text, marginTop: 15 },
+    pendingText: { fontSize: 14, color: colors.textSecondary, textAlign: 'center', marginTop: 10, lineHeight: 20 },
 });

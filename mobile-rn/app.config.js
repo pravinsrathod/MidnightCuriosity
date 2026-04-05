@@ -9,7 +9,7 @@ export default ({ config }) => {
             name: process.env.APP_NAME || "EduPro",
             slug: "mobile-rn",
             scheme: "com.prowin.edupro",
-            version: "3.1.0",
+            version: "4.1.0",
             orientation: "portrait",
             icon: process.env.APP_ICON || `${brandingPath}/icon.png`,
             userInterfaceStyle: "light",
@@ -22,7 +22,7 @@ export default ({ config }) => {
             ios: {
                 supportsTablet: true,
                 bundleIdentifier: "com.prowin.edupro",
-                buildNumber: "310",
+                buildNumber: "400",
                 googleServicesFile: process.env.EXPO_PUBLIC_APP_ENV === 'production'
                     ? './GoogleService-Info.production.plist'
                     : './GoogleService-Info.development.plist',
@@ -35,7 +35,9 @@ export default ({ config }) => {
                 }
             },
             android: {
-                versionCode: 101,
+                versionCode: 400,
+                targetSdkVersion: 35,
+                compileSdkVersion: 35,
                 adaptiveIcon: {
                     foregroundImage: process.env.APP_ADAPTIVE_ICON || `${brandingPath}/adaptive-icon.png`,
                     backgroundColor: "#ffffff"
@@ -51,6 +53,28 @@ export default ({ config }) => {
             },
             plugins: [
                 "expo-router",
+                [
+                    "expo-build-properties",
+                    {
+                        "android": {
+                            "compileSdkVersion": 35,
+                            "targetSdkVersion": 35,
+                            "buildToolsVersion": "35.0.0",
+                            "ndkVersion": "27.0.12077973",
+                            "kotlinVersion": "1.9.24",
+                            "jdkVersion": 17,
+                            "packagingOptions": {
+                                "jniLibs": {
+                                    "useLegacyPackaging": false
+                                }
+                            }
+                        },
+                        "ios": {
+                            "deploymentTarget": "15.5"
+                        }
+                    }
+                ],
+                "./plugins/xcode-patch-plugin",
                 [
                     "expo-local-authentication",
                     {

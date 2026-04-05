@@ -22,8 +22,6 @@ import { ref, set, onValue, remove, push, serverTimestamp } from 'firebase/datab
 import { doc, onSnapshot } from 'firebase/firestore';
 import { Ionicons } from '@expo/vector-icons';
 
-// Global fallback to prevent ReferenceErrors during module load
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 interface Props {
   batchId: string;
@@ -47,7 +45,7 @@ const LiveClassroomView: React.FC<Props> = ({ batchId, onEnd }) => {
     const chatAnim = useRef(new Animated.Value(height)).current;
     const pulseAnim = useRef(new Animated.Value(1)).current;
     const watermarkAnim = useRef(new Animated.ValueXY({ x: 0, y: 0 })).current;
-    const [userName, setUserName] = useState(auth.currentUser?.displayName || 'Student');
+    const [userName] = useState(auth.currentUser?.displayName || 'Student');
 
     useEffect(() => {
         // Listen for Session Data (Title, Video ID)
@@ -80,27 +78,6 @@ const LiveClassroomView: React.FC<Props> = ({ batchId, onEnd }) => {
             }
         });
 
-        // Live Pulse Animation
-        Animated.loop(
-            Animated.sequence([
-                Animated.timing(pulseAnim, { toValue: 1.2, duration: 1000, useNativeDriver: true }),
-                Animated.timing(pulseAnim, { toValue: 1, duration: 1000, useNativeDriver: true }),
-            ])
-        ).start();
-
-        // Watermark Floating Animation
-        const moveWatermark = () => {
-            Animated.timing(watermarkAnim, {
-                toValue: {
-                    x: Math.random() * (width - 150),
-                    y: Math.random() * (isFullScreen ? height - 50 : (height * 0.4) - 50)
-                },
-                duration: 5000,
-                useNativeDriver: true
-            }).start(() => moveWatermark());
-        };
-        moveWatermark();
-
         return () => {
             sessionUnsub();
             unsubChat();
@@ -110,6 +87,41 @@ const LiveClassroomView: React.FC<Props> = ({ batchId, onEnd }) => {
             }
         };
     }, [batchId]);
+
+    // Live Pulse Animation
+    useEffect(() => {
+        const animation = Animated.loop(
+            Animated.sequence([
+                Animated.timing(pulseAnim, { toValue: 1.2, duration: 1000, useNativeDriver: true }),
+                Animated.timing(pulseAnim, { toValue: 1, duration: 1000, useNativeDriver: true }),
+            ])
+        );
+        animation.start();
+        return () => animation.stop();
+    }, [pulseAnim]);
+
+    // Watermark Floating Animation
+    useEffect(() => {
+        let isCancelled = false;
+        const moveWatermark = () => {
+            if (isCancelled) return;
+            Animated.timing(watermarkAnim, {
+                toValue: {
+                    x: Math.random() * (width - 150),
+                    y: Math.random() * (isFullScreen ? height - 50 : (height * 0.4) - 50)
+                },
+                duration: 5000,
+                useNativeDriver: true
+            }).start(() => {
+                if (!isCancelled) moveWatermark();
+            });
+        };
+        moveWatermark();
+        return () => {
+            isCancelled = true;
+            watermarkAnim.stopAnimation();
+        };
+    }, [width, height, isFullScreen, watermarkAnim]);
 
     useEffect(() => {
         // Auto-Rotate logic
@@ -148,7 +160,7 @@ const LiveClassroomView: React.FC<Props> = ({ batchId, onEnd }) => {
             friction: 8,
             tension: 40
         }).start();
-    }, [showChat]);
+    }, [showChat, height, chatAnim]);
 
     const toggleRaiseHand = async () => {
         if (!auth.currentUser) return;

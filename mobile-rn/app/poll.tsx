@@ -1,18 +1,25 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, SafeAreaView, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, SafeAreaView } from 'react-native';
 import { useRouter } from 'expo-router';
 import { db, auth } from '../services/firebaseConfig';
 import { collection, query, where, onSnapshot, updateDoc, doc, arrayUnion, getDoc } from 'firebase/firestore';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '../context/ThemeContext';
-import { useTenant } from '../context/TenantContext';
+import { useTenant, useFeature } from '../context/TenantContext';
 
 export default function PollScreen() {
     const router = useRouter();
     const { colors } = useTheme();
     const { tenantId } = useTenant();
+    const isEnabled = useFeature('enableLivePolls');
     const styles = useMemo(() => makeStyles(colors), [colors]);
+
+    React.useEffect(() => {
+        if (!isEnabled) {
+            router.replace('/(tabs)/parent-home' as any);
+        }
+    }, [isEnabled]);
 
     const [activePoll, setActivePoll] = useState<any>(null);
     const [loading, setLoading] = useState(true);
@@ -49,7 +56,7 @@ export default function PollScreen() {
             }
         };
         loadUser();
-    }, []);
+    }, [router]);
 
     // Listen for Active Polls & Check Vote Status
     useEffect(() => {
@@ -188,7 +195,7 @@ export default function PollScreen() {
 
                                         <View style={styles.pollOptionContent}>
                                             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                                                {isSelected && <Ionicons name="checkmark-circle" size={20} color="#FFF" />}
+                                                {isSelected && <Ionicons name="checkmark-circle" size={20} color={colors.onPrimary} />}
                                                 <Text style={[styles.pollOptionText, hasVoted && { color: colors.text }]}>
                                                     {option.text}
                                                 </Text>

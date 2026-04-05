@@ -6,7 +6,7 @@ import { auth, db } from '../../services/firebaseConfig';
 import { collection, addDoc, query, orderBy, onSnapshot, updateDoc, doc, arrayUnion, serverTimestamp, getDoc, where } from 'firebase/firestore';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '../../context/ThemeContext';
-import { useTenant } from '../../context/TenantContext';
+import { useTenant, useFeature } from '../../context/TenantContext';
 
 interface Reply {
     id: string; // usually timestamp_uid to be unique locally
@@ -33,7 +33,14 @@ export default function DoubtsScreen() {
     const router = useRouter();
     const { colors } = useTheme();
     const { tenantId, subjects } = useTenant();
+    const isEnabled = useFeature('enableDoubts');
     const styles = useMemo(() => makeStyles(colors), [colors]);
+
+    React.useEffect(() => {
+        if (!isEnabled) {
+            router.replace('/grade');
+        }
+    }, [isEnabled]);
 
     const [doubts, setDoubts] = useState<Doubt[]>([]);
     const [loading, setLoading] = useState(true);
@@ -457,9 +464,10 @@ const makeStyles = (colors: any) => StyleSheet.create({
         color: colors.text,
         height: 40,
     },
+
     modalOverlay: {
         flex: 1,
-        backgroundColor: 'rgba(0,0,0,0.8)',
+        backgroundColor: colors.modalOverlay,
         justifyContent: 'center',
         padding: 20,
     },
@@ -499,7 +507,7 @@ const makeStyles = (colors: any) => StyleSheet.create({
         color: colors.text,
     },
     selectedChipText: {
-        color: '#FFFFFF',
+        color: colors.onPrimary,
         fontWeight: 'bold',
     },
     textArea: {
@@ -540,7 +548,7 @@ const makeStyles = (colors: any) => StyleSheet.create({
         fontWeight: 'bold',
     },
     postText: {
-        color: '#FFFFFF',
+        color: colors.onPrimary,
         fontWeight: 'bold',
     },
     emptyState: {

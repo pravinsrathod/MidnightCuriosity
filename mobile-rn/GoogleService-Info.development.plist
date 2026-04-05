@@ -3,17 +3,17 @@
 <plist version="1.0">
 <dict>
 	<key>API_KEY</key>
-	<string>AIzaSyDWIQoboO25QkRZQZht_HlHOL5nbFfKz4Y</string>
+	<string>AIzaSyCjx_vuYbth9ifaqaKBWB30R8yDp8KRlgg</string>
 	<key>GCM_SENDER_ID</key>
-	<string>259510471140</string>
+	<string>191248941616</string>
 	<key>PLIST_VERSION</key>
 	<string>1</string>
 	<key>BUNDLE_ID</key>
 	<string>com.prowin.edupro</string>
 	<key>PROJECT_ID</key>
-	<string>midnightcuriosity-prod</string>
+	<string>midnightcuriosity</string>
 	<key>STORAGE_BUCKET</key>
-	<string>midnightcuriosity-prod.firebasestorage.app</string>
+	<string>midnightcuriosity.firebasestorage.app</string>
 	<key>IS_ADS_ENABLED</key>
 	<false></false>
 	<key>IS_ANALYTICS_ENABLED</key>
@@ -25,6 +25,8 @@
 	<key>IS_SIGNIN_ENABLED</key>
 	<true></true>
 	<key>GOOGLE_APP_ID</key>
-	<string>1:259510471140:ios:326992f38e57a031529ff1</string>
+	<string>1:191248941616:ios:2ef499dbf3a9a62ed8a3f5</string>
+	<key>DATABASE_URL</key>
+	<string>https://midnightcuriosity-default-rtdb.firebaseio.com</string>
 </dict>
 </plist>

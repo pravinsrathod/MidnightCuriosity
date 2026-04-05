@@ -1,13 +1,16 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
 import { auth, db } from '../services/firebaseConfig';
 import { onAuthStateChanged } from 'firebase/auth';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { doc, getDoc, updateDoc } from 'firebase/firestore';
+import { useTheme } from '../context/ThemeContext';
 
 export default function SplashScreen() {
     const router = useRouter();
+    const { colors } = useTheme();
+    const styles = useMemo(() => makeStyles(colors), [colors]);
 
     useEffect(() => {
         const checkAuth = async () => {
@@ -91,7 +94,7 @@ export default function SplashScreen() {
         }, 1500);
 
         return () => clearTimeout(timer);
-    }, []);
+    }, [router]);
 
     return (
         <View style={styles.container}>
@@ -101,21 +104,21 @@ export default function SplashScreen() {
     );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: any) => StyleSheet.create({
     container: {
         flex: 1,
         justifyContent: 'center',
         alignItems: 'center',
-        backgroundColor: '#0F172A'
+        backgroundColor: colors.background,
     },
     title: {
         fontSize: 36,
         fontWeight: 'bold',
-        color: '#FFFFFF',
         marginBottom: 10,
+        color: colors.text,
     },
     subtitle: {
         fontSize: 18,
-        color: '#94A3B8',
+        color: colors.textSecondary,
     }
 });

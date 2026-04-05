@@ -1,9 +1,10 @@
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
     View, Text, StyleSheet, ScrollView, TouchableOpacity,
-    SafeAreaView, Platform, TextInput, Image, ActivityIndicator, Alert
+    Platform, TextInput, Image, ActivityIndicator, Alert
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { useTheme } from '../context/ThemeContext';
@@ -11,19 +12,20 @@ import { auth, db, storage } from '../services/firebaseConfig';
 import { doc, setDoc, collection, serverTimestamp, query, where, onSnapshot } from 'firebase/firestore';
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 
-const STATUS_CONFIG: Record<string, { color: string; icon: any; label: string }> = {
-    PENDING: { color: '#eab308', icon: 'time-outline', label: 'Pending' },
-    PARTIAL: { color: '#60a5fa', icon: 'pie-chart-outline', label: 'Partial' },
-    PAID: { color: '#22c55e', icon: 'checkmark-circle-outline', label: 'Paid' },
-    OVERDUE: { color: '#ef4444', icon: 'alert-circle-outline', label: 'Overdue' },
-    WAIVED: { color: '#94a3b8', icon: 'remove-circle-outline', label: 'Waived' },
-};
-
 export default function FeeDetailScreen() {
     const params = useLocalSearchParams();
     const router = useRouter();
+    const insets = useSafeAreaInsets();
     const { colors } = useTheme();
-    const styles = useMemo(() => makeStyles(colors), [colors]);
+    const styles = useMemo(() => makeStyles(colors, insets), [colors, insets]);
+
+    const STATUS_CONFIG: Record<string, { color: string; icon: any; label: string }> = useMemo(() => ({
+        PENDING: { color: colors.warning, icon: 'time-outline', label: 'Pending' },
+        PARTIAL: { color: colors.info, icon: 'pie-chart-outline', label: 'Partial' },
+        PAID: { color: colors.success, icon: 'checkmark-circle-outline', label: 'Paid' },
+        OVERDUE: { color: colors.danger, icon: 'alert-circle-outline', label: 'Overdue' },
+        WAIVED: { color: colors.textSecondary, icon: 'remove-circle-outline', label: 'Waived' },
+    }), [colors]);
 
     const {
         id, label, grade, totalAmount, paidAmount,
@@ -154,7 +156,7 @@ export default function FeeDetailScreen() {
     };
 
     return (
-        <SafeAreaView style={styles.container}>
+        <View style={styles.container}>
             <View style={styles.header}>
                 <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
                     <Ionicons name="arrow-back" size={24} color={colors.text} />
@@ -165,7 +167,7 @@ export default function FeeDetailScreen() {
 
             <ScrollView contentContainerStyle={styles.content}>
                 {/* Status Card */}
-                <View style={[styles.card, isPaid && { borderColor: '#22c55e40' }, isOverdue && { borderColor: '#ef444440' }]}>
+                <View style={[styles.card, isPaid && { borderColor: colors.success + '40' }, isOverdue && { borderColor: colors.danger + '40' }]}>
                     <View style={styles.statusHeader}>
                         <View style={{ flex: 1 }}>
                             <Text style={styles.feeLabel}>{label}</Text>
@@ -186,12 +188,12 @@ export default function FeeDetailScreen() {
                         <View style={[styles.amountDivider]} />
                         <View style={styles.amountItem}>
                             <Text style={styles.amountLabel}>Paid</Text>
-                            <Text style={[styles.amountValue, { color: '#22c55e' }]}>RM {currentPaid.toFixed(2)}</Text>
+                            <Text style={[styles.amountValue, { color: colors.success }]}>RM {currentPaid.toFixed(2)}</Text>
                         </View>
                         <View style={styles.amountDivider} />
                         <View style={styles.amountItem}>
                             <Text style={styles.amountLabel}>{isPaid ? 'Balance' : 'Remaining'}</Text>
-                            <Text style={[styles.amountValue, { color: isPaid ? '#22c55e' : '#eab308' }]}>
+                            <Text style={[styles.amountValue, { color: isPaid ? colors.success : colors.warning }]}>
                                 RM {remaining.toFixed(2)}
                             </Text>
                         </View>
@@ -241,15 +243,15 @@ export default function FeeDetailScreen() {
 
                 {/* Receipt Card — only when fully paid */}
                 {isPaid && receiptNumber && receiptNumber !== 'null' && (
-                    <View style={[styles.card, { borderColor: '#22c55e40', backgroundColor: '#22c55e08' }]}>
+                    <View style={[styles.card, { borderColor: colors.success + '40', backgroundColor: colors.success + '08' }]}>
                         <View style={styles.sectionHeader}>
-                            <Ionicons name="receipt-outline" size={20} color="#22c55e" />
-                            <Text style={[styles.sectionTitle, { color: '#22c55e' }]}>Payment Receipt</Text>
+                            <Ionicons name="receipt-outline" size={20} color={colors.success} />
+                            <Text style={[styles.sectionTitle, { color: colors.success }]}>Payment Receipt</Text>
                         </View>
                         <Text style={styles.receiptLabel}>Receipt Number</Text>
                         <Text style={styles.receiptNumber}>{receiptNumber}</Text>
                         <View style={styles.paidStamp}>
-                            <Ionicons name="checkmark-circle" size={18} color="#22c55e" />
+                            <Ionicons name="checkmark-circle" size={18} color={colors.success} />
                             <Text style={styles.paidStampText}>PAID IN FULL</Text>
                         </View>
                     </View>
@@ -257,10 +259,10 @@ export default function FeeDetailScreen() {
 
                 {/* Pending Receipts Banner */}
                 {pendingReceipts.filter(r => r.status === 'VERIFICATION_PENDING').length > 0 && (
-                    <View style={[styles.card, { borderColor: '#eab30840', backgroundColor: '#eab30808' }]}>
+                    <View style={[styles.card, { borderColor: colors.warning + '40', backgroundColor: colors.warning + '08' }]}>
                         <View style={styles.sectionHeader}>
-                            <Ionicons name="time-outline" size={20} color="#eab308" />
-                            <Text style={[styles.sectionTitle, { color: '#eab308' }]}>Under Verification</Text>
+                            <Ionicons name="time-outline" size={20} color={colors.warning} />
+                            <Text style={[styles.sectionTitle, { color: colors.warning }]}>Under Verification</Text>
                         </View>
                         <Text style={{ fontSize: 13, color: colors.textSecondary, marginBottom: 10 }}>
                             You have submitted receipts that are currently pending verification by the institute.
@@ -268,7 +270,7 @@ export default function FeeDetailScreen() {
                         {pendingReceipts.filter(r => r.status === 'VERIFICATION_PENDING').map(r => (
                             <View key={r.id} style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6, borderTopWidth: 1, borderColor: colors.border }}>
                                 <Text style={{ color: colors.text }}>RM {r.amountPaid?.toFixed(2)}</Text>
-                                <Text style={{ color: '#eab308', fontWeight: 'bold' }}>Pending</Text>
+                                <Text style={{ color: colors.warning, fontWeight: 'bold' }}>Pending</Text>
                             </View>
                         ))}
                     </View>
@@ -302,7 +304,7 @@ export default function FeeDetailScreen() {
                                 <Image source={{ uri: proofUri }} style={{ width: 120, height: 160, borderRadius: 12 }} />
                                 {!submitting && (
                                     <TouchableOpacity style={styles.deleteImgBtn} onPress={() => setProofUri(null)}>
-                                        <Ionicons name="close-circle" size={24} color="#ef4444" />
+                                        <Ionicons name="close-circle" size={24} color={colors.danger} />
                                     </TouchableOpacity>
                                 )}
                             </View>
@@ -319,10 +321,10 @@ export default function FeeDetailScreen() {
                             disabled={submitting}
                         >
                             {submitting ? (
-                                <ActivityIndicator color="#FFF" />
+                                <ActivityIndicator color={colors.background} />
                             ) : (
                                 <>
-                                    <Ionicons name="cloud-upload-outline" size={20} color="#FFF" />
+                                    <Ionicons name="cloud-upload-outline" size={20} color={colors.background} />
                                     <Text style={styles.submitButtonText}>Submit Proof</Text>
                                 </>
                             )}
@@ -332,29 +334,29 @@ export default function FeeDetailScreen() {
 
                 {/* CTA banner for overdue */}
                 {isOverdue && (
-                    <View style={styles.overdueBanner}>
-                        <Ionicons name="warning-outline" size={20} color="#ef4444" />
-                        <Text style={styles.overdueText}>
+                    <View style={[styles.overdueBanner, { backgroundColor: colors.danger + '15', borderColor: colors.danger + '40' }]}>
+                        <Ionicons name="warning-outline" size={20} color={colors.danger} />
+                        <Text style={[styles.overdueText, { color: colors.danger }]}>
                             This fee is overdue. Please contact your institute administrator to arrange payment.
                         </Text>
                     </View>
                 )}
             </ScrollView>
-        </SafeAreaView>
+        </View>
     );
 }
 
-const makeStyles = (colors: any) => StyleSheet.create({
+const makeStyles = (colors: any, insets: any) => StyleSheet.create({
     container: { flex: 1, backgroundColor: colors.background },
     header: {
         flexDirection: 'row', alignItems: 'center',
-        paddingHorizontal: 20, paddingVertical: 15,
+        paddingHorizontal: 20, paddingTop: insets.top + 10, paddingBottom: 15,
         backgroundColor: colors.background,
         borderBottomWidth: 1, borderBottomColor: colors.border,
     },
     backBtn: { paddingRight: 10 },
     headerTitle: { flex: 1, textAlign: 'center', fontSize: 18, fontWeight: 'bold', color: colors.text },
-    content: { padding: 16, paddingBottom: 40 },
+    content: { padding: 16, paddingBottom: insets.bottom + 20 },
     card: {
         backgroundColor: colors.card, borderRadius: 16,
         padding: 20, marginBottom: 16,
@@ -389,17 +391,17 @@ const makeStyles = (colors: any) => StyleSheet.create({
     infoRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 },
     infoLabel: { fontSize: 13, color: colors.textSecondary, flex: 1 },
     infoValue: { fontSize: 13, color: colors.text, fontWeight: '600' },
-    receiptLabel: { fontSize: 12, color: '#22c55e', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 },
+    receiptLabel: { fontSize: 12, color: colors.success, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 },
     receiptNumber: { fontSize: 20, fontWeight: '800', color: colors.text, letterSpacing: 2, marginBottom: 16 },
     paidStamp: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-    paidStampText: { fontSize: 12, fontWeight: '700', color: '#22c55e', letterSpacing: 1 },
+    paidStampText: { fontSize: 12, fontWeight: '700', color: colors.success, letterSpacing: 1 },
     overdueBanner: {
         flexDirection: 'row', alignItems: 'flex-start', gap: 10,
-        backgroundColor: '#ef444415', padding: 16, borderRadius: 12,
-        borderWidth: 1, borderColor: '#ef444440',
+        padding: 16, borderRadius: 12,
+        borderWidth: 1,
         marginBottom: 20,
     },
-    overdueText: { flex: 1, fontSize: 14, color: '#ef4444', lineHeight: 20 },
+    overdueText: { flex: 1, fontSize: 14, lineHeight: 20 },
     input: {
         backgroundColor: colors.background, borderWidth: 1, borderColor: colors.border,
         borderRadius: 10, padding: 14, fontSize: 16, color: colors.text, marginTop: 6,
@@ -418,5 +420,5 @@ const makeStyles = (colors: any) => StyleSheet.create({
         justifyContent: 'center', gap: 8, paddingVertical: 14, borderRadius: 12,
         marginTop: 20,
     },
-    submitButtonText: { color: '#FFF', fontSize: 16, fontWeight: 'bold' },
+    submitButtonText: { color: colors.background, fontSize: 16, fontWeight: 'bold' },
 });

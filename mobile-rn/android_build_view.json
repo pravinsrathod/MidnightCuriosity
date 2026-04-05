@@ -1,0 +1,53 @@
+{
+  "id": "ccbab51a-4a75-431e-9e34-6a231a4ba504",
+  "status": "ERRORED",
+  "platform": "ANDROID",
+  "error": {
+    "errorCode": "UNKNOWN_ERROR",
+    "message": "Unknown error. See logs of the Bundle JavaScript build phase for more information."
+  },
+  "artifacts": {},
+  "fingerprint": {
+    "id": "019d5908-4609-7702-a7ae-be80f98a54f3",
+    "hash": "cf90dcff39bb47175b90b21fcd311eb5cd22fc98"
+  },
+  "initiatingActor": {
+    "id": "3b532dec-3e8b-476d-b575-e58b57abb4a2",
+    "displayName": "pravinsrathod"
+  },
+  "logFiles": [
+    "https://job-logs.eascdn.net/production/ccbab51a-4a75-431e-9e34-6a231a4ba504/1775315207990-d22f280c-6945-43c6-bcba-9b4a146e7024.txt?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=www-production%40exponentjs.iam.gserviceaccount.com%2F20260404%2Fauto%2Fstorage%2Fgoog4_request&X-Goog-Date=20260404T151947Z&X-Goog-Expires=900&X-Goog-SignedHeaders=host&X-Goog-Signature=17a3eef2582c75f8fbebad9da88760a68f08f8ce875e83726f70b23760728697ab346e67d38774a09876d553a472f8e7e4ae9d40aaf370781fdb1894dade2978f8633c19fe61187bc341da18cda46d664e762358faf6d8dfaeddf6392cc012abbeed5baad581637432bd9e3f97cf8f45872c52b7f760a4bb15508f82f8b872ff280fb369029668ed2b5e2c4c55bd630ef8747e4e2871f90f0c759071041eb2fe3f15bc65e1cb8b6f8550ebbdb2a9ffab1bca2683bc4b5c857248353d7db82ce38e0bc65533ba626927ef4db6493042b0020e491b31a92bfafc403a770ad295d70eb6f5839a269c6fdb8d471d17e0b629e1e938bffc81aa40444ecceba84a8857",
+    "https://job-logs.eascdn.net/production/ccbab51a-4a75-431e-9e34-6a231a4ba504/1775315210091-6acb9c7f-aa25-458b-8b7e-80c4bd6afcdf.txt?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=www-production%40exponentjs.iam.gserviceaccount.com%2F20260404%2Fauto%2Fstorage%2Fgoog4_request&X-Goog-Date=20260404T151947Z&X-Goog-Expires=900&X-Goog-SignedHeaders=host&X-Goog-Signature=a2c02dd76107353925aba217f599e372e100b3aab3c9e7cb1bf120fd15ec9accff58e83cd8ad5c9048e16fcee18ea4398b75dd16a0f03b208e461c1cdeb717d129fb8d7143a6774079e03a1416e0fe8a6376856310423d234a956fccf54dedf7c9e30e34d71e1f24ae8e83093fa5cee008c970e0a1d2a56a1be543cd630f778b588242ca97ab8f1f834ae276ac896cfc0503c364b3b974632c1c92937ae236d020e6fb50bcb7fcdad44204e90439cbbde70bcd8465c471a4f3369cf1ae0510f4a7c7667ec822f35ebfcda8966604a5e7c521217e88814927973c003738f339beebb43801e2547f8bfbd559f1577a91fdaf0bce2efa93ea81a6e1344de2cbb7ef",
+    "https://job-logs.eascdn.net/production/ccbab51a-4a75-431e-9e34-6a231a4ba504/1775315210321-3ebba85a-65ed-423c-83c2-4a82f807f158.txt?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=www-production%40exponentjs.iam.gserviceaccount.com%2F20260404%2Fauto%2Fstorage%2Fgoog4_request&X-Goog-Date=20260404T151947Z&X-Goog-Expires=900&X-Goog-SignedHeaders=host&X-Goog-Signature=508a6277dd8aaf570a5b277394e163e847d3d9221a488be8dbb06c860dab2fc131815d4d4817290385c889f550ac1a650f0bf20bc40795da78ce06f654903444f34ca29e5f6869744ce6fab97edbadbe4317359af2d9441c4a7e3b09b5c318e7e430005b4838d252ded16882b9dfc6282063c6b60e9686cb674f7bac005eb7714ce54a7e9145aa17e6be0c7fdc6dd5e7f10e0a0b5e5b6021fbc0de716597b9e71307c6b6a3540b09914162f5907ddd0137d5b314afe6a0e2dd568cbaed820d5b2a5f307456477fbe3f3ae73678db5785c33006e0567dd8e8b0f8dd1aff920463090eff9582331de161ab89518514b93d77f7e75ce6988715445ad75f8d3e33bb",
+    "https://job-logs.eascdn.net/production/ccbab51a-4a75-431e-9e34-6a231a4ba504/1775315210486-e47b4b74-aaa3-4cb4-93e9-de5e3785ec64.txt?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=www-production%40exponentjs.iam.gserviceaccount.com%2F20260404%2Fauto%2Fstorage%2Fgoog4_request&X-Goog-Date=20260404T151947Z&X-Goog-Expires=900&X-Goog-SignedHeaders=host&X-Goog-Signature=52a854cf5b35d4fc76ef3e8a3cd3258a04e43f136b8a6b77e6897580db2a878abef21286405ee9604e0700244b051692c7fe868de53824c446a32cca7ba1817868806f164f8dba31b4572a7a52641f2fe0796c413214432a32f7322b97299242c98599e21b9e6ca33653035d3adeb179ba6cc77c36b651bd3f1c4cbb272573327e94ebfc20896f05856b97f5ebb604a1bd71cbb555660423fc0fd6c4f6f2c23d40708511aa5664e9843d60399098be82ec1a6eb96da73ae331e74ee750388e7a5ab709205ed9e721c6dd5440c7614e96806d2b38d16ac39694d95983882fa065f9d721982c274d1b769676e6301465b640eb3379594f7461a490039c37e3758d"
+  ],
+  "project": {
+    "id": "18c80913-ee7e-4787-a2c9-d9617dc16854",
+    "name": "mobile-rn",
+    "slug": "mobile-rn",
+    "ownerAccount": {
+      "id": "629459f8-fa4f-41ce-8af7-2b3efaffb3c4",
+      "name": "pravinsrathod"
+    }
+  },
+  "channel": "production",
+  "distribution": "STORE",
+  "buildProfile": "production",
+  "sdkVersion": "54.0.0",
+  "appVersion": "4.0.0",
+  "appBuildVersion": "23",
+  "runtimeVersion": "4.0.0",
+  "gitCommitHash": "34019e141d9f5d32d90c53807b57b7f050ae53a1",
+  "gitCommitMessage": "live lectures and batches",
+  "priority": "HIGH",
+  "createdAt": "2026-04-04T15:06:47.611Z",
+  "updatedAt": "2026-04-04T15:09:37.099Z",
+  "completedAt": "2026-04-04T15:09:35.571Z",
+  "expirationDate": "2026-05-04T15:06:47.676Z",
+  "isForIosSimulator": false,
+  "metrics": {
+    "buildWaitTime": 273,
+    "buildQueueTime": 40237,
+    "buildDuration": 127062
+  }
+}

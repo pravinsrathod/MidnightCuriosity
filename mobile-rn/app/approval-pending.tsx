@@ -55,7 +55,7 @@ export default function ApprovalPendingScreen() {
         return () => {
             if (unsub) unsub();
         };
-    }, []);
+    }, [router]);
 
     const handleSignOut = async () => {
         await auth.signOut();

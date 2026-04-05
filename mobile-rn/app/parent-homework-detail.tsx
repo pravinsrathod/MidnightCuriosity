@@ -1,18 +1,25 @@
-import React, { useMemo } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, SafeAreaView, Image, Platform } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, SafeAreaView, Image, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
 import * as Linking from 'expo-linking';
+import { collection, query, where, getDocs, getDoc, doc } from 'firebase/firestore';
+import { auth, db } from '../services/firebaseConfig';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { ParentHeader } from '../components/ParentHeader';
+import { useTenant } from '../context/TenantContext';
+import React, { useMemo, useState, useEffect } from 'react';
 
 export default function ParentHomeworkDetailScreen() {
     const params = useLocalSearchParams();
     const router = useRouter();
     const { colors } = useTheme();
     const styles = useMemo(() => makeStyles(colors), [colors]);
+    const [parentName, setParentName] = useState('');
+    const [studentName, setStudentName] = useState('');
+    const { tenantLogo } = useTenant();
 
     const {
-        id,
         title,
         description,
         dueDate,
@@ -55,20 +62,52 @@ export default function ParentHomeworkDetailScreen() {
         try {
             const date = new Date(parseInt(submittedAt as string) * 1000);
             return date.toLocaleString();
-        } catch (e) {
+        } catch {
             return null;
         }
     }, [submittedAt]);
 
+    useEffect(() => {
+        const fetchIdentity = async () => {
+            try {
+                const user = auth.currentUser;
+                let uid = user?.uid;
+                if (!uid) uid = await AsyncStorage.getItem('user_uid') || undefined;
+                if (!uid) return;
+
+                const userDoc = await getDoc(doc(db, "users", uid));
+                if (userDoc.exists()) {
+                    const userData = userDoc.data();
+                    setParentName(userData.firstName || userData.displayName || 'Parent');
+                }
+
+                const selectedChildPhone = await AsyncStorage.getItem('selectedChildPhone');
+                if (selectedChildPhone) {
+                    const q = query(collection(db, "users"), where("phoneNumber", "==", selectedChildPhone));
+                    const snap = await getDocs(q);
+                    if (!snap.empty) {
+                        const child = snap.docs[0].data();
+                        setStudentName(child.firstName || child.displayName || 'Student');
+                    }
+                }
+            } catch (e) {
+                console.error(e);
+            }
+        };
+        fetchIdentity();
+    }, []);
+
     return (
         <SafeAreaView style={styles.container}>
-            <View style={styles.header}>
-                <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-                    <Ionicons name="arrow-back" size={24} color={colors.text} />
-                </TouchableOpacity>
-                <Text style={styles.title} numberOfLines={1}>Homework Details</Text>
-                <View style={{ width: 24 }} />
-            </View>
+            <ParentHeader 
+                parentName={parentName}
+                studentName={studentName}
+                onSelectStudent={() => router.push('/(tabs)/parent-home')}
+                onBack={() => router.back()}
+                tenantLogo={tenantLogo}
+                showActions={false}
+                showWelcome={false}
+            />
 
             <ScrollView contentContainerStyle={styles.content}>
                 {/* HEADLINES */}
@@ -89,7 +128,7 @@ export default function ParentHomeworkDetailScreen() {
                     <View style={[styles.card, { borderColor: colors.success }]}>
                         <View style={styles.sectionHeader}>
                             <Ionicons name="school-outline" size={20} color={colors.success} />
-                            <Text style={[styles.sectionTitle, { color: colors.success }]}>Teacher's Feedback</Text>
+                            <Text style={[styles.sectionTitle, { color: colors.primary }]}>Teacher&apos;s Comments</Text>
                         </View>
 
                         <Text style={styles.feedbackText}>
@@ -102,7 +141,7 @@ export default function ParentHomeworkDetailScreen() {
                                 onPress={() => Linking.openURL(teacherFileUrl as string)}
                             >
                                 <Ionicons name="attach" size={20} color={colors.text} />
-                                <Text style={{ color: colors.text, fontWeight: '600' }}>View Teacher's Correction</Text>
+                                <Text style={{ color: colors.text, fontWeight: '600' }}>View Teacher&apos;s Correction</Text>
                             </TouchableOpacity>
                         )}
                     </View>
@@ -112,7 +151,7 @@ export default function ParentHomeworkDetailScreen() {
                 <View style={styles.card}>
                     <View style={styles.sectionHeader}>
                         <Ionicons name="document-text-outline" size={20} color={colors.primary} />
-                        <Text style={styles.sectionTitle}>Child's Submission</Text>
+                        <Text style={styles.sectionTitle}>Child&apos;s Submission</Text>
                     </View>
 
                     {fileUrl && fileUrl !== 'null' ? (
@@ -132,8 +171,8 @@ export default function ParentHomeworkDetailScreen() {
                                     resizeMode="cover"
                                 />
                                 <View style={styles.overlay}>
-                                    <Ionicons name="expand-outline" size={24} color="#fff" />
-                                    <Text style={{ color: '#fff', fontWeight: '600', marginTop: 4 }}>Tap to View Full</Text>
+                                    <Ionicons name="expand-outline" size={24} color={colors.background} />
+                                    <Text style={{ color: colors.background, fontWeight: '600', marginTop: 4 }}>Tap to View Full</Text>
                                 </View>
                             </TouchableOpacity>
                         </View>
@@ -152,33 +191,8 @@ export default function ParentHomeworkDetailScreen() {
 }
 
 const makeStyles = (colors: any) => StyleSheet.create({
-    container: {
-        flex: 1,
-        backgroundColor: colors.background,
-    },
-    header: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingHorizontal: 20,
-        paddingVertical: 15,
-        backgroundColor: colors.background,
-        borderBottomWidth: 1,
-        borderBottomColor: colors.border,
-    },
-    backBtn: {
-        paddingRight: 10,
-    },
-    title: {
-        fontSize: 18,
-        fontWeight: 'bold',
-        color: colors.text,
-        flex: 1,
-        textAlign: 'center'
-    },
-    content: {
-        padding: 20,
-        paddingBottom: 40,
-    },
+    container: { flex: 1, backgroundColor: colors.background },
+    content: { paddingBottom: 40 },
     card: {
         backgroundColor: colors.card,
         borderRadius: 16,
