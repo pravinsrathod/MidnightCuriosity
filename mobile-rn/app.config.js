@@ -61,7 +61,7 @@ export default ({ config }) => {
                             "targetSdkVersion": 35,
                             "buildToolsVersion": "35.0.0",
                             "ndkVersion": "27.0.12077973",
-                            "kotlinVersion": "1.9.24",
+                            "kotlinVersion": "2.1.10",
                             "jdkVersion": 17,
                             "packagingOptions": {
                                 "jniLibs": {
