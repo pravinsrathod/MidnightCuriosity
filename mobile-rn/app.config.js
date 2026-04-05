@@ -13,7 +13,7 @@ export default ({ config }) => {
             orientation: "portrait",
             icon: process.env.APP_ICON || `${brandingPath}/icon.png`,
             userInterfaceStyle: "light",
-            newArchEnabled: false,
+            newArchEnabled: true,
             splash: {
                 image: process.env.APP_SPLASH || `${brandingPath}/splash.png`,
                 resizeMode: "contain",
@@ -36,8 +36,8 @@ export default ({ config }) => {
             },
             android: {
                 versionCode: 400,
-                targetSdkVersion: 35,
-                compileSdkVersion: 35,
+                targetSdkVersion: 36,
+                compileSdkVersion: 36,
                 adaptiveIcon: {
                     foregroundImage: process.env.APP_ADAPTIVE_ICON || `${brandingPath}/adaptive-icon.png`,
                     backgroundColor: "#ffffff"
@@ -57,11 +57,11 @@ export default ({ config }) => {
                     "expo-build-properties",
                     {
                         "android": {
-                            "compileSdkVersion": 35,
-                            "targetSdkVersion": 35,
-                            "buildToolsVersion": "35.0.0",
+                            "compileSdkVersion": 36,
+                            "targetSdkVersion": 36,
+                            "buildToolsVersion": "36.0.0",
                             "ndkVersion": "27.0.12077973",
-                            "kotlinVersion": "2.1.10",
+                            "kotlinVersion": "2.1.20",
                             "jdkVersion": 17,
                             "packagingOptions": {
                                 "jniLibs": {
