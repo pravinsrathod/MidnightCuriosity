@@ -9,7 +9,7 @@ export default ({ config }) => {
             name: process.env.APP_NAME || "EduPro",
             slug: "mobile-rn",
             scheme: "com.prowin.edupro",
-            version: "4.1.0",
+            version: "4.1.1",
             orientation: "portrait",
             icon: process.env.APP_ICON || `${brandingPath}/icon.png`,
             userInterfaceStyle: "light",
@@ -22,7 +22,7 @@ export default ({ config }) => {
             ios: {
                 supportsTablet: true,
                 bundleIdentifier: "com.prowin.edupro",
-                buildNumber: "400",
+                buildNumber: "401",
                 googleServicesFile: process.env.EXPO_PUBLIC_APP_ENV === 'production'
                     ? './GoogleService-Info.production.plist'
                     : './GoogleService-Info.development.plist',
@@ -35,7 +35,7 @@ export default ({ config }) => {
                 }
             },
             android: {
-                versionCode: 400,
+                versionCode: 401,
                 targetSdkVersion: 36,
                 compileSdkVersion: 36,
                 adaptiveIcon: {

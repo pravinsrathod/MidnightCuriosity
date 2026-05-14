@@ -12,6 +12,8 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Application from 'expo-application';
 import * as Device from 'expo-device';
 import { collection, query, where, getDocs, doc, getDoc, updateDoc, setDoc, limit, addDoc, serverTimestamp } from 'firebase/firestore';
+import { httpsCallable } from 'firebase/functions';
+import { functions } from '../services/firebaseConfig';
 import * as LocalAuthentication from 'expo-local-authentication';
 
 export default function AuthScreen() {
@@ -621,26 +623,12 @@ export default function AuthScreen() {
                     return;
                 }
                 
-                // Determine the correct tenant information from all available sources
-                const finalTenantId = resolvedTenantId || (tenantId !== 'default' ? tenantId : '');
-                const finalInstituteName = instituteName || (tenantName !== 'EduPro' ? tenantName : '');
-
-                if (!finalTenantId) {
-                    Alert.alert("Error", "Could not identify your Institute. Please go back and select it again.");
-                    setAuthStage('TENANT');
-                    setIsForgot(false);
-                    setLoading(false);
-                    return;
-                }
-
-                await addDoc(collection(db, "password_reset_requests"), {
-                    studentName: name || "Unknown Student",
-                    phoneNumber: identifier,
-                    tenantId: finalTenantId,
-                    instituteName: finalInstituteName,
-                    status: 'PENDING',
-                    createdAt: serverTimestamp(),
-                    type: isParent ? 'PARENT' : 'STUDENT'
+                const requestPasswordReset = httpsCallable(functions, 'requestPasswordReset');
+                await requestPasswordReset({ 
+                    phoneNumber: identifier, 
+                    studentName: name, 
+                    type: isParent ? 'PARENT' : 'STUDENT',
+                    tenantId: resolvedTenantId
                 });
                 
                 Alert.alert(
