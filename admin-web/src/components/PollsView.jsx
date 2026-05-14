@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useState } from 'react';
+import Pagination from './common/Pagination';
 
 const PollsView = ({ 
   polls, 
@@ -11,6 +12,13 @@ const PollsView = ({
   grades, 
   batches 
 }) => {
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 10;
+  
+  const displayedPolls = polls.slice(
+    (currentPage - 1) * pageSize,
+    currentPage * pageSize
+  );
   return (
     <div className="animate-fade-in" style={{ maxWidth: '900px', margin: '0 auto' }}>
       <div className="glass-panel" style={{ marginBottom: '40px', padding: '32px' }}>
@@ -89,7 +97,7 @@ const PollsView = ({
         <div className="card" style={{ textAlign: 'center', padding: '40px', color: 'var(--text-secondary)' }}>No polls have been recorded yet.</div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-          {polls.map(poll => (
+          {displayedPolls.map(poll => (
             <div key={poll.id} className="glass-panel animate-scale-up" style={{ padding: '24px', borderLeft: poll.active ? '4px solid var(--success)' : '1px solid var(--border)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                 <div style={{ flex: 1 }}>
@@ -138,6 +146,13 @@ const PollsView = ({
               </div>
             </div>
           ))}
+          
+          <Pagination 
+            currentPage={currentPage}
+            totalItems={polls.length}
+            pageSize={pageSize}
+            onPageChange={setCurrentPage}
+          />
         </div>
       )}
     </div>

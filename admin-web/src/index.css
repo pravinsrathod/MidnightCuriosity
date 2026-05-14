@@ -362,6 +362,25 @@ body {
   transform: none;
 }
 
+.nav-item.locked {
+  cursor: not-allowed !important;
+  opacity: 0.5 !important;
+  filter: grayscale(0.8);
+  position: relative;
+  pointer-events: auto; /* Allow the button to catch Hover for tooltip or cursor change if needed, but we handle click in JS */
+}
+
+.nav-item.locked:hover {
+  background: transparent !important;
+  transform: none !important;
+  color: var(--text-secondary) !important;
+  box-shadow: none !important;
+}
+
+.nav-item.locked span {
+  text-decoration: none;
+}
+
 /* Headers */
 h1,
 h2,
@@ -675,6 +694,7 @@ input[type="file"]::file-selector-button:hover {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
   gap: 24px;
+  align-items: start;
 }
 
 @media (max-width: 1024px) {
@@ -728,6 +748,34 @@ tr:hover td {
   color: var(--text-primary);
 }
 
+.homework-card {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  position: relative;
+  overflow: hidden;
+}
+
+.homework-card:hover {
+  transform: translateY(-5px);
+  border-color: rgba(255, 255, 255, 0.15);
+  box-shadow: 0 15px 35px -12px rgba(0, 0, 0, 0.5);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.homework-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  background: var(--accent-gradient);
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+
+.homework-card:hover::before {
+  opacity: 1;
+}
+
 /* Responsive */
 @media (max-width: 1024px) {
   .sidebar {
@@ -768,33 +816,35 @@ tr:hover td {
 }
 
 /* Homework Calendar */
+/* Homework Calendar Refinement */
 .homework-calendar {
   width: 100%;
-  max-width: 400px;
   background: var(--bg-glass);
   border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  padding: 20px;
+  border-radius: var(--radius-lg);
+  padding: 24px;
   user-select: none;
+  box-shadow: var(--shadow-lg);
 }
 
 .calendar-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 20px;
+  margin-bottom: 24px;
 }
 
 .calendar-header h4 {
   margin: 0;
-  font-size: 1.1rem;
+  font-size: 1.25rem;
+  font-weight: 700;
   color: var(--text-primary);
 }
 
 .calendar-grid {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
-  gap: 8px;
+  gap: 10px;
   text-align: center;
 }
 
@@ -812,10 +862,10 @@ tr:hover td {
   flex-direction: column;
   justify-content: center;
   align-items: center;
-  border-radius: 10px;
+  border-radius: 12px;
   cursor: pointer;
   transition: all 0.2s ease;
-  font-size: 0.9rem;
+  font-size: 0.95rem;
   font-weight: 500;
   position: relative;
   background: rgba(255, 255, 255, 0.02);
@@ -825,7 +875,7 @@ tr:hover td {
 .calendar-day:hover {
   background: rgba(255, 255, 255, 0.08);
   border-color: var(--border);
-  transform: translateY(-1px);
+  transform: translateY(-2px);
 }
 
 .calendar-day.empty {
@@ -838,21 +888,22 @@ tr:hover td {
   background: var(--accent-gradient);
   color: white;
   font-weight: 700;
-  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+  box-shadow: 0 8px 20px rgba(59, 130, 246, 0.4);
 }
 
 .calendar-day.today {
   border-color: var(--accent);
   color: var(--accent-light);
+  box-shadow: inset 0 0 0 1px var(--accent);
 }
 
 .has-homework-dot {
-  width: 4px;
-  height: 4px;
+  width: 5px;
+  height: 5px;
   background: var(--accent-light);
   border-radius: 50%;
   position: absolute;
-  bottom: 6px;
+  bottom: 8px;
 }
 
 .calendar-day.selected .has-homework-dot {
@@ -860,12 +911,12 @@ tr:hover td {
 }
 
 .calendar-nav-btn {
-  width: 32px;
-  height: 32px;
+  width: 36px;
+  height: 36px;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 8px;
+  border-radius: 10px;
   background: var(--bg-tertiary);
   border: 1px solid var(--border);
   color: var(--text-primary);
@@ -877,19 +928,303 @@ tr:hover td {
   background: var(--bg-glass-hover);
   border-color: var(--accent);
   color: var(--accent-light);
+  transform: scale(1.05);
 }
 
 /* Specific Assess View overrides */
 .homework-review-layout {
   display: grid;
-  grid-template-columns: 400px 1fr;
+  grid-template-columns: minmax(320px, 400px) 1fr;
   gap: 32px;
   align-items: start;
 }
 
-@media (max-width: 1200px) {
+.assess-sidebar-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  position: sticky;
+  top: 24px;
+  max-height: calc(100vh - 140px);
+  overflow-y: auto;
+  padding-right: 8px;
+}
+
+/* Custom Scrollbar for Glass Containers */
+.assess-sidebar-inner::-webkit-scrollbar,
+.student-list-container div::-webkit-scrollbar {
+  width: 6px;
+}
+
+.assess-sidebar-inner::-webkit-scrollbar-track,
+.student-list-container div::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 10px;
+}
+
+.assess-sidebar-inner::-webkit-scrollbar-thumb,
+.student-list-container div::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+}
+
+.assess-sidebar-inner::-webkit-scrollbar-thumb:hover,
+.student-list-container div::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+@media (max-width: 1280px) {
+  .homework-review-layout {
+    grid-template-columns: 350px 1fr;
+    gap: 24px;
+  }
+}
+
+@media (max-width: 1100px) {
   .homework-review-layout {
     grid-template-columns: 1fr;
-    justify-items: center;
+    gap: 32px;
   }
+  
+  .assess-sidebar-inner {
+    position: relative !important;
+    top: 0 !important;
+    max-height: none;
+    max-width: 500px;
+    margin: 0 auto;
+    width: 100%;
+    overflow-y: visible;
+  }
+}
+
+/* Bulk Selection & Search Styles */
+.student-search-wrapper {
+  position: relative;
+  margin-bottom: 12px;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.student-search-input {
+  flex: 1;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 12px 8px 36px;
+  font-size: 0.85rem;
+  color: var(--text-primary);
+  transition: all 0.2s;
+}
+
+.student-search-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.search-icon-inner {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-muted);
+  pointer-events: none;
+}
+
+.bulk-action-bar {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(15, 23, 42, 0.8);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 12px 24px;
+  border-radius: 100px;
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+  z-index: 1000;
+  animation: slideUp 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes slideUp {
+  from { transform: translate(-50%, 100px); opacity: 0; }
+  to { transform: translate(-50%, 0); opacity: 1; }
+}
+
+.bulk-count {
+  font-weight: 600;
+  color: var(--text-primary);
+  padding-right: 24px;
+  border-right: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.bulk-btns {
+  display: flex;
+  gap: 12px;
+}
+
+/* Custom Checkbox */
+.custom-checkbox {
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+  background: transparent;
+}
+
+.custom-checkbox.checked {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.custom-checkbox:hover {
+  border-color: var(--accent-light);
+}
+
+.student-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  margin-bottom: 8px;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  animation: fadeIn 0.3s ease-out;
+}
+
+.student-row:hover {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(59, 130, 246, 0.3);
+  transform: translateX(4px);
+}
+
+/* Enhanced Homework Card */
+.homework-card {
+  display: flex;
+  flex-direction: column;
+  height: auto;
+  padding: 28px;
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.3s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.homework-card:hover {
+  transform: translateY(-6px);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+}
+
+.homework-card::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 100px;
+  height: 100px;
+  background: radial-gradient(circle at 100% 0%, rgba(59, 130, 246, 0.1), transparent 70%);
+  pointer-events: none;
+}
+
+.homework-card .card-title {
+  font-size: 1.35rem;
+  font-weight: 800;
+  margin-bottom: 8px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Progress Bar */
+.progress-container {
+  margin-top: 20px;
+}
+
+.progress-bar {
+  height: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.progress-fill {
+  height: 100%;
+  background: var(--accent-gradient);
+  border-radius: 4px;
+  transition: width 1s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 0 10px rgba(59, 130, 246, 0.5);
+}
+
+.progress-stats {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.stat-group {
+  display: flex;
+  gap: 16px;
+}
+
+.stat-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.stat-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+
+/* Expansion areas */
+.student-list-container {
+  margin-top: 24px;
+  padding-top: 24px;
+  border-top: 1px solid var(--border);
+  animation: fadeIn 0.3s ease-out;
+}
+
+/* Utility animations */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+
+/* --- Transcription Workaround Styles --- */
+@keyframes micPulse {
+  0% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
+  }
+  70% {
+    transform: scale(1.2);
+    box-shadow: 0 0 0 10px rgba(239, 68, 68, 0);
+  }
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
+  }
+}
+
+.pulse-mic {
+  animation: micPulse 1.5s ease-out infinite;
 }

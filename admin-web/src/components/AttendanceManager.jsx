@@ -2,12 +2,15 @@ import React, { useState, useEffect } from 'react';
 import { db } from '../firebase';
 import { doc, getDoc, setDoc, serverTimestamp, collection, query, where, getDocs } from 'firebase/firestore';
 import { sendPushNotification } from '../notificationService';
+import Pagination from './common/Pagination';
 
 const AttendanceManager = ({ students = [], tenantId, onAlert = () => {}, onConfirm = () => {}, grades: propGrades, filterGrade, filterBatch, batches = {} }) => {
     const [selectedDate, setSelectedDate] = useState(new Date(new Date().getTime() - (new Date().getTimezoneOffset() * 60000)).toISOString().split('T')[0]);
     const [attendanceMap, setAttendanceMap] = useState({});
     const [loading, setLoading] = useState(false);
     const [saving, setSaving] = useState(false);
+    const [currentPage, setCurrentPage] = useState(1);
+    const pageSize = 20;
 
     const grades = (propGrades && propGrades.length > 0) ? propGrades : Array.from({ length: 12 }, (_, i) => "Grade " + (i + 1));
 
@@ -23,6 +26,16 @@ const AttendanceManager = ({ students = [], tenantId, onAlert = () => {}, onConf
             fetchAttendance();
         }
     }, [tenantId, selectedDate]);
+
+    // Reset page when filters change
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [filterGrade, filterBatch, selectedDate]);
+
+    const displayedStudents = activeStudents.slice(
+        (currentPage - 1) * pageSize,
+        currentPage * pageSize
+    );
 
     const fetchAttendance = async () => {
         setLoading(true);
@@ -189,7 +202,7 @@ const AttendanceManager = ({ students = [], tenantId, onAlert = () => {}, onConf
                                 </tr>
                             </thead>
                             <tbody>
-                                {activeStudents.map(student => {
+                                {displayedStudents.map(student => {
                                     const status = attendanceMap[student.id] || 'UNMARKED';
                                     return (
                                         <tr key={student.id} style={{ borderBottom: '1px solid var(--border)', transition: 'background 0.2s' }}>
@@ -216,6 +229,18 @@ const AttendanceManager = ({ students = [], tenantId, onAlert = () => {}, onConf
                             </tbody>
                         </table>
                     </div>
+                    
+                    {activeStudents.length > pageSize && (
+                        <div style={{ padding: '0 24px 24px' }}>
+                            <Pagination 
+                                currentPage={currentPage}
+                                totalItems={activeStudents.length}
+                                pageSize={pageSize}
+                                onPageChange={setCurrentPage}
+                            />
+                        </div>
+                    )}
+
                     <div style={{ padding: '24px', background: 'rgba(255,255,255,0.02)', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'flex-end' }}>
                         <button className="btn btn-primary" onClick={saveAttendance} disabled={saving || isLocked()} style={{ padding: '12px 32px', fontSize: '1rem', minWidth: '220px' }}>
                             {saving ? <span className="loader" style={{ width: '16px', height: '16px' }}></span> : (isLocked() ? 'Log Locked 🔒' : '💾 Save Changes')}

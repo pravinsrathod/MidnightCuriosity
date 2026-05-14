@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useState } from 'react';
+import Pagination from './common/Pagination';
 
 const ExamsView = ({ 
   exams, 
@@ -18,6 +19,13 @@ const ExamsView = ({
   deleteExam, 
   customAlert 
 }) => {
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 10;
+  
+  const displayedExams = exams.slice(
+    (currentPage - 1) * pageSize,
+    currentPage * pageSize
+  );
   return (
     <div className="animate-fade-in" style={{ maxWidth: '1000px', margin: '0 auto' }}>
       <div className="glass-panel" style={{ marginBottom: '40px', padding: '32px' }}>
@@ -191,7 +199,9 @@ const ExamsView = ({
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 400px), 1fr))', gap: '20px' }}>
         {exams.length === 0 ? (
           <div className="card" style={{ gridColumn: '1/-1', textAlign: 'center', padding: '40px', color: 'var(--text-secondary)' }}>No assessments currently scheduled.</div>
-        ) : exams.map(exam => (
+        ) : (
+          <>
+            {displayedExams.map(exam => (
           <div key={exam.id} className="glass-panel animate-scale-up" style={{ padding: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', transition: 'transform 0.2s ease' }}>
             <div style={{ flex: 1 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
@@ -209,6 +219,19 @@ const ExamsView = ({
             </button>
           </div>
         ))}
+          
+        {exams.length > 0 && (
+          <div style={{ gridColumn: '1/-1' }}>
+            <Pagination 
+              currentPage={currentPage}
+              totalItems={exams.length}
+              pageSize={pageSize}
+              onPageChange={setCurrentPage}
+            />
+          </div>
+        )}
+      </>
+        )}
       </div>
     </div>
   );

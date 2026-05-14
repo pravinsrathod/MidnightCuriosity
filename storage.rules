@@ -1,26 +1,42 @@
 rules_version = "2";
 service firebase.storage {
   match /b/{bucket}/o {
+
+    // Helper to check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
     
     // Avatars: Public Read, Owner Write
     match /avatars/{userId} {
       allow read: if true;
-      allow write: if request.auth != null && request.auth.uid == userId;
+      allow write: if isAuthenticated() && request.auth.uid == userId;
     }
 
-    // Student Homework Submissions
-    // Structure: homework/{tenantId}/{homeworkId}/{uid}_{timestamp}.jpg
+    // Student Homework Submissions/Attachments
     match /homework/{tenantId}/{homeworkId}/{filename} {
-      allow read: if request.auth != null;
+      allow read: if isAuthenticated();
       // Ensure the filename starts with the uploader's UID to prevent overwriting others
-      allow write: if request.auth != null && filename.matches(request.auth.uid + '_.*');
+      allow write: if isAuthenticated() && filename.matches(request.auth.uid + '_.*');
+    }
+
+    // Admin/Teacher Homework Attachments (Templates)
+    match /homework_attachments/{tenantId}/{filename} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated(); // Should be restricted to admin in production
+    }
+
+    // Tenant-Specific Receipts
+    match /tenants/{tenantId}/receipts/{id}/{filename} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated();
     }
 
     // General Fallback
-    // Covers: homework_feedback (Teachers), content (Lectures), etc.
-    // Note: To secure 'homework_feedback' strictly to Admins, Custom Claims would be required.
+    // Allow read/write to other paths only for Admins with custom claims
     match /{allPaths=**} {
-      allow read, write: if request.auth != null;
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && (request.auth.token.admin == true);
     }
   }
 }

@@ -1,8 +1,29 @@
 import React, { useState, useEffect } from 'react';
+import Pagination from './common/Pagination';
 import { db, storage } from '../firebase'; // Ensure storage is imported
 import { doc, getDoc, setDoc, updateDoc, arrayUnion, serverTimestamp, collection, query, where, onSnapshot, addDoc, orderBy, getDocs } from 'firebase/firestore';
 import { sendPushNotification } from '../notificationService';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { 
+    Calendar as CalendarIcon, 
+    ChevronLeft, 
+    ChevronRight, 
+    FileText, 
+    Paperclip, 
+    CheckCircle2, 
+    Clock, 
+    AlertCircle, 
+    User,
+    ChevronDown,
+    ChevronUp,
+    BarChart3,
+    Search,
+    Filter,
+    Plus,
+    Check
+} from 'lucide-react';
+import { writeBatch } from 'firebase/firestore';
+import ConfirmModal from './ConfirmModal';
 
 
 const HomeworkCalendar = ({ selectedDate, onDateSelect, homeworkList }) => {
@@ -58,11 +79,11 @@ const HomeworkCalendar = ({ selectedDate, onDateSelect, homeworkList }) => {
     };
 
     return (
-        <div className="homework-calendar animate-fade-in">
+        <div className="homework-calendar animate-fade-in shadow-glass">
             <div className="calendar-header">
-                <button className="calendar-nav-btn" onClick={prevMonth}>←</button>
+                <button className="calendar-nav-btn" onClick={prevMonth}><ChevronLeft size={20} /></button>
                 <h4>{monthNames[month]} {year}</h4>
-                <button className="calendar-nav-btn" onClick={nextMonth}>→</button>
+                <button className="calendar-nav-btn" onClick={nextMonth}><ChevronRight size={20} /></button>
             </div>
             <div className="calendar-grid">
                 {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map(d => (
@@ -86,16 +107,44 @@ const HomeworkManager = ({ students = [], tenantId, onAlert = () => {}, grades: 
     const [homeworkFile, setHomeworkFile] = useState(null);
     const [creating, setCreating] = useState(false);
 
+    // Expansion State
+    const [expandedHomework, setExpandedHomework] = useState(null);
+    const [selectedStudents, setSelectedStudents] = useState([]); // Array of student IDs
+    const [studentSearch, setStudentSearch] = useState("");
+    const [studentListPage, setStudentListPage] = useState(1);
+    const [hwPage, setHwPage] = useState(1);
+    const STUDENT_PAGE_SIZE = 10;
+    const HW_PAGE_SIZE = 10;
+
     // Review State
     const [reviewingSubmission, setReviewingSubmission] = useState(null); // { homeworkId, studentId, ...data }
     const [reviewStatus, setReviewStatus] = useState("CHECKED");
     const [teacherComment, setTeacherComment] = useState("");
     const [teacherFile, setTeacherFile] = useState(null);
 
+    // Bulk Confirmation Modal State
+    const [bulkConfirm, setBulkConfirm] = useState({ isOpen: false, status: null });
+
     // Config options
     const grades = (propGrades && propGrades.length > 0) ? propGrades : Array.from({ length: 12 }, (_, i) => "Grade " + (i + 1));
     const subjects = (propSubjects && propSubjects.length > 0) ? propSubjects : ["Maths", "Physics", "Chemistry", "Biology"];
     const topics = (propTopics && propTopics.length > 0) ? propTopics : ["General"];
+
+    // Reset pages on filter changes
+    useEffect(() => {
+        setHwPage(1);
+        setExpandedHomework(null);
+    }, [selectedDate, filterGrade, filterBatch]);
+
+    useEffect(() => {
+        setStudentListPage(1);
+    }, [studentSearch]);
+
+    useEffect(() => {
+        setStudentListPage(1);
+        setStudentSearch("");
+        setSelectedStudents([]); // Reset selection when switching homework cards
+    }, [expandedHomework]);
 
     useEffect(() => {
         if (!tenantId) return;
@@ -153,6 +202,22 @@ const HomeworkManager = ({ students = [], tenantId, onAlert = () => {}, grades: 
 
         return () => unsubSub();
     }, [tenantId, homeworkList]);
+
+    // Reset selection/search on expansion change
+    useEffect(() => {
+        setSelectedStudents([]);
+        setStudentSearch("");
+        setStudentListPage(1);
+    }, [expandedHomework]);
+
+    useEffect(() => {
+        setStudentListPage(1);
+    }, [studentSearch]);
+
+    // Reset expansion if filters change
+    useEffect(() => {
+        setExpandedHomework(null);
+    }, [selectedDate, filterGrade, filterBatch]);
 
 
     const handleCreateHomework = async (e) => {
@@ -330,6 +395,50 @@ const HomeworkManager = ({ students = [], tenantId, onAlert = () => {}, grades: 
         }
     };
 
+    const handleBulkReview = async (status) => {
+        if (selectedStudents.length === 0 || !expandedHomework) return;
+
+        setLoading(true);
+        try {
+            const batch = writeBatch(db);
+            const homeworkId = expandedHomework;
+
+            for (const studentId of selectedStudents) {
+                const sub = submissions[homeworkId]?.[studentId];
+                const student = students.find(s => s.id === studentId);
+
+                if (sub) {
+                    batch.update(doc(db, "submissions", sub.id), {
+                        status: status,
+                        checkedAt: serverTimestamp(),
+                        teacherComment: `Bulk verified on ${new Date().toLocaleDateString()}`
+                    });
+                } else {
+                    const subRef = doc(collection(db, "submissions"));
+                    batch.set(subRef, {
+                        homeworkId,
+                        studentId,
+                        tenantId,
+                        studentName: student?.name || "Unknown",
+                        status: status,
+                        teacherComment: `Bulk marked as ${status} on ${new Date().toLocaleDateString()}`,
+                        checkedAt: serverTimestamp(),
+                        submittedAt: null
+                    });
+                }
+            }
+
+            await batch.commit();
+            onAlert(`Successfully updated ${selectedStudents.length} students! ✅`, "Success");
+            setSelectedStudents([]);
+        } catch (error) {
+            console.error(error);
+            onAlert("Bulk update failed: " + error.message, "Error");
+        } finally {
+            setLoading(false);
+        }
+    };
+
     const [activeSubTab, setActiveSubTab] = useState('create');
 
     // Helper to filtered homework by date
@@ -339,19 +448,29 @@ const HomeworkManager = ({ students = [], tenantId, onAlert = () => {}, grades: 
         (!filterBatch || filterBatch === 'All' || hw.batch === filterBatch)
     );
 
+    const paginatedHomework = filteredHomework.slice((hwPage - 1) * HW_PAGE_SIZE, hwPage * HW_PAGE_SIZE);
+
     return (
         <div className="animate-fade-in" style={{ maxWidth: '1200px', margin: '0 auto' }}>
             {/* SUB-MENU TABS */}
             <div className="glass-panel" style={{ display: 'flex', gap: '8px', padding: '8px', marginBottom: '32px', borderRadius: '16px' }}>
                 <button
-                    onClick={() => { setActiveSubTab('create'); setSelectedDate(new Date(new Date().getTime() - (new Date().getTimezoneOffset() * 60000)).toISOString().split('T')[0]); }}
+                    onClick={() => { 
+                        setActiveSubTab('create'); 
+                        setExpandedHomework(null);
+                        setSelectedDate(new Date(new Date().getTime() - (new Date().getTimezoneOffset() * 60000)).toISOString().split('T')[0]); 
+                    }}
                     className={`btn ${activeSubTab === 'create' ? 'btn-primary' : 'btn-ghost'}`}
                     style={{ flex: 1, borderRadius: '12px' }}
                 >
                     Assign Homework
                 </button>
                 <button
-                    onClick={() => { setActiveSubTab('assess'); setSelectedDate(new Date(new Date().getTime() - (new Date().getTimezoneOffset() * 60000)).toISOString().split('T')[0]); }}
+                    onClick={() => { 
+                        setActiveSubTab('assess'); 
+                        setExpandedHomework(null);
+                        setSelectedDate(new Date(new Date().getTime() - (new Date().getTimezoneOffset() * 60000)).toISOString().split('T')[0]); 
+                    }}
                     className={`btn ${activeSubTab === 'assess' ? 'btn-primary' : 'btn-ghost'}`}
                     style={{ flex: 1, borderRadius: '12px' }}
                 >
@@ -484,7 +603,7 @@ const HomeworkManager = ({ students = [], tenantId, onAlert = () => {}, grades: 
                 {activeSubTab === 'assess' && (
                     <div className="homework-review-layout">
                         {/* Sidebar: Calendar & Instructions */}
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', position: 'sticky', top: '20px' }}>
+                        <div className="assess-sidebar-inner">
                             <HomeworkCalendar 
                                 selectedDate={selectedDate} 
                                 onDateSelect={setSelectedDate} 
@@ -513,89 +632,230 @@ const HomeworkManager = ({ students = [], tenantId, onAlert = () => {}, grades: 
                             {filteredHomework.length === 0 ? (
                                 <div className="glass-panel" style={{ padding: '80px 20px', textAlign: 'center', color: 'var(--text-secondary)' }}>
                                     <div style={{ fontSize: '3rem', marginBottom: '16px', opacity: 0.5 }}>📭</div>
-                                    <h3>No Assignments Found</h3>
+                                    <h3 style={{ color: 'var(--text-primary)' }}>No Assignments Found</h3>
                                     <p>There were no homework tasks due on this date.</p>
                                 </div>
                             ) : (
-                                <div className="grid-2">
-                                    {filteredHomework.map(hw => (
-                                        <div key={hw.id} className="glass-panel animate-fade-in" style={{ display: 'flex', flexDirection: 'column', height: '100%', padding: '24px' }}>
-                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px' }}>
-                                                <div style={{ flex: 1, minWidth: 0 }}>
-                                                    <h4 style={{ margin: 0, fontSize: '1.25rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{hw.title}</h4>
-                                                    <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '4px', display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
-                                                        <span className="badge" style={{ background: 'var(--bg-tertiary)' }}>{hw.grade}</span>
-                                                        {(hw.batch && hw.batch !== 'General Batch') && <span className="badge" style={{ background: 'var(--bg-tertiary)' }}>{hw.batch}</span>}
-                                                        <span>• {hw.subject}</span>
+                                <>
+                                    <div className="grid-auto">
+                                        {paginatedHomework.map(hw => {
+                                        const totalStudents = students.filter(s => s.grade === hw.grade && s.status === 'ACTIVE' && (s.role === 'student' || s.role === 'STUDENT') && ((hw.batch === 'All' || !hw.batch) || (s.batch || 'General Batch') === hw.batch));
+                                        const submittedCount = Object.keys(submissions[hw.id] || {}).length;
+                                        const checkedCount = Object.values(submissions[hw.id] || {}).filter(s => s.status === 'CHECKED').length;
+                                        const progressPercent = totalStudents.length > 0 ? (submittedCount / totalStudents.length) * 100 : 0;
+                                        const isExpanded = expandedHomework === hw.id;
+
+                                        return (
+                                            <div key={hw.id} className="glass-panel homework-card animate-fade-in">
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px' }}>
+                                                    <div style={{ flex: 1, minWidth: 0 }}>
+                                                        <h4 className="card-title">{hw.title}</h4>
+                                                        <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '4px', display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                                                            <span className="badge badge-primary" style={{ fontSize: '0.7rem' }}>{hw.grade}</span>
+                                                            {(hw.batch && hw.batch !== 'General Batch') && <span className="badge badge-primary" style={{ fontSize: '0.7rem' }}>{hw.batch}</span>}
+                                                            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                                                <FileText size={14} />
+                                                                <span>{hw.subject}</span>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    <div style={{ display: 'flex', gap: '8px' }}>
+                                                        {hw.attachmentUrl && (
+                                                            <a href={hw.attachmentUrl} target="_blank" rel="noreferrer" className="btn btn-ghost" style={{ padding: '8px', borderRadius: '8px' }} title="View Resource">
+                                                                <Paperclip size={18} />
+                                                            </a>
+                                                        )}
                                                     </div>
                                                 </div>
-                                                {hw.attachmentUrl && (
-                                                    <a href={hw.attachmentUrl} target="_blank" rel="noreferrer" className="btn btn-ghost" style={{ padding: '8px', borderRadius: '8px' }} title="View Resource">
-                                                        📎
-                                                    </a>
-                                                )}
-                                            </div>
 
-                                            <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', marginBottom: '24px', flex: 1, lineClamp: 3, display: '-webkit-box', WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{hw.description}</p>
+                                                <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', marginBottom: '20px', flex: isExpanded ? '0 0 auto' : '1', display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: isExpanded ? 'none' : '2', overflow: 'hidden' }}>
+                                                    {hw.description}
+                                                </p>
 
-                                            {/* Submission Progress */}
-                                            <div style={{ background: 'rgba(0,0,0,0.2)', padding: '16px', borderRadius: '12px' }}>
-                                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: '12px' }}>
-                                                    <span>Submissions</span>
-                                                    <span style={{ color: 'var(--accent)' }}>
-                                                        {Object.keys(submissions[hw.id] || {}).length} / {students.filter(s => s.grade === hw.grade && s.status === 'ACTIVE' && ((hw.batch === 'All' || !hw.batch) || (s.batch || 'General Batch') === hw.batch)).length}
-                                                    </span>
+                                                {/* Submission Progress Bar */}
+                                                <div className="progress-container">
+                                                    <div className="progress-stats">
+                                                        <span>Submissions</span>
+                                                        <span>{submittedCount} / {totalStudents.length}</span>
+                                                    </div>
+                                                    <div className="progress-bar">
+                                                        <div className="progress-fill" style={{ width: `${progressPercent}%` }}></div>
+                                                    </div>
+                                                    <div className="progress-stats" style={{ marginTop: '4px', fontSize: '0.75rem' }}>
+                                                        <div className="stat-group">
+                                                            <div className="stat-item">
+                                                                <div className="stat-dot" style={{ background: 'var(--success)' }}></div>
+                                                                <span>{checkedCount} Verified</span>
+                                                            </div>
+                                                            <div className="stat-item">
+                                                                <div className="stat-dot" style={{ background: 'var(--warning)' }}></div>
+                                                                <span>{submittedCount - checkedCount} Pending</span>
+                                                            </div>
+                                                        </div>
+                                                        <button 
+                                                            className="btn btn-ghost" 
+                                                            style={{ padding: '4px 12px', fontSize: '0.75rem', height: 'auto', border: 'none', background: 'rgba(59, 130, 246, 0.1)', color: 'var(--accent-light)' }}
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                setExpandedHomework(isExpanded ? null : hw.id);
+                                                            }}
+                                                        >
+                                                            {isExpanded ? <><ChevronUp size={14} /> Close</> : <><ChevronDown size={14} /> Manage</>}
+                                                        </button>
+                                                    </div>
                                                 </div>
 
-                                                <div style={{ maxHeight: '250px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                                                    {students.filter(s => s.grade === hw.grade && s.status === 'ACTIVE' && (s.role === 'student' || s.role === 'STUDENT') && ((hw.batch === 'All' || !hw.batch) || (s.batch || 'General Batch') === hw.batch)).map(student => {
-                                                        const sub = submissions[hw.id]?.[student.id];
-                                                        const isChecked = sub?.status === 'CHECKED';
-                                                        const isIncomplete = sub?.status === 'INCOMPLETE';
-
-                                                        return (
-                                                            <div key={student.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', background: 'rgba(255,255,255,0.02)', borderRadius: '8px', border: '1px solid var(--border)' }}>
-                                                                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0, flex: 1 }}>
-                                                                    <div style={{
-                                                                        width: '8px', height: '8px', borderRadius: '50%', flexShrink: 0,
-                                                                        background: sub ? (isChecked ? 'var(--success)' : (isIncomplete ? 'var(--danger)' : 'var(--warning)')) : 'rgba(255,255,255,0.1)'
-                                                                    }}></div>
-                                                                    <span style={{ fontSize: '0.85rem', fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{student.name}</span>
-                                                                </div>
-                                                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                                                    {sub?.fileUrl && (
-                                                                        <a href={sub.fileUrl} target="_blank" rel="noreferrer" style={{ fontSize: '0.9rem', color: 'var(--accent)' }} title="View Submission">👁️</a>
-                                                                    )}
-                                                                    <button
-                                                                        className="btn btn-ghost"
-                                                                        style={{
-                                                                            fontSize: '0.75rem', padding: '4px 10px', minWidth: '85px',
-                                                                            borderColor: isChecked ? 'var(--success-border)' : (isIncomplete ? 'var(--danger-border)' : 'var(--border)'),
-                                                                            color: isChecked ? 'var(--success)' : (isIncomplete ? 'var(--danger)' : 'var(--text-primary)')
-                                                                        }}
-                                                                        onClick={() => {
-                                                                            setReviewingSubmission({
-                                                                                homeworkId: hw.id,
-                                                                                studentId: student.id,
-                                                                                studentName: student.name,
-                                                                                ...sub
-                                                                            });
-                                                                            setReviewStatus(sub?.status || 'CHECKED');
-                                                                            setTeacherComment(sub?.teacherComment || "");
-                                                                        }}
-                                                                    >
-                                                                        {isChecked ? "Verified" : (isIncomplete ? "Redo" : (sub ? "Review" : "Mark"))}
-                                                                    </button>
+                                                {/* Expanded Student List */}
+                                                {isExpanded && (
+                                                    <div className="student-list-container">
+                                                        <div className="student-search-wrapper">
+                                                            <div className="search-icon-inner"><Search size={14} /></div>
+                                                            <input 
+                                                                className="student-search-input" 
+                                                                placeholder="Search students..." 
+                                                                value={studentSearch}
+                                                                onChange={(e) => setStudentSearch(e.target.value)}
+                                                            />
+                                                            <div 
+                                                                style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', userSelect: 'none' }}
+                                                                onClick={() => {
+                                                                    const filtered = totalStudents.filter(s => s.name?.toLowerCase().includes(studentSearch.toLowerCase()));
+                                                                    const allSelectedInFiltered = filtered.length > 0 && filtered.every(s => selectedStudents.includes(s.id));
+                                                                    if (allSelectedInFiltered) {
+                                                                        setSelectedStudents(prev => prev.filter(id => !filtered.find(f => f.id === id)));
+                                                                    } else {
+                                                                        setSelectedStudents(prev => [...new Set([...prev, ...filtered.map(f => f.id)])]);
+                                                                    }
+                                                                }}
+                                                            >
+                                                                <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+                                                                    {(() => {
+                                                                        const filtered = totalStudents.filter(s => s.name?.toLowerCase().includes(studentSearch.toLowerCase()));
+                                                                        return filtered.length > 0 && filtered.every(s => selectedStudents.includes(s.id)) ? 'Unselect All' : 'Select All';
+                                                                    })()}
+                                                                </span>
+                                                                <div 
+                                                                    className={`custom-checkbox ${(() => {
+                                                                        const filtered = totalStudents.filter(s => s.name?.toLowerCase().includes(studentSearch.toLowerCase()));
+                                                                        return filtered.length > 0 && filtered.every(s => selectedStudents.includes(s.id)) ? 'checked' : '';
+                                                                    })()}`}
+                                                                    title="Select All"
+                                                                >
+                                                                    {(() => {
+                                                                        const filtered = totalStudents.filter(s => s.name?.toLowerCase().includes(studentSearch.toLowerCase()));
+                                                                        return filtered.length > 0 && filtered.every(s => selectedStudents.includes(s.id)) && <Check size={12} color="#fff" />;
+                                                                    })()}
                                                                 </div>
                                                             </div>
-                                                        )
-                                                    })}
+                                                        </div>
+
+                                                        <div style={{ maxHeight: '400px', overflowY: 'auto', paddingRight: '4px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                                            {totalStudents.length === 0 ?
+                                                                <div style={{ textAlign: 'center', padding: '20px', color: 'var(--text-muted)', fontSize: '0.9rem' }}>
+                                                                    No students in this class/batch.
+                                                                </div>
+                                                            : (() => {
+                                                                const filtered = totalStudents.filter(s => s.name?.toLowerCase().includes(studentSearch.toLowerCase()));
+                                                                if (filtered.length === 0) {
+                                                                    return (
+                                                                        <div style={{ textAlign: 'center', padding: '20px', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                                                                            No students match "{studentSearch}"
+                                                                        </div>
+                                                                    );
+                                                                }
+                                                                return filtered.slice((studentListPage - 1) * STUDENT_PAGE_SIZE, studentListPage * STUDENT_PAGE_SIZE).map(student => {
+                                                                    const sub = submissions[hw.id]?.[student.id];
+                                                                    const isChecked = sub?.status === 'CHECKED';
+                                                                    const isIncomplete = sub?.status === 'INCOMPLETE';
+                                                                    const isSelected = selectedStudents.includes(student.id);
+
+                                                                    return (
+                                                                        <div key={student.id} className="student-row">
+                                                                            <div 
+                                                                                className={`custom-checkbox ${isSelected ? 'checked' : ''}`}
+                                                                                onClick={() => {
+                                                                                    setSelectedStudents(prev => 
+                                                                                        prev.includes(student.id) 
+                                                                                        ? prev.filter(id => id !== student.id)
+                                                                                        : [...prev, student.id]
+                                                                                    );
+                                                                                }}
+                                                                            >
+                                                                                {isSelected && <Check size={12} color="#fff" />}
+                                                                            </div>
+                                                                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0, flex: 1 }}>
+                                                                                <div style={{
+                                                                                    width: '32px', height: '32px', borderRadius: '50%', flexShrink: 0,
+                                                                                    background: sub ? (isChecked ? 'rgba(16, 185, 129, 0.2)' : (isIncomplete ? 'rgba(239, 68, 68, 0.2)' : 'rgba(245, 158, 11, 0.2)')) : 'rgba(255,255,255,0.05)',
+                                                                                    display: 'flex', alignItems: 'center', justifyContent: 'center'
+                                                                                }}>
+                                                                                    {sub ? (isChecked ? <CheckCircle2 size={16} color="var(--success)" /> : (isIncomplete ? <AlertCircle size={16} color="var(--danger)" /> : <Clock size={16} color="var(--warning)" />)) : <User size={16} color="var(--text-muted)" />}
+                                                                                </div>
+                                                                                <span style={{ fontSize: '0.9rem', fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{student.name}</span>
+                                                                            </div>
+                                                                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                                                                {sub?.fileUrl && (
+                                                                                    <a href={sub.fileUrl} target="_blank" rel="noreferrer" style={{ color: 'var(--accent)', display: 'flex' }} title="View Submission">
+                                                                                        <Search size={18} />
+                                                                                    </a>
+                                                                                )}
+                                                                                <button
+                                                                                    className="btn btn-ghost"
+                                                                                    style={{
+                                                                                        fontSize: '0.75rem', padding: '6px 12px', minWidth: '85px', height: 'auto',
+                                                                                        borderColor: isChecked ? 'rgba(16, 185, 129, 0.3)' : (isIncomplete ? 'rgba(239, 68, 68, 0.3)' : 'var(--border)'),
+                                                                                        color: isChecked ? 'var(--success)' : (isIncomplete ? 'var(--danger)' : 'var(--text-primary)'),
+                                                                                        background: isChecked ? 'rgba(16, 185, 129, 0.05)' : (isIncomplete ? 'rgba(239, 68, 68, 0.05)' : 'transparent')
+                                                                                    }}
+                                                                                    onClick={() => {
+                                                                                        setReviewingSubmission({
+                                                                                            homeworkId: hw.id,
+                                                                                            studentId: student.id,
+                                                                                            studentName: student.name,
+                                                                                            ...sub
+                                                                                        });
+                                                                                        setReviewStatus(sub?.status || 'CHECKED');
+                                                                                        setTeacherComment(sub?.teacherComment || "");
+                                                                                    }}
+                                                                                >
+                                                                                    {isChecked ? "Verified" : (isIncomplete ? "Redo" : (sub ? "Review" : "Mark"))}
+                                                                                </button>
+                                                                            </div>
+                                                                        </div>
+                                                                    );
+                                                                });
+                                                            })()}
+                                                        {totalStudents.filter(s => s.name?.toLowerCase().includes(studentSearch.toLowerCase())).length > STUDENT_PAGE_SIZE && (
+                                                            <div style={{ marginTop: '16px', padding: '12px', borderTop: '1px solid var(--border)' }}>
+                                                                <Pagination 
+                                                                    currentPage={studentListPage}
+                                                                    totalItems={totalStudents.filter(s => s.name?.toLowerCase().includes(studentSearch.toLowerCase())).length}
+                                                                    pageSize={STUDENT_PAGE_SIZE}
+                                                                    onPageChange={setStudentListPage}
+                                                                />
+                                                            </div>
+                                                        )}
+                                                    </div>
                                                 </div>
+                                            )}
                                             </div>
-                                        </div>
-                                    ))}
+                                        );
+                                    })}
                                 </div>
-                            )}
+                                
+                                {filteredHomework.length > HW_PAGE_SIZE && (
+                                    <div style={{ marginTop: '24px', display: 'flex', justifyContent: 'center' }}>
+                                        <Pagination 
+                                            currentPage={hwPage}
+                                            totalItems={filteredHomework.length}
+                                            pageSize={HW_PAGE_SIZE}
+                                            onPageChange={setHwPage}
+                                        />
+                                    </div>
+                                )}
+                            </>
+                        )}
+
                         </div>
                     </div>
                 )}
@@ -681,6 +941,56 @@ const HomeworkManager = ({ students = [], tenantId, onAlert = () => {}, grades: 
                     </div>
                 </div>
             )}
+
+            {/* BULK ACTION BAR */}
+            {selectedStudents.length > 0 && (
+                <div className="bulk-action-bar">
+                    <div className="bulk-count">
+                        {selectedStudents.length} Students Selected
+                    </div>
+                    <div className="bulk-btns">
+                        <button 
+                            className="btn btn-primary" 
+                            style={{ height: '40px', padding: '0 20px', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '8px' }}
+                            onClick={() => setBulkConfirm({ isOpen: true, status: 'CHECKED' })}
+                            disabled={loading}
+                        >
+                            {loading ? <span className="loader" style={{ width: '14px', height: '14px' }}></span> : <CheckCircle2 size={16} />}
+                            Mark Verified
+                        </button>
+                        <button 
+                            className="btn btn-danger" 
+                            style={{ height: '40px', padding: '0 20px', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '8px' }}
+                            onClick={() => setBulkConfirm({ isOpen: true, status: 'INCOMPLETE' })}
+                            disabled={loading}
+                        >
+                            {loading ? <span className="loader" style={{ width: '14px', height: '14px' }}></span> : <AlertCircle size={16} />}
+                            Mark Redo
+                        </button>
+                        <button 
+                            className="btn btn-ghost" 
+                            style={{ height: '40px', padding: '0 20px', fontSize: '0.85rem' }}
+                            onClick={() => setSelectedStudents([])}
+                        >
+                            Cancel
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            {/* BULK CONFIRMATION MODAL */}
+            <ConfirmModal 
+                isOpen={bulkConfirm.isOpen}
+                title="Confirm Bulk Action"
+                message={`Are you sure you want to mark ${selectedStudents.length} students as ${bulkConfirm.status === 'CHECKED' ? 'Verified' : 'Incomplete'}?`}
+                confirmText={bulkConfirm.status === 'CHECKED' ? "Yes, Verify All" : "Yes, Mark Redo"}
+                onConfirm={() => {
+                    handleBulkReview(bulkConfirm.status);
+                    setBulkConfirm({ isOpen: false, status: null });
+                }}
+                onCancel={() => setBulkConfirm({ isOpen: false, status: null })}
+                isDangerous={bulkConfirm.status === 'INCOMPLETE'}
+            />
         </div>
     );
 };

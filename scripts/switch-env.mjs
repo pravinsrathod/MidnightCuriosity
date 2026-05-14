@@ -31,13 +31,20 @@ function switchEnv(appName) {
         fs.copyFileSync(sourceFile, destFile);
         console.log(`✅ Switched ${appName} .env to ${env} environment.`);
 
-        // Also handle google-services.json for mobile
+        // Also handle google-services.json and GoogleService-Info.plist for mobile
         if (appName === 'mobile') {
             const gsSource = path.join(process.cwd(), config.dir, `.google-services.${env}.json`);
             const gsDest = path.join(process.cwd(), config.dir, 'android', 'app', 'google-services.json');
             if (fs.existsSync(gsSource)) {
                 fs.copyFileSync(gsSource, gsDest);
                 console.log(`✅ Switched mobile google-services.json to ${env}.`);
+            }
+
+            const plistSource = path.join(process.cwd(), config.dir, `GoogleService-Info.${env}.plist`);
+            const plistDest = path.join(process.cwd(), config.dir, 'ios', 'EduPro', 'GoogleService-Info.plist');
+            if (fs.existsSync(plistSource)) {
+                fs.copyFileSync(plistSource, plistDest);
+                console.log(`✅ Switched mobile GoogleService-Info.plist to ${env}.`);
             }
         }
     } else {

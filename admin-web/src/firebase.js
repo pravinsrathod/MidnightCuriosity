@@ -1,9 +1,9 @@
 import { initializeApp } from "firebase/app";
-import { getFirestore } from "firebase/firestore";
+import { getFirestore, connectFirestoreEmulator } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
-import { getAuth } from "firebase/auth";
-import { getFunctions } from "firebase/functions";
-import { getDatabase } from "firebase/database";
+import { getAuth, connectAuthEmulator } from "firebase/auth";
+import { getFunctions, connectFunctionsEmulator } from "firebase/functions";
+import { getDatabase, connectDatabaseEmulator } from "firebase/database";
 
 const firebaseConfig = {
     apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -20,3 +20,11 @@ export const storage = getStorage(app);
 export const auth = getAuth(app);
 export const functions = getFunctions(app);
 export const realtimeDb = getDatabase(app);
+
+if (import.meta.env.VITE_USE_EMULATORS === "true") {
+    console.log("Connecting to Firebase Emulators...");
+    connectFirestoreEmulator(db, "localhost", 8080);
+    connectAuthEmulator(auth, "http://localhost:9099");
+    connectFunctionsEmulator(functions, "localhost", 5001);
+    connectDatabaseEmulator(realtimeDb, "localhost", 9000);
+}

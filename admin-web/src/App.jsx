@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { db, storage, auth, functions } from "./firebase";
 import { collection, query, where, onSnapshot, addDoc, serverTimestamp, doc, updateDoc, deleteDoc, getDocs, getDoc, writeBatch, arrayUnion, arrayRemove, setDoc } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
@@ -35,7 +35,8 @@ import {
   List,
   Shield,
   Trash2,
-  UserPlus
+  UserPlus,
+  Lock
 } from "lucide-react";
 import Sidebar from './components/Sidebar';
 import DashboardView from './components/DashboardView';
@@ -49,13 +50,76 @@ import ExamsView from './components/ExamsView';
 import LecturesView from './components/LecturesView';
 import PasswordResetRequestsView from './components/PasswordResetRequestsView';
 import IntegrityView from './components/IntegrityView';
+import SignalsView from './components/SignalsView';
 
 
-import { generateLessonContent, getApiKey, setApiKey, generateDoubtAnswer, generateExamFromPdf } from "./aiService";
+import { 
+    generateLessonContent, 
+    generateDoubtAnswer, 
+    extractYoutubeId, 
+    getApiKey, 
+    setApiKey, 
+    generateExamFromPdf
+} from './aiService';
 // import { seedDemoData } from "./demoSeeder";
 
 import { wipeAllData } from './wiper';
 import ErrorBoundary from "./components/ErrorBoundary";
+/**
+ * LockedFeatureView: Elegant placeholder for disabled features.
+ */
+const LockedFeatureView = ({ featureName }) => (
+  <div className="animate-fade-in" style={{ 
+    height: '100%', 
+    display: 'flex', 
+    flexDirection: 'column', 
+    alignItems: 'center', 
+    justifyContent: 'center', 
+    padding: '40px',
+    textAlign: 'center',
+    background: 'rgba(0,0,0,0.02)',
+    borderRadius: '24px',
+    border: '2px dashed var(--border)',
+    margin: '20px'
+  }}>
+    <div style={{ 
+      width: '80px', 
+      height: '80px', 
+      borderRadius: '20px', 
+      background: 'rgba(239, 68, 68, 0.1)', 
+      color: 'var(--danger)',
+      display: 'flex', 
+      alignItems: 'center', 
+      justifyContent: 'center',
+      marginBottom: '24px',
+      boxShadow: '0 8px 16px rgba(239, 68, 68, 0.1)'
+    }}>
+      <Lock size={40} />
+    </div>
+    <h2 style={{ fontSize: '1.75rem', fontWeight: 800, marginBottom: '12px', color: 'var(--text-primary)' }}>
+      {featureName} is Currently Locked
+    </h2>
+    <p style={{ maxWidth: '400px', fontSize: '1.1rem', color: 'var(--text-secondary)', lineHeight: 1.6, marginBottom: '32px' }}>
+      Access to this module has been temporarily disabled by the super-administrator. Please contact your system provider or upgrade your plan to unlock this feature.
+    </p>
+    <div className="glass-panel" style={{ padding: '16px 32px', borderRadius: '16px', display: 'flex', alignItems: 'center', gap: '12px' }}>
+      <Shield size={20} color="var(--primary)" />
+      <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>Enterprise Feature Management</span>
+    </div>
+  </div>
+);
+
+const tabFeaturesMap = {
+  lectures: 'enableLectures',
+  homework: 'enableHomework',
+  exams: 'enableExams',
+  doubts: 'enableDoubts',
+  polls: 'enableLivePolls',
+  live: 'enableLiveLectures',
+  attendance: 'enableAttendance',
+  fees: 'enableFees',
+  signals: 'enableSupportBot'
+};
 
 // --- Extracted Components (Moved to ./components/ for stability) ---
 
@@ -67,17 +131,20 @@ function App() {
 
   const [activeTab, setActiveTab] = useState('dashboard');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isGeneratingAI, setIsGeneratingAI] = useState(false);
   const [user, setUser] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
 
   // Admin Tenant State
   const [adminTenantId, setAdminTenantId] = useState(null);
-  const [tenantData, setTenantData] = useState({ name: "", code: "" });
+  const [tenantData, setTenantData] = useState({ name: "", code: "", geminiApiKey: "" });
   const [isEditingTenant, setIsEditingTenant] = useState(false);
-  const [tenantEditForm, setTenantEditForm] = useState({ name: "", code: "" });
+  const [tenantEditForm, setTenantEditForm] = useState({ name: "", code: "", geminiApiKey: "" });
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const [allTenants, setAllTenants] = useState([]);
   const [pendingUserStatus, setPendingUserStatus] = useState(null); // 'PENDING_APPROVAL', 'APPROVED', etc.
+  const [isOnline, setIsOnline] = useState(false);
+  const [isConnecting, setIsConnecting] = useState(true);
 
   // Custom Modal State (Promise-based)
   const [modalState, setModalState] = useState({
@@ -149,9 +216,9 @@ function App() {
                 const docRef = doc(db, "users", currentUser.uid);
                 const userDoc = await getDoc(docRef);
                 if (userDoc.exists()) {
-                  const userData = userDoc.data();
-                  setAdminTenantId(userData.tenantId);
-                  setPendingUserStatus(userData.status || 'APPROVED');
+                  const data = userDoc.data();
+                  setAdminTenantId(data.tenantId || 'default');
+                  setPendingUserStatus(data.status || 'APPROVED'); // Usually users in 'users' collection are treated by role
                   return true;
                 }
                 return false;
@@ -192,8 +259,13 @@ function App() {
     const unsub = onSnapshot(doc(db, "tenants", adminTenantId), (snap) => {
       if (snap.exists()) {
         const data = snap.data();
-        setTenantData({ name: data.name, code: data.code, logoUrl: data.logoUrl });
-        setTenantEditForm({ name: data.name, code: data.code, logoUrl: data.logoUrl });
+        const fullTenantData = { id: snap.id, ...data };
+        setTenantData(fullTenantData);
+        setTenantEditForm(fullTenantData);
+        if (data.geminiApiKey) {
+            setApiKey(data.geminiApiKey); // Save to local storage for aiService
+            setApiKeyLocal(data.geminiApiKey); // Update local react state
+        }
       }
     });
     return () => unsub();
@@ -225,8 +297,7 @@ function App() {
   const [students, setStudents] = useState([]);
 
   // AI State
-  const [aiLoading, setAiLoading] = useState(false);
-  const [apiKey, setApiKeyLocal] = useState(getApiKey() || "");
+  const [apiKeyVal, setApiKeyLocal] = useState(getApiKey() || "");
   const [lectureSubTab, setLectureSubTab] = useState('study'); // 'live' or 'study'
   const [isLectureFormExpanded, setIsLectureFormExpanded] = useState(false);
   // Form States
@@ -237,6 +308,7 @@ function App() {
     topic: "",
     overview: "",
     notes: "",
+    transcript: "",
     batch: "All",
     youtubeVideoId: ""
   });
@@ -247,7 +319,7 @@ function App() {
 
   const [file, setFile] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [recentUploads, setRecentUploads] = useState([]);
+  const [allLectures, setAllLectures] = useState([]);
   const [editingId, setEditingId] = useState(null);
   const [existingVideoUrl, setExistingVideoUrl] = useState('');
 
@@ -418,7 +490,7 @@ function App() {
   const processExamPdf = async () => {
     if (!examFile) return customAlert("Please select a PDF file first.");
 
-    if (!apiKey) {
+    if (!apiKeyVal) {
       customAlert("✨ API Key Required! \n\nTo extracting questions from your custom PDF, you need a Gemini API Key. \n\nPlease enter it in the next prompt (or Mock Mode will remain active).");
       saveApiKey();
       return;
@@ -426,7 +498,7 @@ function App() {
 
     setIsProcessingExam(true);
     try {
-      const extractedQuestions = await generateExamFromPdf(examFile, apiKey);
+      const extractedQuestions = await generateExamFromPdf(examFile, apiKeyVal);
       setExamForm(prev => ({ ...prev, questions: extractedQuestions }));
       customAlert(`Success! Generated ${extractedQuestions.length} questions.`);
     } catch (e) {
@@ -584,48 +656,47 @@ function App() {
   }, [adminTenantId]);
 
   const saveApiKey = async () => {
-    const key = await customPrompt("Enter Gemini API Key (Leave empty for Mock Mode):", apiKey);
+    const key = await customPrompt("Enter Gemini API Key (Leave empty for Mock Mode):", apiKeyVal);
     if (key !== false) { // customPrompt returns false on cancel
       setApiKey(key);
       setApiKeyLocal(key);
     }
   };
 
-  const handleAiGenerate = async () => {
-    if (!formData.title || !formData.subject || !formData.grade || !formData.topic) {
-      customAlert("Please fill in Title, Grade, Subject and Topic first.");
-      return;
-    }
-    setAiLoading(true);
+  // ---- CONNECTIVITY STATUS ----
+  useEffect(() => {
+    let unsub = () => {};
     try {
-      // Pass the file object (video) if available
-      const content = await generateLessonContent(formData.topic, formData.subject, formData.grade, file);
-
-      setFormData(prev => ({
-        ...prev,
-        overview: content.overview || "",
-        notes: content.notes || ""
-      }));
-
-      if (content.quizzes && content.quizzes.length > 0) {
-        setQuizzes(content.quizzes);
-      }
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setAiLoading(false);
+      // Use the root collection to check connectivity
+      const q = query(collection(db, "metadata"), where("connectivity", "==", "probe"));
+      unsub = onSnapshot(q, 
+        () => {
+          setIsOnline(true);
+          setIsConnecting(false);
+        },
+        (error) => {
+          console.error("Firestore Connectivity Error:", error);
+          setIsOnline(false);
+          setIsConnecting(false);
+        }
+      );
+    } catch (err) {
+      console.error("Failed to setup connectivity listener:", err);
+      setIsConnecting(false);
+      setIsOnline(false);
     }
-  };
+    return () => unsub();
+  }, []);
 
   // ---- CONFIG MANAGEMENT ----
   useEffect(() => {
     if (!adminTenantId) return;
     fetchConfig();
-    const unsubscribeUploads = fetchRecentUploads();
+    const unsubscribeLectures = fetchLectures();
     const unsubscribeDoubts = fetchDoubts();
     const unsubscribeStudents = fetchStudents();
     return () => {
-      unsubscribeUploads();
+      unsubscribeLectures();
       unsubscribeDoubts();
       unsubscribeStudents();
     };
@@ -649,7 +720,7 @@ function App() {
     });
   };
 
-  const fetchRecentUploads = () => {
+  const fetchLectures = () => {
     if (!adminTenantId) return () => { };
     const q = query(
       collection(db, "lectures"),
@@ -657,13 +728,13 @@ function App() {
     );
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const docs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      // Sort by createdAt desc in memory and limit to 5
+      // Sort by createdAt desc in memory
       const sorted = docs.sort((a, b) => {
         const timeA = a.createdAt?.seconds ? a.createdAt.seconds * 1000 : new Date(a.createdAt).getTime();
         const timeB = b.createdAt?.seconds ? b.createdAt.seconds * 1000 : new Date(b.createdAt).getTime();
         return timeB - timeA;
-      }).slice(0, 5);
-      setRecentUploads(sorted);
+      });
+      setAllLectures(sorted);
     });
     return unsubscribe;
   }
@@ -679,6 +750,10 @@ function App() {
   };
 
   const fetchConfig = async () => {
+    if (!isOnline) {
+       console.warn("Skipping fetchConfig: Firebase is offline.");
+       return;
+    }
     try {
       const docRef = doc(db, "tenants", adminTenantId, "metadata", "lists");
       const docSnap = await getDoc(docRef);
@@ -710,6 +785,8 @@ function App() {
       }
     } catch (e) {
       console.error("Error fetching config:", e);
+      // Fallback to minimal defaults so UI doesn't break
+      if (grades.length === 0) setGrades(["Grade 1", "Grade 2"]);
     } finally {
       // Config loaded
     }
@@ -736,18 +813,18 @@ function App() {
 
   const handleAddBatch = async (grade, batchName) => {
     if (!batchName.trim() || !adminTenantId) return;
-    const docRef = doc(db, "tenants", adminTenantId, "metadata", "batches");
+    const docRef = doc(db, "tenants", adminTenantId, "metadata", "lists");
     await updateDoc(docRef, {
-      [grade]: arrayUnion(batchName.trim())
+      [`batches.${grade}`]: arrayUnion(batchName.trim())
     });
     fetchConfig();
   };
 
   const handleRemoveBatch = async (grade, batchName) => {
     if (!await customConfirm(`Remove batch ${batchName} from ${grade}?`) || !adminTenantId) return;
-    const docRef = doc(db, "tenants", adminTenantId, "metadata", "batches");
+    const docRef = doc(db, "tenants", adminTenantId, "metadata", "lists");
     await updateDoc(docRef, {
-      [grade]: arrayRemove(batchName)
+      [`batches.${grade}`]: arrayRemove(batchName)
     });
     fetchConfig();
   };
@@ -834,6 +911,78 @@ function App() {
 
 
   // ---- LECTURE MANAGEMENT ----
+
+  // Accepts full YouTube URLs (watch?v=, youtu.be/) or raw video IDs
+
+  const handleGenerateAI = async () => {
+    if (!formData.title || !formData.grade || !formData.topic || !formData.subject) {
+      customAlert("Please fill in Title, Grade, Subject, and Topic first.");
+      return;
+    }
+
+    const rawYoutubeInput = formData.youtubeVideoId?.trim() || "";
+    const videoId = extractYoutubeId(rawYoutubeInput);
+    const videoUrl = existingVideoUrl || ""; // Use existing MP4 if available
+
+    if (!videoId && !videoUrl) {
+      if (rawYoutubeInput.includes('-') && rawYoutubeInput.length > 11) {
+        customAlert(`❌ This looks like a 'Playback ID' (${rawYoutubeInput}).\n\nPlease use the 'Video ID' from the URL (e.g., dQw4w9WgXcQ). A Playback ID is only for diagnostic support.`);
+      } else {
+        customAlert("Please provide a valid YouTube URL/ID or upload a video file first.");
+      }
+      return;
+    }
+
+    if (!adminTenantId) {
+      customAlert("Institutional context missing. Please refresh.");
+      return;
+    }
+
+    setIsGeneratingAI(true);
+    try {
+      console.log(`[App] Generating AI content. YouTube: ${videoId || 'None'}, Multimodal URL: ${videoUrl || 'None'}`);
+      const content = await generateLessonContent(
+        formData.topic,
+        formData.subject,
+        formData.grade,
+        videoId,
+        adminTenantId,
+        videoUrl
+      );
+
+      setFormData(prev => ({
+        ...prev,
+        overview: content.overview || prev.overview,
+        notes: content.notes || prev.notes,
+        transcript: content.transcript || prev.transcript || "",
+        youtubeVideoId: videoId || prev.youtubeVideoId // Normalize if ID was found
+      }));
+
+      if (content.quizzes && content.quizzes.length > 0) {
+        setQuizzes(content.quizzes);
+      }
+
+      customAlert("✨ AI synthesis complete! The overview, notes, and interactive quizzes have been populated.");
+    } catch (e) {
+      console.error("AI Generation Failed:", e);
+      // Better error message for the user
+      const msg = e.message || "Unknown error";
+      let message = "";
+      if (msg.includes("transcript") && !msg.includes("blocked")) {
+        message = "AI Generation Failed: Could not find captions. Try uploading the video file (MP4) to enable AI 'listening' fallback.";
+      } else if (msg.includes('Streaming data') || msg.includes('404')) {
+        message = "YouTube AI Access Blocked: YouTube is preventing automated audio extraction for this video (Error 404/Streaming). Use the 'Upload Video' option below to provide the MP4 file directly for AI transcription.";
+      } else if (msg.toLowerCase().includes("internal") || msg.toLowerCase().includes("memory")) {
+        message = "Internal Resource Limit Hit: This video is too long or complex for the current server memory. Try again or provide a smaller video file.";
+      } else {
+        message = "AI Generation Failed: " + msg;
+      }
+      customAlert(message);
+    } finally {
+      setIsGeneratingAI(false);
+    }
+  };
+
   const handleChange = (e) => {
     const { name, value } = e.target;
     if (name === "grade") {
@@ -885,17 +1034,18 @@ function App() {
       topic: doc.topic,
       overview: doc.overview || "",
       notes: doc.notes || "",
+      transcript: doc.transcript || "",
       batch: doc.batch || "All",
       youtubeVideoId: doc.youtubeVideoId || ""
     });
-    setExistingVideoUrl(doc.videoUrl || "");
-    setLectureSubTab(doc.youtubeVideoId ? 'live' : 'study');
+    setExistingVideoUrl(doc.videoUrl || ""); // Keep for display of legacy MP4 lectures
+    // Use stored `type` field if available; fall back to: live if no videoUrl, else study
+    setLectureSubTab(doc.type || (doc.videoUrl ? 'study' : 'live'));
     setIsLectureFormExpanded(true);
 
     if (doc.quizzes && Array.isArray(doc.quizzes)) {
       setQuizzes(doc.quizzes);
     } else if (doc.quiz) {
-      // Backward compatibility
       setQuizzes([{
         question: doc.quiz.question,
         options: doc.quiz.options,
@@ -917,6 +1067,7 @@ function App() {
       topic: topics[0] || "",
       overview: "",
       notes: "",
+      transcript: "",
       batch: "All",
       youtubeVideoId: ""
     });
@@ -933,6 +1084,7 @@ function App() {
       const isCodeChanged = formData.code !== tenantData.code;
       const dataToUpdate = {
         name: formData.name,
+        geminiApiKey: formData.geminiApiKey || "",
         updatedAt: serverTimestamp()
       };
 
@@ -1040,36 +1192,52 @@ function App() {
     }
   };
 
+  const handleDeleteTenant = async (tenant) => {
+    if (!await customConfirm(`ARE YOU ABSOLUTELY SURE? This will permanently DELETE '${tenant.name}' and ALL its data (users, lectures, fees, etc.). This cannot be undone.`, "CRITICAL: Permanent Deletion", true)) return;
+    
+    // Final double confirmation for such a destructive action
+    if (!await customConfirm(`FINAL WARNING: To confirm deletion of ${tenant.name}, you are about to wipe everything associated with this code: ${tenant.code}. Proceed?`, "Final Approval", true)) return;
+
+    setLoading(true);
+    try {
+      const tid = tenant.id;
+      console.log(`[SuperAdmin] Requesting deep-clean for tenant: ${tenant.name}`);
+      
+      const deepDeleteFn = httpsCallable(functions, 'deepDeleteTenant');
+      const result = await deepDeleteFn({ 
+        tenantId: tid, 
+        tenantName: tenant.name 
+      });
+      
+      if (result.data.success) {
+        customAlert(result.data.message, "Purge Complete");
+      }
+    } catch (e) {
+      console.error("[Deletion Error]", e);
+      customAlert("Deletion Failed: " + (e.message || "Unknown error during deep clean."));
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleUpload = async (e) => {
     e.preventDefault();
     if (!formData.title || !formData.grade || !formData.subject || !formData.topic) {
-      customAlert("Please filling all fields.");
+      customAlert("Please fill in all required fields.");
       return;
     }
 
     setLoading(true);
     try {
-      let finalVideoUrl = existingVideoUrl;
-      let finalYoutubeId = formData.youtubeVideoId?.trim() || "";
+      // Both Live and Study tabs now use YouTube. Extract clean video ID from any URL format.
+      const rawYoutubeInput = formData.youtubeVideoId?.trim() || "";
+      const finalYoutubeId = extractYoutubeId(rawYoutubeInput);
+      const finalVideoUrl = ""; // Storage uploads removed — all lectures are YouTube-based
 
-      if (lectureSubTab === 'study') {
-        if (file) {
-          const storageRef = ref(storage, `lectures/${formData.grade}/${formData.subject}/${file.name}_${Date.now()}`);
-          await uploadBytes(storageRef, file);
-          finalVideoUrl = await getDownloadURL(storageRef);
-        } else if (!editingId && !file) {
-          customAlert("Please select a video file.");
-          setLoading(false);
-          return;
-        }
-        finalYoutubeId = ""; // Ensure YouTube ID is cleared for manual uploads
-      } else {
-        if (!finalYoutubeId && !editingId) {
-          customAlert("Please provide a YouTube Video ID.");
-          setLoading(false);
-          return;
-        }
-        finalVideoUrl = ""; // Ensure Video URL is cleared for live recordings
+      if (!finalYoutubeId && !editingId) {
+        customAlert("Please provide a valid YouTube Video URL or ID.");
+        setLoading(false);
+        return;
       }
 
       const lectureData = {
@@ -1077,19 +1245,19 @@ function App() {
         grade: formData.grade,
         subject: formData.subject,
         topic: formData.topic,
-        videoUrl: finalVideoUrl,
+        videoUrl: finalVideoUrl,         // Empty string; kept for backwards-compat with old MP4 lectures
         youtubeVideoId: finalYoutubeId,
+        type: lectureSubTab,              // 'live' or 'study' — for display/AI purposes
         overview: formData.overview,
         notes: formData.notes,
         batch: formData.batch || "All",
-        quizzes: quizzes.filter(q => q.question.trim().length > 0), // Save all valid quizzes
+        quizzes: quizzes.filter(q => q.question.trim().length > 0),
         updatedAt: serverTimestamp(),
-        // Multi-tenancy: Only set tenantId on CREATE or if missing
       };
 
       if (!editingId) {
         lectureData.createdAt = serverTimestamp();
-        lectureData.tenantId = adminTenantId; // Add Tenant ID
+        lectureData.tenantId = adminTenantId;
       }
 
       if (editingId) {
@@ -1099,23 +1267,20 @@ function App() {
         } catch (e) {
           if (e.code === 'not-found' || e.message.includes('No document to update')) {
             console.warn("Document missing, creating new instead...");
-            // Fallback: Create new
             lectureData.createdAt = serverTimestamp();
-            lectureData.tenantId = adminTenantId; // Ensure tenant on fallback
+            lectureData.tenantId = adminTenantId;
             const newRef = await addDoc(collection(db, "lectures"), lectureData);
-            customAlert("Original lecture was missing, created new one instead! ID: " + newRef.id);
+            customAlert("Original lecture missing, created new one! ID: " + newRef.id);
           } else {
             throw e;
           }
         }
       } else {
         await addDoc(collection(db, "lectures"), lectureData);
-        customAlert("Lecture uploaded!");
+        customAlert("Lecture published!");
       }
 
       cancelEdit();
-      setFile(null);
-      setExistingVideoUrl("");
     } catch (error) {
       console.error("Error uploading:", error);
       customAlert("Action failed: " + error.message);
@@ -1239,6 +1404,8 @@ function App() {
           cancelEdit={cancelEdit}
           signOut={signOut}
           auth={auth}
+          isOnline={isOnline}
+          isConnecting={isConnecting}
         />
       </ErrorBoundary>
       <main className="main-content" style={{ flex: 1, overflowY: 'auto', position: 'relative' }}>
@@ -1267,7 +1434,13 @@ function App() {
             {activeTab === 'settings' && 'System Configuration'}
               {activeTab === 'superadmin' && 'Super Admin Panel'}
               {activeTab === 'integrity' && 'Data Integrity & Cleanup'}
+              {activeTab === 'signals' && 'Signals Management'}
             </h1>
+            {isSuperAdmin && tabFeaturesMap[activeTab] && tenantData?.features?.[tabFeaturesMap[activeTab]] === false && (
+              <div style={{ padding: '4px 12px', background: 'var(--danger-glass)', border: '1px solid var(--danger)', borderRadius: '8px', color: 'var(--danger)', fontSize: '0.75rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span style={{ fontSize: '1rem' }}>🔒</span> FEATURE DISABLED FOR THIS TENANT
+              </div>
+            )}
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
             <div className="hide-on-mobile" style={{ display: 'flex', alignItems: 'center', gap: '10px', background: 'var(--bg-glass)', padding: '8px 16px', borderRadius: '20px', border: '1px solid var(--border)' }}>
@@ -1290,7 +1463,7 @@ function App() {
                 onMouseEnter={e => e.currentTarget.style.opacity = 1}
                 onMouseLeave={e => e.currentTarget.style.opacity = 0.8}
               >
-                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
+                <LogOut size={18} />
               </button>
             </div>
           </div>
@@ -1372,11 +1545,31 @@ function App() {
             )}
           </div>
         )}
-        {activeTab === 'dashboard' && <DashboardView user={user} stats={stats} recentUploads={recentUploads} setActiveTab={setActiveTab} setIsLectureFormExpanded={setIsLectureFormExpanded} />}
+        {(!isSuperAdmin && tabFeaturesMap[activeTab] && tenantData?.features?.[tabFeaturesMap[activeTab]] === false) ? (
+            <LockedFeatureView featureName={activeTab.charAt(0).toUpperCase() + activeTab.slice(1)} />
+          ) : (
+            <>
+              {activeTab === 'dashboard' && (
+            <DashboardView 
+              user={user} 
+              stats={stats} 
+              recentUploads={allLectures.slice(0, 5)} 
+              setActiveTab={setActiveTab} 
+              setIsLectureFormExpanded={setIsLectureFormExpanded} 
+              tenantData={tenantData} 
+            />
+          )}
           {activeTab === 'deletion' && <DeletionRequestsView adminTenantId={adminTenantId} handleRejectDeletion={handleRejectDeletion} handleApproveDeletion={handleApproveDeletion} />}
           {activeTab === 'password_resets' && <PasswordResetRequestsView adminTenantId={adminTenantId} tenantData={tenantData} customConfirm={customConfirm} customAlert={customAlert} customPrompt={customPrompt} />}
-          {activeTab === 'superadmin' && isSuperAdmin && <SuperAdminView allTenants={allTenants} handleApproveTenant={handleApproveTenant} handleRejectTenant={handleRejectTenant} setAdminTenantId={setAdminTenantId} setActiveTab={setActiveTab} customAlert={customAlert} customConfirm={customConfirm} db={db} />}
+          {activeTab === 'superadmin' && isSuperAdmin && <SuperAdminView allTenants={allTenants} handleApproveTenant={handleApproveTenant} handleRejectTenant={handleRejectTenant} handleDeleteTenant={handleDeleteTenant} setAdminTenantId={setAdminTenantId} setActiveTab={setActiveTab} customAlert={customAlert} customConfirm={customConfirm} db={db} />}
           {activeTab === 'integrity' && isSuperAdmin && <IntegrityView customAlert={customAlert} customConfirm={customConfirm} />}
+          {activeTab === 'signals' && (isSuperAdmin || adminTenantId) && (
+            <SignalsView 
+              adminTenantId={isSuperAdmin ? null : adminTenantId} 
+              customAlert={customAlert} 
+              customConfirm={customConfirm} 
+            />
+          )}
           {activeTab === 'fees' && <FeesManager tenantId={adminTenantId} onAlert={customAlert} onConfirm={customConfirm} grades={grades} batches={batches} students={students} filterGrade={selectedGradeFilter} filterBatch={selectedBatchFilter} />}
           
           {activeTab === 'settings' && (
@@ -1486,6 +1679,9 @@ function App() {
               subjects={subjects}
               batches={batches}
               topics={topics}
+              loading={loading}
+              isGeneratingAI={isGeneratingAI}
+              handleGenerateAI={handleGenerateAI}
             />
           )}
 
@@ -1507,7 +1703,7 @@ function App() {
 
           {activeTab === 'lectures' && (
             <LecturesView 
-              lectures={recentUploads}
+              lectures={allLectures}
               lectureSubTab={lectureSubTab}
               setLectureSubTab={setLectureSubTab}
               isLectureFormExpanded={isLectureFormExpanded}
@@ -1516,13 +1712,7 @@ function App() {
               formData={formData}
               handleChange={handleChange}
               handleUpload={handleUpload}
-              handleFileChange={handleFileChange}
               existingVideoUrl={existingVideoUrl}
-              file={file}
-              aiLoading={aiLoading}
-              saveApiKey={saveApiKey}
-              apiKey={apiKey}
-              handleAiGenerate={handleAiGenerate}
               quizzes={quizzes}
               setQuizzes={setQuizzes}
               handleDelete={handleDelete}
@@ -1532,7 +1722,11 @@ function App() {
               subjects={subjects}
               topics={topics}
               loading={loading}
+              isGeneratingAI={isGeneratingAI}
+              handleGenerateAI={handleGenerateAI}
             />
+            )}
+            </>
           )}
           </>
         </ErrorBoundary>

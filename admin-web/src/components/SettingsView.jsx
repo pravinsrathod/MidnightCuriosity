@@ -68,8 +68,14 @@ const SettingsView = ({
 }) => {
 
   const BatchConfigList = () => {
-    const [selectedConfigGrade, setSelectedConfigGrade] = useState(grades[0] || "");
-    const [newBatch, setNewBatch] = useState("");
+    const [selectedConfigGrade, setSelectedConfigGrade] = React.useState(grades[0] || "");
+    const [newBatch, setNewBatch] = React.useState("");
+
+    React.useEffect(() => {
+      if (!selectedConfigGrade && grades.length > 0) {
+        setSelectedConfigGrade(grades[0]);
+      }
+    }, [grades, selectedConfigGrade]);
 
     return (
       <div style={{ marginBottom: '20px', background: 'var(--bg-input)', padding: '15px', borderRadius: '8px' }}>
@@ -150,6 +156,20 @@ const SettingsView = ({
                   required
                   style={{ background: 'var(--bg-input)', border: '1px solid var(--border)', color: '#fff', padding: '12px', borderRadius: '10px', width: '100%' }}
                 />
+              </div>
+              <div className="form-group">
+                <label className="label">Gemini API Key</label>
+                <input
+                  type="password"
+                  className="form-control"
+                  value={tenantEditForm.geminiApiKey || ''}
+                  onChange={e => setTenantEditForm({ ...tenantEditForm, geminiApiKey: e.target.value })}
+                  placeholder="Leave blank to use default (if configured)"
+                  style={{ background: 'var(--bg-input)', border: '1px solid var(--border)', color: '#fff', padding: '12px', borderRadius: '10px', width: '100%' }}
+                />
+                <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '6px' }}>
+                  Used for generating transcripts and answering student doubts. Ensure this key has sufficient quota.
+                </div>
               </div>
               <div style={{ display: 'flex', gap: '12px', marginTop: '12px' }}>
                 <button type="submit" className="btn btn-primary" disabled={loading} style={{ flex: 1 }}>{loading ? "Persisting..." : "Save Identity"}</button>

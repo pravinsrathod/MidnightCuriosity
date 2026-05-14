@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { db, auth } from '../firebase';
+import Pagination from './common/Pagination';
 import {
     collection, query, where, onSnapshot, addDoc, updateDoc, doc,
     serverTimestamp, writeBatch, getDocs, getDoc, runTransaction
@@ -24,6 +25,10 @@ const FeesManager = ({ students = [], tenantId, onAlert = () => {}, onConfirm = 
     const [structures, setStructures] = useState([]);
     const [paymentReceipts, setPaymentReceipts] = useState([]);
     const [loading, setLoading] = useState(false);
+    const [overviewPage, setOverviewPage] = useState(1);
+    const [paymentsPage, setPaymentsPage] = useState(1);
+    const [receiptsPage, setReceiptsPage] = useState(1);
+    const PAGE_SIZE = 10;
 
     const grades = (propGrades && propGrades.length > 0) ? propGrades : Array.from({ length: 12 }, (_, i) => "Grade " + (i + 1));
     const subjects = (propSubjects && propSubjects.length > 0) ? propSubjects : ["Maths", "Physics", "Chemistry", "Biology"];
@@ -57,6 +62,18 @@ const FeesManager = ({ students = [], tenantId, onAlert = () => {}, onConfirm = 
         if (propFilterGrade) setFilterGrade(propFilterGrade);
         if (propFilterBatch) setFilterBatch(propFilterBatch);
     }, [propFilterGrade, propFilterBatch]);
+
+    // Reset pages when filters change
+    useEffect(() => {
+        setOverviewPage(1);
+    }, [filterGrade, filterBatch, filterStatus]);
+
+    // Reset all pages when switching sub-tabs
+    useEffect(() => {
+        setOverviewPage(1);
+        setPaymentsPage(1);
+        setReceiptsPage(1);
+    }, [activeSubTab]);
 
     // ── Firestore listeners ──────────────────────────────────────────────────
     useEffect(() => {
@@ -403,7 +420,6 @@ const FeesManager = ({ students = [], tenantId, onAlert = () => {}, onConfirm = 
     // ── Render ───────────────────────────────────────────────────────────────
     return (
         <div className="animate-fade-in" style={{ maxWidth: '1200px', margin: '0 auto' }}>
-            <h1 style={{ color: 'red', textAlign: 'center' }}>FEES MANAGER V2 ACTIVE</h1>
             {/* SUB-TABS */}
             <div className="glass-panel" style={{ display: 'flex', gap: '8px', padding: '8px', marginBottom: '32px', borderRadius: '16px', flexWrap: 'wrap' }}>
                 {[
@@ -481,7 +497,7 @@ const FeesManager = ({ students = [], tenantId, onAlert = () => {}, onConfirm = 
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {filteredFees.map(fee => {
+                                    {filteredFees.slice((overviewPage - 1) * PAGE_SIZE, overviewPage * PAGE_SIZE).map(fee => {
                                         const sc = STATUS_COLORS[fee.status] || STATUS_COLORS.PENDING;
                                         return (
                                             <tr key={fee.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)', transition: 'background 0.2s' }}
@@ -525,6 +541,16 @@ const FeesManager = ({ students = [], tenantId, onAlert = () => {}, onConfirm = 
                                     })}
                                 </tbody>
                             </table>
+                            {filteredFees.length > PAGE_SIZE && (
+                                <div style={{ padding: '16px', borderTop: '1px solid var(--border)' }}>
+                                    <Pagination
+                                        currentPage={overviewPage}
+                                        totalItems={filteredFees.length}
+                                        pageSize={PAGE_SIZE}
+                                        onPageChange={setOverviewPage}
+                                    />
+                                </div>
+                            )}
                         </div>
                     )}
                 </div>
@@ -760,7 +786,7 @@ const FeesManager = ({ students = [], tenantId, onAlert = () => {}, onConfirm = 
                                 ['PENDING', 'OVERDUE', 'PARTIAL'].includes(f.status) &&
                                 (filterGrade === 'All' || f.grade === filterGrade) &&
                                 (filterBatch === 'All' || (f.batch || 'General Batch') === filterBatch)
-                            ).map(fee => {
+                            ).slice((paymentsPage - 1) * PAGE_SIZE, paymentsPage * PAGE_SIZE).map(fee => {
                                 const sc = STATUS_COLORS[fee.status];
                                 const remaining = (fee.totalAmount || 0) - (fee.paidAmount || 0);
                                 return (
@@ -787,6 +813,23 @@ const FeesManager = ({ students = [], tenantId, onAlert = () => {}, onConfirm = 
                                     </div>
                                 );
                             })}
+                            
+                            {feesList.filter(f =>
+                                ['PENDING', 'OVERDUE', 'PARTIAL'].includes(f.status) &&
+                                (filterGrade === 'All' || f.grade === filterGrade) &&
+                                (filterBatch === 'All' || (f.batch || 'General Batch') === filterBatch)
+                            ).length > PAGE_SIZE && (
+                                <Pagination
+                                    currentPage={paymentsPage}
+                                    totalItems={feesList.filter(f =>
+                                        ['PENDING', 'OVERDUE', 'PARTIAL'].includes(f.status) &&
+                                        (filterGrade === 'All' || f.grade === filterGrade) &&
+                                        (filterBatch === 'All' || (f.batch || 'General Batch') === filterBatch)
+                                    ).length}
+                                    pageSize={PAGE_SIZE}
+                                    onPageChange={setPaymentsPage}
+                                />
+                            )}
                         </div>
                     )}
                 </div>
@@ -874,7 +917,7 @@ const FeesManager = ({ students = [], tenantId, onAlert = () => {}, onConfirm = 
                         </div>
                     ) : (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                            {paymentReceipts.filter(r => r.status === 'VERIFICATION_PENDING').map(receipt => {
+                            {paymentReceipts.filter(r => r.status === 'VERIFICATION_PENDING').slice((receiptsPage - 1) * PAGE_SIZE, receiptsPage * PAGE_SIZE).map(receipt => {
                                 const feeDoc = feesList.find(f => f.id === receipt.feeId);
                                 const studentInfo = feeDoc ? feeDoc.studentName : receipt.studentId;
                                 return (
@@ -917,6 +960,15 @@ const FeesManager = ({ students = [], tenantId, onAlert = () => {}, onConfirm = 
                                     </div>
                                 );
                             })}
+                            
+                            {paymentReceipts.filter(r => r.status === 'VERIFICATION_PENDING').length > PAGE_SIZE && (
+                                <Pagination
+                                    currentPage={receiptsPage}
+                                    totalItems={paymentReceipts.filter(r => r.status === 'VERIFICATION_PENDING').length}
+                                    pageSize={PAGE_SIZE}
+                                    onPageChange={setReceiptsPage}
+                                />
+                            )}
                         </div>
                     )}
                 </div>

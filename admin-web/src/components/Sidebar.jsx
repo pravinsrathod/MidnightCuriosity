@@ -16,7 +16,9 @@ import {
   Settings,
   LogOut,
   X,
-  Key
+  Key,
+  Bot,
+  Lock
 } from "lucide-react";
 
 /**
@@ -34,9 +36,21 @@ const Sidebar = ({
   stats = {}, 
   cancelEdit, 
   signOut, 
-  auth 
+  auth,
+  isOnline = true,
+  isConnecting = false
 }) => {
-  const navSections = [
+  const isFeatureEnabled = (featureKey) => {
+    // If we are superadmin viewing the main view, show everything
+    // But since the sidebar is for the current tenant context, we check tenantData
+    if (!featureKey) return true; // Core features without a key are always enabled
+    
+    const features = tenantData?.features || {};
+    // Default to true if not explicitly set to false (Backward compatibility)
+    return features[featureKey] !== false;
+  };
+
+  const allNavSections = [
     {
       label: "Main",
       items: [
@@ -46,18 +60,18 @@ const Sidebar = ({
     {
       label: "Learning Content",
       items: [
-        { id: 'lectures', label: "Lectures", icon: BookOpen, badge: "AI" },
-        { id: 'homework', label: "Homework", icon: Home },
-        { id: 'exams', label: "Exams", icon: FileText, badge: "AI" },
+        { id: 'lectures', label: "Lectures", icon: BookOpen, badge: "AI", featureKey: 'enableLectures' },
+        { id: 'homework', label: "Homework", icon: Home, featureKey: 'enableHomework' },
+        { id: 'exams', label: "Exams", icon: FileText, badge: "AI", featureKey: 'enableExams' },
       ]
     },
     {
       label: "Student Engagement",
       items: [
-        { id: 'doubts', label: "Doubts", icon: MessageSquare, badge: (stats?.pendingDoubts > 0) ? stats.pendingDoubts : "AI", badgeType: (stats?.pendingDoubts > 0) ? 'danger' : 'info' },
-        { id: 'polls', label: "Live Polls", icon: BarChart3 },
-        { id: 'live', label: "Live Lecture", icon: Video },
-        { id: 'attendance', label: "Attendance", icon: Calendar },
+        { id: 'doubts', label: "Doubts", icon: MessageSquare, badge: (stats?.pendingDoubts > 0) ? stats.pendingDoubts : "AI", badgeType: (stats?.pendingDoubts > 0) ? 'danger' : 'info', featureKey: 'enableDoubts' },
+        { id: 'polls', label: "Live Polls", icon: BarChart3, featureKey: 'enableLivePolls' },
+        { id: 'live', label: "Live Lecture", icon: Video, featureKey: 'enableLiveLectures' },
+        { id: 'attendance', label: "Attendance", icon: Calendar, featureKey: 'enableAttendance' },
       ]
     },
     {
@@ -65,12 +79,21 @@ const Sidebar = ({
       items: [
         { id: 'students', label: "Students", icon: Users, badge: (stats?.pendingStudents > 0) ? stats.pendingStudents : null, badgeType: 'primary' },
         { id: 'password_resets', label: "Password Resets", icon: Key, badge: (stats?.passwordResets > 0) ? stats.passwordResets : null, badgeType: 'warning' },
-        { id: 'fees', label: "Fees", icon: DollarSign },
+        { id: 'fees', label: "Fees", icon: DollarSign, featureKey: 'enableFees' },
         { id: 'deletion', label: "Security", icon: AlertTriangle, badge: (stats?.deletionRequests > 0) ? stats.deletionRequests : null, badgeType: 'danger' },
+        { id: 'signals', label: "Support Signals", icon: Bot, featureKey: 'enableSupportBot' },
         { id: 'settings', label: "Institute Settings", icon: Settings },
       ]
     }
   ];
+
+  const navSections = allNavSections.map(section => {
+    const activeItems = section.items.filter(item => isFeatureEnabled(item.featureKey));
+    return {
+      ...section,
+      items: activeItems
+    };
+  }).filter(section => section.items.length > 0);
 
   if (isSuperAdmin) {
     const pendingTenantsCount = allTenants.filter(t => t.status === 'PENDING_APPROVAL').length;
@@ -124,12 +147,20 @@ const Sidebar = ({
               {section.items.map(item => (
                 <button 
                   key={item.id}
-                  className={`nav-item ${activeTab === item.id ? 'active' : ''}`} 
-                  onClick={() => { setActiveTab?.(item.id); setIsSidebarOpen?.(false); cancelEdit?.(); }}
+                  className={`nav-item ${activeTab === item.id ? 'active' : ''} ${item.disabled ? 'locked' : ''}`} 
+                  onClick={() => { 
+                    if (item.disabled) return;
+                    setActiveTab?.(item.id); 
+                    setIsSidebarOpen?.(false); 
+                    cancelEdit?.(); 
+                  }}
+                  style={{ opacity: item.disabled ? 0.6 : 1, cursor: item.disabled ? 'not-allowed' : 'pointer' }}
                 >
                   <item.icon size={18} strokeWidth={activeTab === item.id ? 2.5 : 2} />
                   <span>{item.label}</span>
-                  {item.badge && (
+                  {item.disabled ? (
+                    <Lock size={14} style={{ marginLeft: 'auto', color: 'var(--danger)' }} />
+                  ) : item.badge && (
                     <span className={`badge ${item.badgeType === 'danger' ? 'badge-danger' : item.badgeType === 'warning' ? 'badge-warning' : item.badgeType === 'primary' ? 'badge-primary' : ''}`} style={{ 
                       marginLeft: 'auto', 
                       fontSize: '10px', 
@@ -146,6 +177,31 @@ const Sidebar = ({
             </div>
           ))}
         </nav>
+
+        {/* System Status Badge */}
+        <div style={{ padding: '16px 20px', borderTop: '1px solid var(--border)', marginTop: 'auto' }}>
+          <div style={{ 
+            display: 'flex', 
+            alignItems: 'center', 
+            gap: '8px',
+            padding: '8px 12px',
+            borderRadius: '8px',
+            background: 'rgba(255,255,255,0.03)',
+            fontSize: '0.75rem',
+            fontWeight: 500
+          }}>
+            <div style={{ 
+              width: '8px', 
+              height: '8px', 
+              borderRadius: '50%', 
+              background: isConnecting ? '#f59e0b' : (isOnline ? '#10b981' : '#ef4444'),
+              boxShadow: `0 0 8px ${isConnecting ? '#f59e0b' : (isOnline ? '#10b981' : '#ef4444')}`
+            }} />
+            <span style={{ color: 'var(--text-secondary)' }}>
+              {isConnecting ? 'Connecting...' : (isOnline ? 'System Online' : 'System Offline')}
+            </span>
+          </div>
+        </div>
 
         <div style={{ marginTop: 'auto', paddingTop: '20px', borderTop: '1px solid var(--border)' }}>
           <button className="nav-item" onClick={() => signOut?.(auth)} style={{ color: 'var(--danger)', opacity: 0.8 }}>
