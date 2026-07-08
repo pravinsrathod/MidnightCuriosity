@@ -56,68 +56,72 @@ const withXcodePatch = (config) => {
       const endMarker = '# End of Xcode 26 compatibility patch';
       const patchCode = `
     \n    ${patchMarker}
-    installer.pods_project.targets.each do |target|
-      target.build_configurations.each do |config|
-        # Enforce C++20 for all pods
-        config.build_settings['CLANG_CXX_LANGUAGE_STANDARD'] = 'c++20'
-        
-        # Disable Folly Coroutines for C++20 compatibility
-        config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] ||= ['$(inherited)']
-        ['FOLLY_HAS_COROUTINES=0', 'FOLLY_CFG_NO_COROUTINES=1', 'FMT_USE_CONSTEVAL=0'].each do |val|
-          config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] << val unless config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'].include?(val)
-        end
-        
-        # Performance and architecture harmonization
-        config.build_settings["ONLY_ACTIVE_ARCH"] = "YES"
-        config.build_settings["IPHONEOS_DEPLOYMENT_TARGET"] = "15.5"
-        
-        # Ensure no architecture exclusion for simulators on Apple Silicon
-        config.build_settings["EXCLUDED_ARCHS[sdk=iphonesimulator*]"] = "arm64"
-      end
-    end
-
-    installer.aggregate_targets.each do |target|
-      target.user_project.build_configurations.each do |config|
-        config.build_settings["ONLY_ACTIVE_ARCH"] = "YES"
-        config.build_settings["IPHONEOS_DEPLOYMENT_TARGET"] = "15.5"
-        config.build_settings["SUPPORTS_MACCATALYST"] = "NO"
-        config.build_settings["SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD"] = "NO"
-        config.build_settings["EXCLUDED_ARCHS[sdk=iphonesimulator*]"] = "arm64"
-      end
-    end
-
-    # Patch xcconfig files for consistency
-    xcconfig_files = Dir.glob(File.join(installer.sandbox.root, 'Target Support Files', '**', '*.xcconfig'))
-    xcconfig_files.each do |file|
-      content = File.read(file)
-      patched = content.gsub(/IPHONEOS_DEPLOYMENT_TARGET\\s*=\\s*\\d+\\.\\d+/, 'IPHONEOS_DEPLOYMENT_TARGET = 15.5')
-      # Instead of removing, we ensure it's set to arm64 if not already present or if it's different
-      unless patched.include?('EXCLUDED_ARCHS[sdk=iphonesimulator*]')
-        patched << "\\nEXCLUDED_ARCHS[sdk=iphonesimulator*] = arm64"
-      else
-        patched = patched.gsub(/EXCLUDED_ARCHS\\[sdk=iphonesimulator\\*\\]\\s*=\\s*(?!arm64).*/, 'EXCLUDED_ARCHS[sdk=iphonesimulator*] = arm64')
-      end
-      
-      if patched.include?('GCC_PREPROCESSOR_DEFINITIONS')
-        ['FOLLY_HAS_COROUTINES=0', 'FOLLY_CFG_NO_COROUTINES=1', 'FMT_USE_CONSTEVAL=0'].each do |val|
-          patched = patched.gsub(/(GCC_PREPROCESSOR_DEFINITIONS.*? = )(?!.*#{val})(.*)/, "\\\\1\\\\2 #{val}")
+    begin
+      installer.pods_project.targets.each do |target|
+        target.build_configurations.each do |config|
+          # Enforce C++20 for all pods
+          config.build_settings['CLANG_CXX_LANGUAGE_STANDARD'] = 'c++20'
+          
+          # Disable Folly Coroutines for C++20 compatibility
+          config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] ||= ['$(inherited)']
+          ['FOLLY_HAS_COROUTINES=0', 'FOLLY_CFG_NO_COROUTINES=1', 'FMT_USE_CONSTEVAL=0'].each do |val|
+            config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] << val unless config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'].include?(val)
+          end
+          
+          # Performance and architecture harmonization
+          config.build_settings["ONLY_ACTIVE_ARCH"] = "YES"
+          config.build_settings["IPHONEOS_DEPLOYMENT_TARGET"] = "15.5"
+          
+          # Ensure no architecture exclusion for simulators on Apple Silicon
+          config.build_settings["EXCLUDED_ARCHS[sdk=iphonesimulator*]"] = "arm64"
         end
       end
 
-      File.write(file, patched) if patched != content
-    end
-
-    # Xcode 26+ fmt library patch
-    fmt_base = File.join(installer.sandbox.root, 'fmt', 'include', 'fmt', 'base.h')
-    if File.exist?(fmt_base)
-      content = File.read(fmt_base)
-      unless content.include?('Xcode 26 workaround')
-        patched = content.gsub(/#elif defined\\(__cpp_consteval\\)\\n#\\s+define FMT_USE_CONSTEVAL 1/, "// Xcode 26 workaround\\n#elif defined(__cpp_consteval)\\n#  define FMT_USE_CONSTEVAL 0")
-        if patched != content
-          File.chmod(0644, fmt_base)
-          File.write(fmt_base, patched)
+      installer.aggregate_targets.each do |target|
+        target.user_project.build_configurations.each do |config|
+          config.build_settings["ONLY_ACTIVE_ARCH"] = "YES"
+          config.build_settings["IPHONEOS_DEPLOYMENT_TARGET"] = "15.5"
+          config.build_settings["SUPPORTS_MACCATALYST"] = "NO"
+          config.build_settings["SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD"] = "NO"
+          config.build_settings["EXCLUDED_ARCHS[sdk=iphonesimulator*]"] = "arm64"
         end
       end
+
+      # Patch xcconfig files for consistency
+      xcconfig_files = Dir.glob(File.join(installer.sandbox.root, 'Target Support Files', '**', '*.xcconfig'))
+      xcconfig_files.each do |file|
+        content = File.read(file)
+        patched = content.gsub(/IPHONEOS_DEPLOYMENT_TARGET\s*=\s*\d+\.\d+/, 'IPHONEOS_DEPLOYMENT_TARGET = 15.5')
+        # Instead of removing, we ensure it's set to arm64 if not already present or if it's different
+        unless patched.include?('EXCLUDED_ARCHS[sdk=iphonesimulator*]')
+          patched << "\nEXCLUDED_ARCHS[sdk=iphonesimulator*] = arm64"
+        else
+          patched = patched.gsub(/EXCLUDED_ARCHS\[sdk=iphonesimulator\*\]\s*=\s*(?!arm64).*/, 'EXCLUDED_ARCHS[sdk=iphonesimulator*] = arm64')
+        end
+        
+        if patched.include?('GCC_PREPROCESSOR_DEFINITIONS')
+          ['FOLLY_HAS_COROUTINES=0', 'FOLLY_CFG_NO_COROUTINES=1', 'FMT_USE_CONSTEVAL=0'].each do |val|
+            patched = patched.gsub(/(GCC_PREPROCESSOR_DEFINITIONS.*? = )(?!.*#{val})(.*)/, "\\1\\2 #{val}")
+          end
+        end
+
+        File.write(file, patched) if patched != content
+      end
+
+      # Xcode 26+ fmt library patch
+      fmt_base = File.join(installer.sandbox.root, 'fmt', 'include', 'fmt', 'base.h')
+      if File.exist?(fmt_base)
+        content = File.read(fmt_base)
+        unless content.include?('Xcode 26 workaround')
+          patched = content.gsub(/#elif defined\(__cpp_consteval\)\n#\s+define FMT_USE_CONSTEVAL 1/, "// Xcode 26 workaround\n#elif defined(__cpp_consteval)\n#  define FMT_USE_CONSTEVAL 0")
+          if patched != content
+            File.chmod(0644, fmt_base)
+            File.write(fmt_base, patched)
+          end
+        end
+      end
+    rescue => e
+      puts "Xcode 26 compatibility patch failed: #{e.message}"
     end
     # End of Xcode 26 compatibility patch
 `;
