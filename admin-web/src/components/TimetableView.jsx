@@ -404,6 +404,26 @@ export default function TimetableView({ adminTenantId, grades, batches, subjects
                           <Trash2 size={16} />
                         </button>
                       </div>
+                      {(slot.type === 'class' || slot.type === 'activity') && (
+                        <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+                          <input 
+                            type="text"
+                            className="input-field"
+                            placeholder="Instructor (Optional)"
+                            style={{ flex: 1, padding: '8px', fontSize: '0.85rem' }}
+                            value={slot.instructor || ''}
+                            onChange={(e) => handleUpdateSlot(day, index, 'instructor', e.target.value)}
+                          />
+                          <input 
+                            type="text"
+                            className="input-field"
+                            placeholder="Room (Optional)"
+                            style={{ flex: 1, padding: '8px', fontSize: '0.85rem' }}
+                            value={slot.room || ''}
+                            onChange={(e) => handleUpdateSlot(day, index, 'room', e.target.value)}
+                          />
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>

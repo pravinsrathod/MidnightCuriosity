@@ -22,7 +22,6 @@ const withXcodePatch = (config) => {
         buildConfig.buildSettings['TARGETED_DEVICE_FAMILY'] = '"1,2"';
         buildConfig.buildSettings['SDKROOT'] = 'iphoneos';
         buildConfig.buildSettings['SUPPORTED_PLATFORMS'] = '"iphonesimulator iphoneos"';
-        buildConfig.buildSettings['"EXCLUDED_ARCHS[sdk=iphonesimulator*]"'] = 'arm64';
 
         // Fix the malformed library search paths if it exists
         if (buildConfig.buildSettings['LIBRARY_SEARCH_PATHS']) {
@@ -71,9 +70,6 @@ const withXcodePatch = (config) => {
           # Performance and architecture harmonization
           config.build_settings["ONLY_ACTIVE_ARCH"] = "YES"
           config.build_settings["IPHONEOS_DEPLOYMENT_TARGET"] = "15.5"
-          
-          # Ensure no architecture exclusion for simulators on Apple Silicon
-          config.build_settings["EXCLUDED_ARCHS[sdk=iphonesimulator*]"] = "arm64"
         end
       end
 
@@ -83,7 +79,6 @@ const withXcodePatch = (config) => {
           config.build_settings["IPHONEOS_DEPLOYMENT_TARGET"] = "15.5"
           config.build_settings["SUPPORTS_MACCATALYST"] = "NO"
           config.build_settings["SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD"] = "NO"
-          config.build_settings["EXCLUDED_ARCHS[sdk=iphonesimulator*]"] = "arm64"
         end
       end
 
@@ -92,16 +87,13 @@ const withXcodePatch = (config) => {
       xcconfig_files.each do |file|
         content = File.read(file)
         patched = content.gsub(/IPHONEOS_DEPLOYMENT_TARGET\s*=\s*\d+\.\d+/, 'IPHONEOS_DEPLOYMENT_TARGET = 15.5')
-        # Instead of removing, we ensure it's set to arm64 if not already present or if it's different
-        unless patched.include?('EXCLUDED_ARCHS[sdk=iphonesimulator*]')
-          patched << "\nEXCLUDED_ARCHS[sdk=iphonesimulator*] = arm64"
-        else
-          patched = patched.gsub(/EXCLUDED_ARCHS\[sdk=iphonesimulator\*\]\s*=\s*(?!arm64).*/, 'EXCLUDED_ARCHS[sdk=iphonesimulator*] = arm64')
-        end
+        
+        # Remove any existing arm64 exclusions
+        patched = patched.gsub(/EXCLUDED_ARCHS\[sdk=iphonesimulator\*\]\s*=\s*arm64/, '')
         
         if patched.include?('GCC_PREPROCESSOR_DEFINITIONS')
           ['FOLLY_HAS_COROUTINES=0', 'FOLLY_CFG_NO_COROUTINES=1', 'FMT_USE_CONSTEVAL=0'].each do |val|
-            patched = patched.gsub(/(GCC_PREPROCESSOR_DEFINITIONS.*? = )(?!.*#{val})(.*)/, "\\1\\2 #{val}")
+            patched = patched.gsub(/(GCC_PREPROCESSOR_DEFINITIONS.*? = )(?!.*#{val})(.*)/, "\\\\1\\\\2 #{val}")
           end
         end
 
