@@ -72,6 +72,11 @@ const ROLE_AWARE_TIPS: Record<string, Record<string, {text: string[], suggestion
 };
 
 const CONTEXT_TIPS: Record<string, string[]> = {
+    '/leaderboard': [
+        "This is the global leaderboard! Top students from all classes are displayed here.",
+        "Ranks are securely updated every hour in the background to ensure fairness.",
+        "Want to rank up? Complete more topics and keep your average quiz scores high!"
+    ],
     '/attendance': [
         "Visualize your monthly presence. Green = Present, Red = Absent, Yellow = Holiday.",
         "Precision tracking: tap any date to see exact check-in/out timestamps.",
@@ -156,12 +161,13 @@ const KEYWORD_RESPONSES: Record<string, {text: string[], suggestions?: string[],
     'delete': { text: ['Account deletion is permanent and wipes all history. Proceed with caution in Profile settings.'], suggestions: ['Privacy Policy'] },
     'password': { text: ['Security Protocol: Update passwords regularly. Use the login screen for resets.'], suggestions: ['Update Password'] },
     'report': { text: ['Academic Reports: Official PDFs are available in the Exam section post-evaluation.'], suggestions: ['Download PDF', 'View Results'] },
-    'syllabus': { text: ['The curriculum structure is fully detailed in the Knowledge Graph section.'], suggestions: ['Download Plan'] },
-    'timetable': { text: ['Never miss a bell! Your daily timetable is dynamic and updated in your Dashboard.'], suggestions: ['Today\'s Schedule'] },
+    'timetable': { text: ['Your daily timetable is dynamically generated. If an admin has set an override for this week, you will see the updated schedule here.', 'Your timetable accommodates both core subjects and special extracurricular activities!'], suggestions: ['Today\'s Schedule', 'Weekly View'] },
+    'activity': { text: ['Activities like Yoga, Art, and Music are integrated directly into your dynamic timetable!', 'Check your timetable to see when your next extracurricular activity is scheduled.'], suggestions: ['View Timetable'] },
     'quiz': { text: ['Challenge yourself! Complete quizzes to earn marks, points, and rank up.'], suggestions: ['Available Quizes', 'Quiz Results'] },
     'badge': { text: ['Earn badges for consistency, high scores, and community activity.'], suggestions: ['View My Badges'] },
     'points': { text: ['Accumulate points for every interaction! Points are linked to your global leaderboard rank.'], suggestions: ['Rankings', 'Point History'] },
-    'leaderboard': { text: ['Top performance area: See the highest achievers across the institute.'], suggestions: ['Rankings', 'My Position'] },
+    'leaderboard': { text: ['Top performance area: See the highest achievers across the institute. Ranks are securely calculated and updated every hour!', 'Complete more topics to improve your rank.'], suggestions: ['Rankings', 'My Position'] },
+    'rank': { text: ['Your rank is calculated hourly based on your completed topics and average scores. Keep learning to move up the Leaderboard!'], suggestions: ['View Leaderboard', 'How to rank up'] },
     'broadcast': { text: ['Broadcast Interface: Push urgent news to all users with one tap.'], suggestions: ['New Alert'], role: "ADMIN" }
 };
 

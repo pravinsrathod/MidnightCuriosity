@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, FlatList, Image, SafeAreaView, TouchableOpacity
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { auth, db } from '../../services/firebaseConfig';
-import { collection, query, where, getDocs, doc, getDoc } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc, getDoc, orderBy, limit } from 'firebase/firestore';
 import { useTheme } from '../../context/ThemeContext';
 import { useTenant } from '../../context/TenantContext';
 
@@ -15,6 +15,7 @@ interface UserRank {
     role?: string;
     isAdmin?: boolean;
     avatarUrl?: string;
+    rank?: number;
 }
 
 export default function LeaderboardScreen() {
@@ -51,14 +52,29 @@ export default function LeaderboardScreen() {
                     }
                 }
 
-                // Fetch all for this tenant
-                const q = query(
-                    collection(db, 'users'),
-                    where('tenantId', '==', tenantId || 'default')
-                );
+                // Use the new composite index and rank field for fast, limited querying
+                let q;
+                if (userGrade) {
+                    q = query(
+                        collection(db, 'users'),
+                        where('tenantId', '==', tenantId || 'default'),
+                        where('grade', '==', userGrade),
+                        where('rank', '>', 0),
+                        orderBy('rank', 'desc'),
+                        limit(50)
+                    );
+                } else {
+                    q = query(
+                        collection(db, 'users'),
+                        where('tenantId', '==', tenantId || 'default'),
+                        where('rank', '>', 0),
+                        orderBy('rank', 'desc'),
+                        limit(50)
+                    );
+                }
                 
                 const allUsersSnap = await getDocs(q);
-                const filteredUsers = allUsersSnap.docs
+                const sortedUsers = allUsersSnap.docs
                     .map(doc => {
                         const data = doc.data();
                         const completed = data.completedTopics ? data.completedTopics.length : 0;
@@ -71,22 +87,17 @@ export default function LeaderboardScreen() {
                             grade: data.grade,
                             role: data.role?.toUpperCase(),
                             isAdmin: data.isAdmin,
-                            avatarUrl: avatar
+                            avatarUrl: avatar,
+                            rank: data.rank
                         };
                     })
                     .filter(u => {
-                        // 1. Must be in the same grade (if student has a grade)
-                        if (userGrade && u.grade !== userGrade) return false;
-                        
-                        // 2. Exclude Parents and Admins
+                        // Exclude non-students just in case they have a rank field
                         if (u.role === 'PARENT' || u.role === 'ADMIN' || u.isAdmin) return false;
-                        
                         return true;
                     });
 
-                // Sort Descending
-                const sorted = filteredUsers.sort((a, b) => b.completedCount - a.completedCount);
-                setUsers(sorted);
+                setUsers(sortedUsers);
             } catch (e) {
                 console.error("Leaderboard fetch error:", e);
             } finally {
@@ -140,8 +151,8 @@ export default function LeaderboardScreen() {
                 </View>
 
                 <View style={styles.scoreContainer}>
-                    <Text style={styles.score}>{item.completedCount}</Text>
-                    <Text style={styles.scoreLabel}>Topics</Text>
+                    <Text style={styles.score}>{item.rank || 0}</Text>
+                    <Text style={styles.scoreLabel}>XP</Text>
                 </View>
             </View>
         );

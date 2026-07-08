@@ -32,6 +32,18 @@ service firebase.storage {
       allow write: if isAuthenticated();
     }
 
+    // Campaign Banners
+    match /campaigns/{tenantId}/{filename} {
+      allow read: if true;
+      allow write: if isAuthenticated();
+    }
+
+    // Exams Images
+    match /exams/{tenantId}/{filename} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated();
+    }
+
     // General Fallback
     // Allow read/write to other paths only for Admins with custom claims
     match /{allPaths=**} {

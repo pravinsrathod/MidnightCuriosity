@@ -461,7 +461,7 @@ const FeesManager = ({ students = [], tenantId, onAlert = () => {}, onConfirm = 
                         <span style={{ fontWeight: 600, marginRight: '4px' }}>Filter:</span>
                         <select value={filterGrade} onChange={e => { setFilterGrade(e.target.value); setFilterBatch('All'); }}
                             style={{ padding: '8px 12px', background: 'var(--bg-input)', border: '1px solid var(--border)', color: '#fff', borderRadius: '8px' }}>
-                            <option value="All">All Grades</option>
+                            <option value="All">All Classes</option>
                             {grades.map(g => <option key={g} value={g}>{g}</option>)}
                         </select>
                         <select value={filterBatch} onChange={e => setFilterBatch(e.target.value)}
@@ -491,7 +491,7 @@ const FeesManager = ({ students = [], tenantId, onAlert = () => {}, onConfirm = 
                             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                                 <thead>
                                     <tr style={{ borderBottom: '1px solid var(--border)', background: 'rgba(255,255,255,0.03)' }}>
-                                        {['Student', 'Grade', 'Fee Label', 'Due Date', 'Amount', 'Paid', 'Status', 'Actions'].map(h => (
+                                        {['Student', 'Class', 'Fee Label', 'Due Date', 'Amount', 'Paid', 'Status', 'Actions'].map(h => (
                                             <th key={h} style={{ padding: '14px 16px', textAlign: 'left', fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{h}</th>
                                         ))}
                                     </tr>
@@ -575,11 +575,11 @@ const FeesManager = ({ students = [], tenantId, onAlert = () => {}, onConfirm = 
                             </div>
                             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '20px' }}>
                                 <div className="form-group">
-                                    <label className="label">Grade</label>
+                                    <label className="label">Class</label>
                                     <select value={newStructure.grade} onChange={e => setNewStructure(s => ({ ...s, grade: e.target.value, batch: 'All' }))}
                                         style={{ width: '100%', padding: '12px', background: 'var(--bg-input)', border: '1px solid var(--border)', color: '#fff', borderRadius: '10px' }}>
-                                        <option value="">Select Grade</option>
-                                        <option value="All">All Grades</option>
+                                        <option value="">Select Class</option>
+                                        <option value="All">All Classes</option>
                                         {grades.map(g => <option key={g} value={g}>{g}</option>)}
                                     </select>
                                 </div>
@@ -642,7 +642,7 @@ const FeesManager = ({ students = [], tenantId, onAlert = () => {}, onConfirm = 
                                 <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                                     <select value={structFilterGrade} onChange={e => { setStructFilterGrade(e.target.value); setStructFilterBatch('All'); }}
                                         style={{ padding: '8px', background: 'var(--bg-input)', border: '1px solid var(--border)', color: '#fff', borderRadius: '8px', fontSize: '0.85rem' }}>
-                                        <option value="All">All Grades</option>
+                                        <option value="All">All Classes</option>
                                         {grades.map(g => <option key={g} value={g}>{g}</option>)}
                                     </select>
                                     <select value={structFilterBatch} onChange={e => setStructFilterBatch(e.target.value)}
@@ -687,7 +687,7 @@ const FeesManager = ({ students = [], tenantId, onAlert = () => {}, onConfirm = 
                 <div className="glass-panel animate-scale-up" style={{ maxWidth: '600px', margin: '0 auto', padding: '40px' }}>
                     <div style={{ textAlign: 'center', marginBottom: '32px' }}>
                         <div style={{ fontSize: '3rem', marginBottom: '12px' }}>📋</div>
-                        <h2>Assign Fees to Grade</h2>
+                        <h2>Assign Fees to Class</h2>
                         <p style={{ color: 'var(--text-secondary)' }}>Select a fee structure and grade to bulk-assign fees to all active students.</p>
                     </div>
                     <form onSubmit={handleAssignFees} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
@@ -721,10 +721,10 @@ const FeesManager = ({ students = [], tenantId, onAlert = () => {}, onConfirm = 
                         )}
 
                             <div className="form-group">
-                                <label className="label">Grade</label>
+                                <label className="label">Class</label>
                                 <select value={assignGrade} onChange={e => { setAssignGrade(e.target.value); setAssignBatch('All'); }}
                                     style={{ width: '100%', padding: '12px', background: 'var(--bg-input)', border: '1px solid var(--border)', color: '#fff', borderRadius: '10px' }}>
-                                    <option value="">Select Grade</option>
+                                    <option value="">Select Class</option>
                                     {grades.map(g => <option key={g} value={g}>{g}</option>)}
                                 </select>
                             </div>

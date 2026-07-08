@@ -12,7 +12,7 @@ const AttendanceManager = ({ students = [], tenantId, onAlert = () => {}, onConf
     const [currentPage, setCurrentPage] = useState(1);
     const pageSize = 20;
 
-    const grades = (propGrades && propGrades.length > 0) ? propGrades : Array.from({ length: 12 }, (_, i) => "Grade " + (i + 1));
+    const grades = (propGrades && propGrades.length > 0) ? propGrades : Array.from({ length: 12 }, (_, i) => "Class " + (i + 1));
 
     // Filter only active students
     const activeStudents = students.filter(s => 

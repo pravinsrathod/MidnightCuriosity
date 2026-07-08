@@ -49,6 +49,7 @@ const SettingsView = ({
   batches, 
   subjects, 
   topics, 
+  activities,
   loading, 
   isEditingTenant, 
   tenantEditForm, 
@@ -86,7 +87,7 @@ const SettingsView = ({
             onChange={e => setSelectedConfigGrade(e.target.value)} 
             style={{ padding: '8px', borderRadius: '8px', background: 'var(--bg-tertiary)', color: '#fff', border: '1px solid var(--border)', flex: 1 }}
           >
-            <option value="">Select Grade</option>
+            <option value="">Select Class</option>
             {grades.map(g => <option key={g} value={g}>{g}</option>)}
           </select>
           <input
@@ -198,9 +199,10 @@ const SettingsView = ({
           <h2 style={{ fontSize: '1.5rem', marginBottom: '12px' }}>System Taxonomies</h2>
           <p style={{ color: 'var(--text-secondary)', marginBottom: '32px' }}>Define standardized classifications for your ecosystem.</p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-            <ConfigList title="Grade Levels" items={grades} type="grades" addItem={addItem} removeItem={removeItem} />
+            <ConfigList title="Class Levels" items={grades} type="grades" addItem={addItem} removeItem={removeItem} />
             <BatchConfigList />
             <ConfigList title="Subject Clusters" items={subjects} type="subjects" addItem={addItem} removeItem={removeItem} />
+            <ConfigList title="Activities" items={activities || []} type="activities" addItem={addItem} removeItem={removeItem} />
           </div>
         </div>
 

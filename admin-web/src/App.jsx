@@ -6,6 +6,7 @@ import { sendPushNotification } from "./notificationService";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import AdminLogin from "./AdminLogin";
+import LandingPage from "./LandingPage";
 import ConfirmModal from "./components/ConfirmModal";
 import AttendanceManager from "./components/AttendanceManager";
 import HomeworkManager from "./components/HomeworkManager";
@@ -51,6 +52,8 @@ import LecturesView from './components/LecturesView';
 import PasswordResetRequestsView from './components/PasswordResetRequestsView';
 import IntegrityView from './components/IntegrityView';
 import SignalsView from './components/SignalsView';
+import TimetableView from './components/TimetableView';
+import CampaignsView from './components/CampaignsView';
 
 
 import { 
@@ -58,8 +61,7 @@ import {
     generateDoubtAnswer, 
     extractYoutubeId, 
     getApiKey, 
-    setApiKey, 
-    generateExamFromPdf
+    setApiKey
 } from './aiService';
 // import { seedDemoData } from "./demoSeeder";
 
@@ -118,7 +120,9 @@ const tabFeaturesMap = {
   live: 'enableLiveLectures',
   attendance: 'enableAttendance',
   fees: 'enableFees',
-  signals: 'enableSupportBot'
+  signals: 'enableSupportBot',
+  timetable: 'enableTimetable',
+  campaigns: 'enableCampaigns'
 };
 
 // --- Extracted Components (Moved to ./components/ for stability) ---
@@ -134,6 +138,7 @@ function App() {
   const [isGeneratingAI, setIsGeneratingAI] = useState(false);
   const [user, setUser] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
+  const [showLogin, setShowLogin] = useState(false);
 
   // Admin Tenant State
   const [adminTenantId, setAdminTenantId] = useState(null);
@@ -285,6 +290,7 @@ function App() {
   const [grades, setGrades] = useState([]);
   const [subjects, setSubjects] = useState([]);
   const [topics, setTopics] = useState([]);
+  const [activities, setActivities] = useState([]);
   const [batches, setBatches] = useState({});
 
   const [selectedGradeFilter, setSelectedGradeFilter] = useState("All");
@@ -458,8 +464,7 @@ function App() {
     subject: "",
     topic: ""
   });
-  const [examFile, setExamFile] = useState(null);
-  const [isProcessingExam, setIsProcessingExam] = useState(false);
+
 
   useEffect(() => {
     if (!adminTenantId) return;
@@ -476,38 +481,7 @@ function App() {
     return () => unsub();
   }, [adminTenantId]);
 
-  const handleExamFileChange = (e) => {
-    if (e.target.files[0]) {
-      if (e.target.files[0].type !== 'application/pdf') {
-        customAlert("Please upload a valid PDF file.");
-        e.target.value = "";
-        return;
-      }
-      setExamFile(e.target.files[0]);
-    }
-  };
 
-  const processExamPdf = async () => {
-    if (!examFile) return customAlert("Please select a PDF file first.");
-
-    if (!apiKeyVal) {
-      customAlert("✨ API Key Required! \n\nTo extracting questions from your custom PDF, you need a Gemini API Key. \n\nPlease enter it in the next prompt (or Mock Mode will remain active).");
-      saveApiKey();
-      return;
-    }
-
-    setIsProcessingExam(true);
-    try {
-      const extractedQuestions = await generateExamFromPdf(examFile, apiKeyVal);
-      setExamForm(prev => ({ ...prev, questions: extractedQuestions }));
-      customAlert(`Success! Generated ${extractedQuestions.length} questions.`);
-    } catch (e) {
-      console.error(e);
-      customAlert("Failed to process PDF: " + e.message);
-    } finally {
-      setIsProcessingExam(false);
-    }
-  };
 
   const saveExam = async () => {
     const examDate = new Date(examForm.date);
@@ -517,16 +491,51 @@ function App() {
     }
 
     if (!examForm.title || !examForm.date || !examForm.grade || examForm.questions.length === 0) {
-      return customAlert("Please fill Title, Date, Grade and ensure questions are generated.");
+      return customAlert("Please fill Title, Date, Class and ensure questions are generated.");
     }
 
     try {
       setLoading(true);
-      await addDoc(collection(db, "exams"), {
+
+      // --- Upload Images if any ---
+      const processedQuestions = await Promise.all(examForm.questions.map(async (q) => {
+        let questionImageUrl = q.questionImage || null;
+        if (q.questionImageFile) {
+          const storageRef = ref(storage, `exams/${adminTenantId}/${Date.now()}_${q.questionImageFile.name}`);
+          await uploadBytes(storageRef, q.questionImageFile);
+          questionImageUrl = await getDownloadURL(storageRef);
+        }
+
+        const processedOptions = await Promise.all(q.options.map(async (opt) => {
+          let optionImageUrl = opt.image || null;
+          if (opt.imageFile) {
+            const storageRef = ref(storage, `exams/${adminTenantId}/${Date.now()}_${opt.imageFile.name}`);
+            await uploadBytes(storageRef, opt.imageFile);
+            optionImageUrl = await getDownloadURL(storageRef);
+          }
+          return {
+            text: opt.text || "",
+            image: optionImageUrl
+          };
+        }));
+
+        return {
+          question: q.question,
+          questionImage: questionImageUrl,
+          options: processedOptions,
+          correctAnswer: q.correctAnswer
+        };
+      }));
+
+      // Copy examForm but replace questions with processedQuestions
+      const examDataToSave = {
         ...examForm,
+        questions: processedQuestions,
         tenantId: adminTenantId, // Multi-tenancy
         createdAt: serverTimestamp()
-      });
+      };
+
+      await addDoc(collection(db, "exams"), examDataToSave);
 
       // --- Push Notifications ---
       try {
@@ -545,7 +554,6 @@ function App() {
       } catch (e) { console.warn("Exam notification failed", e); }
 
       setExamForm({ title: "", date: "", duration: 60, questions: [], status: "scheduled", grade: grades[0] || "", batch: "All", subject: subjects[0] || "", topic: topics[0] || "" });
-      setExamFile(null);
       customAlert("Exam scheduled successfully!");
     } catch (e) {
       console.error(e);
@@ -763,6 +771,7 @@ function App() {
         setGrades(data.grades || []);
         setSubjects(data.subjects || []);
         setTopics(data.topics || []);
+        setActivities(data.activities || []);
         setBatches(data.batches || {});
         // Set defaults if form empty
         if (!formData.grade && data.grades?.length > 0) setFormData(prev => ({ ...prev, grade: data.grades[0] }));
@@ -771,22 +780,24 @@ function App() {
       } else {
         // Initialize Defaults if first run
         const defaults = {
-          grades: Array.from({ length: 12 }, (_, i) => `Grade ${i + 1} `),
+          grades: Array.from({ length: 12 }, (_, i) => `Class ${i + 1}`),
           subjects: ["Maths", "Physics", "Chemistry", "Biology", "English", "History"],
           topics: ["Algebra", "Geometry", "Calculus"],
+          activities: ["Yoga", "Music", "Art", "Physical Education"],
           batches: {}
         };
         await setDoc(docRef, defaults);
         setGrades(defaults.grades);
         setSubjects(defaults.subjects);
         setTopics(defaults.topics);
+        setActivities(defaults.activities);
         setBatches(defaults.batches);
         setFormData(prev => ({ ...prev, grade: defaults.grades[0], subject: defaults.subjects[0], topic: defaults.topics[0] }));
       }
     } catch (e) {
       console.error("Error fetching config:", e);
       // Fallback to minimal defaults so UI doesn't break
-      if (grades.length === 0) setGrades(["Grade 1", "Grade 2"]);
+      if (grades.length === 0) setGrades(["Class 1", "Class 2"]);
     } finally {
       // Config loaded
     }
@@ -916,7 +927,7 @@ function App() {
 
   const handleGenerateAI = async () => {
     if (!formData.title || !formData.grade || !formData.topic || !formData.subject) {
-      customAlert("Please fill in Title, Grade, Subject, and Topic first.");
+      customAlert("Please fill in Title, Class, Subject, and Topic first.");
       return;
     }
 
@@ -1062,7 +1073,7 @@ function App() {
     setEditingId(null);
     setFormData({
       title: "",
-      grade: grades[0] || "Grade 1",
+      grade: grades[0] || "Class 1",
       subject: subjects[0] || "Maths",
       topic: topics[0] || "",
       overview: "",
@@ -1360,7 +1371,10 @@ function App() {
 
 
   if (authLoading) return <div style={{ height: '100vh', display: 'flex', justifyContent: 'center', alignItems: 'center', background: '#0f172a', color: '#94a3b8' }}>Loading System...</div>;
-  if (!user) return <AdminLogin />;
+  if (!user) {
+    if (showLogin) return <AdminLogin onBack={() => setShowLogin(false)} />;
+    return <LandingPage onLoginClick={() => setShowLogin(true)} />;
+  }
 
   // PENDING APPROVAL SCREEN OR REJECTED
   if (!isSuperAdmin && (pendingUserStatus === 'PENDING_APPROVAL' || pendingUserStatus === 'REJECTED')) {
@@ -1428,13 +1442,16 @@ function App() {
             {activeTab === 'exams' && 'Scheduled Exams'}
             {activeTab === 'attendance' && 'Daily Attendance'}
             {activeTab === 'homework' && 'Manage Homework'}
+            {activeTab === 'timetable' && 'Class Timetable'}
             {activeTab === 'fees' && 'Fees Management'}
             {activeTab === 'students' && 'Manage Students'}
             {activeTab === 'deletion' && 'Account Deletion Requests'}
             {activeTab === 'settings' && 'System Configuration'}
               {activeTab === 'superadmin' && 'Super Admin Panel'}
               {activeTab === 'integrity' && 'Data Integrity & Cleanup'}
-              {activeTab === 'signals' && 'Signals Management'}
+              {activeTab === 'timetable' && 'Schedule Management'}
+            {activeTab === 'campaigns' && 'Campaigns'}
+            {activeTab === 'signals' && 'Signals Management'}
             </h1>
             {isSuperAdmin && tabFeaturesMap[activeTab] && tenantData?.features?.[tabFeaturesMap[activeTab]] === false && (
               <div style={{ padding: '4px 12px', background: 'var(--danger-glass)', border: '1px solid var(--danger)', borderRadius: '8px', color: 'var(--danger)', fontSize: '0.75rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -1588,6 +1605,7 @@ function App() {
               grades={grades}
               subjects={subjects}
               topics={topics}
+              activities={activities}
               batches={batches}
               addItem={addItem}
               removeItem={removeItem}
@@ -1624,21 +1642,20 @@ function App() {
             />
           )}
 
+          {activeTab === 'campaigns' && (
+            <CampaignsView tenantId={tenantData?.id} />
+          )}
+
           {activeTab === 'exams' && (
             <ExamsView 
               exams={exams}
               examForm={examForm}
               setExamForm={setExamForm}
-              examFile={examFile}
-              setExamFile={setExamFile}
-              isProcessingExam={isProcessingExam}
               loading={loading}
               grades={grades}
               batches={batches}
               subjects={subjects}
               topics={topics}
-              handleExamFileChange={handleExamFileChange}
-              processExamPdf={processExamPdf}
               saveExam={saveExam}
               deleteExam={deleteExam}
               customAlert={customAlert}
@@ -1669,6 +1686,19 @@ function App() {
               students={students} 
               tenantId={adminTenantId} 
               onAlert={customAlert} 
+            />
+          )}
+
+          {activeTab === 'timetable' && (
+            <TimetableView 
+              adminTenantId={adminTenantId}
+              grades={grades}
+              batches={batches}
+              subjects={subjects}
+              activities={activities}
+              customAlert={customAlert}
+              customConfirm={customConfirm}
+              db={db}
             />
           )}
 

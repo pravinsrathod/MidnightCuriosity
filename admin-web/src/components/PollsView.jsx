@@ -32,14 +32,14 @@ const PollsView = ({
         <form onSubmit={handleCreatePoll} style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 300px), 1fr))', gap: '20px' }}>
             <div className="form-group">
-              <label className="label">Target Grade</label>
+              <label className="label">Target Class</label>
               <select
                 className="form-control"
                 value={pollFormData.grade}
                 onChange={(e) => setPollFormData({ ...pollFormData, grade: e.target.value, batch: "All" })}
                 style={{ background: 'var(--bg-input)', border: '1px solid var(--border)', color: '#fff', padding: '12px', borderRadius: '10px', width: '100%' }}
               >
-                <option value="All">Global (All Grades)</option>
+                <option value="All">Global (All Classes)</option>
                 {grades.map(g => <option key={g} value={g}>{g}</option>)}
               </select>
             </div>

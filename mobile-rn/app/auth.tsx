@@ -15,6 +15,7 @@ import { collection, query, where, getDocs, doc, getDoc, updateDoc, setDoc, limi
 import { httpsCallable } from 'firebase/functions';
 import { functions } from '../services/firebaseConfig';
 import * as LocalAuthentication from 'expo-local-authentication';
+import { configureGoogleSignIn, signInWithGoogle } from '../services/googleAuthService';
 
 export default function AuthScreen() {
     const router = useRouter();
@@ -67,6 +68,11 @@ export default function AuthScreen() {
     const [isSearchingTenant, setIsSearchingTenant] = useState(false);
     const [showManualCode, setShowManualCode] = useState(false);
     const [isForgot, setIsForgot] = useState(false);
+
+    // Initialize Google Sign-In
+    useEffect(() => {
+        configureGoogleSignIn();
+    }, []);
 
     // Fetch institutes when in TENANT stage
     useEffect(() => {
@@ -228,6 +234,49 @@ export default function AuthScreen() {
         } catch (e) {
             console.error("Validation Error:", e);
             Alert.alert('Institute Validation Failed', 'Could not connect to the server.');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleGoogleAuth = async () => {
+        setLoading(true);
+        try {
+            const firebaseUser = await signInWithGoogle();
+            if (!firebaseUser) throw new Error("Google login succeeded but no Firebase user returned.");
+
+            const userDoc = await getDoc(doc(db, "users", firebaseUser.uid));
+            if (userDoc.exists()) {
+                const userData = userDoc.data();
+                
+                await AsyncStorage.setItem('user_uid', firebaseUser.uid);
+                await setTenantId(userData.tenantId);
+
+                let deviceId = "unknown";
+                try {
+                    if (Platform.OS === 'ios') deviceId = await Application.getIosIdForVendorAsync() || "ios-unknown";
+                    else if (Platform.OS === 'android') deviceId = await Application.getAndroidId() || "android-unknown";
+                    await setDoc(doc(db, "users", firebaseUser.uid), { deviceId: deviceId }, { merge: true });
+                } catch (devErr) {
+                    console.warn("[Auth] Failed to update device ID:", devErr);
+                }
+
+                if (userData.status === 'BLOCKED' || userData.status === 'REJECTED') {
+                    Alert.alert("Access Denied", "Your account is disabled.");
+                    await auth.signOut();
+                    return;
+                }
+
+                checkBiometrics(userData);
+            } else {
+                router.replace('/complete-profile' as any);
+            }
+        } catch (e: any) {
+            console.error("Google auth error:", e);
+            const isCancel = e.message?.includes('developer') || e.code === 'SIGN_IN_CANCELLED' || e.code === '12501';
+            if (!isCancel) {
+                Alert.alert("Google Authentication Failed", e.message || "Failed to log in with Google.");
+            }
         } finally {
             setLoading(false);
         }
@@ -921,7 +970,7 @@ export default function AuthScreen() {
                                             }}>
                                                 <View style={{ flex: 1 }}>
                                                     <Text style={{ fontWeight: 'bold', fontSize: 16, color: colors.text }}>{selectedStudent.name}</Text>
-                                                    <Text style={{ fontSize: 12, color: colors.textSecondary }}>Grade: {selectedStudent.grade} • Mobile: {selectedStudent.phoneNumber?.slice(-4).padStart(10, '*')}</Text>
+                                                    <Text style={{ fontSize: 12, color: colors.textSecondary }}>Class: {selectedStudent.grade} • Mobile: {selectedStudent.phoneNumber?.slice(-4).padStart(10, '*')}</Text>
                                                 </View>
                                                 <TouchableOpacity onPress={() => { setSelectedStudent(null); setLinkedStudentPhone(''); }}>
                                                     <Ionicons name="close-circle" size={24} color={colors.primary} />
@@ -957,7 +1006,7 @@ export default function AuthScreen() {
                                                                 onPress={() => selectStudent(student)}
                                                             >
                                                                 <Text style={{ fontWeight: '600', color: colors.text }}>{student.name}</Text>
-                                                                <Text style={{ fontSize: 12, color: colors.textSecondary }}>Grade: {student.grade || 'N/A'}</Text>
+                                                                <Text style={{ fontSize: 12, color: colors.textSecondary }}>Class: {student.grade || 'N/A'}</Text>
                                                             </TouchableOpacity>
                                                         ))}
                                                     </View>
@@ -973,7 +1022,7 @@ export default function AuthScreen() {
                                 {isSignUp && !isParent && !isAdminMode && availableGrades.length > 0 && (
                                     <>
                                         <View style={styles.inputWrapper}>
-                                            <Text style={styles.label}>Select Grade</Text>
+                                            <Text style={styles.label}>Select Class</Text>
                                             <View style={styles.gradeContainer}>
                                                 {availableGrades.map((g) => (
                                                     <TouchableOpacity
@@ -1109,6 +1158,37 @@ export default function AuthScreen() {
                         </TouchableOpacity>
                     )}
                 </View>
+
+                {!isAdminMode && !isForgot && (
+                    <View style={{ width: '100%', alignItems: 'center', marginTop: 20 }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', marginVertical: 16 }}>
+                            <View style={{ flex: 1, height: 1, backgroundColor: colors.border }} />
+                            <Text style={{ color: colors.textSecondary, marginHorizontal: 16, fontSize: 14, fontWeight: '600' }}>OR</Text>
+                            <View style={{ flex: 1, height: 1, backgroundColor: colors.border }} />
+                        </View>
+                        <TouchableOpacity
+                            style={[styles.mainButton, { 
+                                backgroundColor: colors.card, 
+                                borderWidth: 1, 
+                                borderColor: colors.border, 
+                                marginTop: 0,
+                                flexDirection: 'row',
+                                gap: 12,
+                                justifyContent: 'center',
+                                alignItems: 'center',
+                                shadowColor: 'transparent',
+                                elevation: 0
+                            }]}
+                            onPress={handleGoogleAuth}
+                            disabled={loading}
+                        >
+                            <Ionicons name="logo-google" size={22} color={colors.text} />
+                            <Text style={[styles.mainButtonText, { color: colors.text, fontSize: 16 }]}>
+                                Continue with Google
+                            </Text>
+                        </TouchableOpacity>
+                    </View>
+                )}
             </ScrollView>
         </KeyboardAvoidingView>
     );

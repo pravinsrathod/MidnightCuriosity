@@ -28,7 +28,7 @@
         "APP_NAME": "EduPro",
         "EXPO_PUBLIC_APP_NAME": "EduPro",
         "CLIENT_ID": "edupro",
-        "APP_PACKAGE": "com.prowin.edupro"
+        "APP_PACKAGE": "com.prowin.eduproapp"
       }
     },
     "production": {
@@ -48,7 +48,7 @@
         "APP_NAME": "EduPro",
         "EXPO_PUBLIC_APP_NAME": "EduPro",
         "CLIENT_ID": "edupro",
-        "APP_PACKAGE": "com.prowin.edupro"
+        "APP_PACKAGE": "com.prowin.eduproapp"
       }
     }
   },

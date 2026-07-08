@@ -163,7 +163,7 @@ export default function AdminDashboard() {
 
     const saveNewStudent = async () => {
         if (!newStudent.name || !newStudent.phoneNumber || !newStudent.grade) {
-            Alert.alert("Error", "Please fill required fields (Name, Phone, Grade)");
+            Alert.alert("Error", "Please fill required fields (Name, Phone, Class)");
             return;
         }
         setLoading(true);
@@ -535,7 +535,7 @@ export default function AdminDashboard() {
                     <Text style={styles.cardSubtitle}>{item.phoneNumber}</Text>
                     <View style={{ flexDirection: 'row', gap: 8, marginTop: 4 }}>
                         <View style={[styles.badge, { backgroundColor: colors.border }]}>
-                            <Text style={styles.badgeText}>{item.grade || "No Grade"}</Text>
+                            <Text style={styles.badgeText}>{item.grade || "No Class"}</Text>
                         </View>
                         <View style={[styles.badge, {
                             backgroundColor: item.status === 'ACTIVE' ? colors.success + '20' :
@@ -619,7 +619,7 @@ export default function AdminDashboard() {
                     )}
                     <View>
                         <Text style={styles.headerTitle}>{tenantName || "Admin Console"}</Text>
-                        <Text style={styles.headerSubtitle}>Tenant: {tenantId}</Text>
+                        <Text style={styles.headerSubtitle}>Institute: {tenantId}</Text>
                     </View>
                 </View>
                 <TouchableOpacity onPress={handleLogout} style={styles.logoutButton}>
@@ -1040,7 +1040,7 @@ export default function AdminDashboard() {
                             onChangeText={t => setNewHomework({ ...newHomework, subject: t })}
                         />
 
-                        <Text style={{ color: colors.textSecondary, marginBottom: 5, fontSize: 12 }}>Select Grade:</Text>
+                        <Text style={{ color: colors.textSecondary, marginBottom: 5, fontSize: 12 }}>Select Class:</Text>
                         <View style={{ flexDirection: 'row', gap: 10, marginBottom: 15, flexWrap: 'wrap' }}>
                             {grades.map(g => (
                                 <TouchableOpacity

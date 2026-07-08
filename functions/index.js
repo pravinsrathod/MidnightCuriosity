@@ -1,5 +1,6 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { onDocumentUpdated, onDocumentDeleted } from "firebase-functions/v2/firestore";
+import { onSchedule } from "firebase-functions/v2/scheduler";
 import { setGlobalOptions } from "firebase-functions/v2";
 import admin from "firebase-admin";
 import axios from "axios";
@@ -335,7 +336,7 @@ export const endYouTubeBroadcast = onCall(async (request) => {
             videoUrl: `https://www.youtube.com/watch?v=${sessionData.youtubeVideoId}`,
             youtubeVideoId: sessionData.youtubeVideoId,
             createdAt: admin.firestore.FieldValue.serverTimestamp(),
-            type: 'video',
+            type: 'live',
             source: 'youtube_live',
             duration: 'Live Session',
             tenantId: sessionData.tenantId || 'default'
@@ -355,6 +356,126 @@ export const endYouTubeBroadcast = onCall(async (request) => {
     } catch (error) {
         console.error("YouTube End Session Error:", error.message);
         throw new HttpsError("internal", "Failed to end YouTube session.");
+    }
+});
+
+/**
+ * Cloud Function to manually start a Live Session by simply storing a provided YouTube Video ID.
+ */
+export const startManualLiveSession = onCall(async (request) => {
+    // Check authentication
+    if (!request.auth) {
+        throw new HttpsError("unauthenticated", "User must be logged in.");
+    }
+
+    const tenantId = request.data.tenantId || 'default';
+    const { title, subject, topic, grade, batch, youtubeVideoId } = request.data;
+    
+    if (!youtubeVideoId) {
+        throw new HttpsError("invalid-argument", "YouTube Video ID is required.");
+    }
+
+    const normalizedGrade = grade.trim().replace(/\s+/g, '_');
+    const normalizedBatch = batch.trim().replace(/\s+/g, '_');
+    const channelName = `${tenantId}_${normalizedGrade}_${normalizedBatch}`;
+
+    // Role check
+    const userDoc = await admin.firestore().collection("users").doc(request.auth.uid).get();
+    const isTeacher = userDoc.exists && (userDoc.data().role === 'admin' || userDoc.data().role === 'teacher');
+    if (!isTeacher) {
+        throw new HttpsError("permission-denied", "Only teachers can start broadcasts.");
+    }
+
+    try {
+        // 1. Update Public Live Session (for students)
+        await admin.firestore().collection("liveSessions").doc(channelName).set({
+            title: title || `Live: ${subject} - ${topic}`,
+            subject,
+            topic,
+            grade,
+            batch,
+            youtubeVideoId: youtubeVideoId,
+            status: 'live',
+            startedAt: admin.firestore.FieldValue.serverTimestamp(),
+            instructorUid: request.auth.uid,
+            tenantId: tenantId || 'default'
+        });
+
+        // 2. Update Private Live Session (for instructor recovery)
+        await admin.firestore().collection("liveSessions_private").doc(channelName).set({
+            youtubeVideoId: youtubeVideoId,
+            grade,
+            batch,
+            instructorUid: request.auth.uid,
+            tenantId: tenantId || 'default'
+        });
+
+        return {
+            videoId: youtubeVideoId
+        };
+    } catch (error) {
+        console.error("Manual Session Start Error:", error.message);
+        throw new HttpsError("internal", "Failed to setup live session.");
+    }
+});
+
+/**
+ * Cloud Function to manually end a Live Session and archive it to lectures, without touching YouTube API.
+ */
+export const endManualLiveSession = onCall(async (request) => {
+    // Check authentication
+    if (!request.auth) {
+        throw new HttpsError("unauthenticated", "User must be logged in.");
+    }
+
+    const tenantId = request.data.tenantId || 'default';
+    const { grade, batch } = request.data;
+
+    const normalizedGrade = grade.trim().replace(/\s+/g, '_');
+    const normalizedBatch = batch.trim().replace(/\s+/g, '_');
+    const channelName = `${tenantId}_${normalizedGrade}_${normalizedBatch}`;
+
+    console.log(`[ManualLive] Ending session for ${channelName}...`);
+
+    try {
+        const sessionDoc = await admin.firestore().collection("liveSessions").doc(channelName).get();
+        if (!sessionDoc.exists) {
+            throw new HttpsError("not-found", "No active session found for this batch.");
+        }
+
+        const sessionData = sessionDoc.data();
+
+        // 1. Move to lectures collection (Merges into curriculum)
+        console.log(`[ManualLive] Archiving session ${sessionData.youtubeVideoId} to lectures...`);
+        await admin.firestore().collection("lectures").add({
+            title: sessionData.title,
+            grade: sessionData.grade,
+            subject: sessionData.subject,
+            topic: sessionData.topic,
+            batch: sessionData.batch,
+            videoUrl: `https://www.youtube.com/watch?v=${sessionData.youtubeVideoId}`,
+            youtubeVideoId: sessionData.youtubeVideoId,
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+            type: 'live',
+            source: 'youtube_live',
+            duration: 'Live Session',
+            tenantId: sessionData.tenantId || 'default'
+        });
+
+        // 2. Clear active session status (Public & Private)
+        await admin.firestore().collection("liveSessions").doc(channelName).delete();
+        await admin.firestore().collection("liveSessions_private").doc(channelName).delete();
+
+        // 3. Clear RTDB Interactions (Chat & Hands)
+        console.log(`[ManualLive] Cleaning up RTDB for ${channelName}...`);
+        const rtdbPath = `liveSessions/${channelName}`;
+        await admin.database().ref(rtdbPath).remove();
+
+        return { success: true };
+
+    } catch (error) {
+        console.error("Manual End Session Error:", error.message);
+        throw new HttpsError("internal", "Failed to end manual live session.");
     }
 });
 /**
@@ -1197,5 +1318,144 @@ export const getSupportBotResponse = onCall(async (request) => {
             throw new HttpsError("aborted", "AI service is currently unavailable for this institute.");
         }
         throw new HttpsError("internal", "Failed to reach AI support assistant: " + e.message);
+    }
+});
+
+/**
+ * Cloud Function (Cron) to clean up old timetable overrides.
+ * Runs every Sunday at 2 AM. Deletes overrides older than 8 weeks.
+ */
+export const cleanupOldTimetables = onSchedule("0 2 * * 0", async (event) => {
+    try {
+        console.log("[Cron] Starting cleanup of old timetable overrides...");
+        const timetablesRef = admin.firestore().collection('timetables');
+        const snapshot = await timetablesRef.where('isOverride', '==', true).get();
+        
+        const now = new Date();
+        const msInWeek = 7 * 24 * 60 * 60 * 1000;
+        
+        let deletedCount = 0;
+        const batch = admin.firestore().batch();
+        
+        snapshot.forEach(doc => {
+            const data = doc.data();
+            if (!data.week) return;
+            
+            // week format: "2026-W22"
+            const parts = data.week.split('-W');
+            if (parts.length !== 2) return;
+            
+            const year = parseInt(parts[0], 10);
+            const week = parseInt(parts[1], 10);
+            
+            // Approximate date: Jan 1 + (week - 1) weeks
+            const docDate = new Date(year, 0, 1 + (week - 1) * 7);
+            
+            // If docDate is more than 8 weeks in the past
+            if (now.getTime() - docDate.getTime() > 8 * msInWeek) {
+                batch.delete(doc.ref);
+                deletedCount++;
+            }
+        });
+        
+        if (deletedCount > 0) {
+            await batch.commit();
+            console.log(`[Cron] Successfully deleted ${deletedCount} old timetable overrides.`);
+        } else {
+            console.log("[Cron] No old timetables found to delete.");
+        }
+    } catch (e) {
+        console.error("[Cron] Failed to cleanup timetables:", e.message);
+    }
+});
+
+/**
+ * Cloud Function (Cron) to calculate and update student ranks.
+ * Runs every hour to update the 'rank' field for all students.
+ */
+export const updateStudentRanks = onSchedule("0 * * * *", async (event) => {
+    try {
+        console.log("[Cron] Starting student rank calculations...");
+        const usersRef = admin.firestore().collection('users');
+        const snapshot = await usersRef.get();
+        
+        // Group students by tenantId and grade
+        const studentsByGroup = {};
+        
+        snapshot.docs.forEach(doc => {
+            const data = doc.data();
+            const role = data.role?.toUpperCase() || 'STUDENT';
+            
+            // Skip non-students
+            if (role === 'PARENT' || role === 'ADMIN' || data.isAdmin) return;
+            
+            const tenantId = data.tenantId || 'default';
+            const grade = data.grade || 'Unknown';
+            const groupKey = `${tenantId}_${grade}`;
+            
+            if (!studentsByGroup[groupKey]) {
+                studentsByGroup[groupKey] = [];
+            }
+            
+            // Calculate completed topics count
+            const completedCount = data.completedTopics ? data.completedTopics.length : 0;
+            
+            // Calculate avgScore for tie-breakers
+            let avgScore = 0;
+            if (data.assignmentResults) {
+                const scores = Object.values(data.assignmentResults).filter(v => typeof v === 'number');
+                if (scores.length > 0) {
+                    const sum = scores.reduce((a, b) => a + b, 0);
+                    avgScore = sum / scores.length;
+                }
+            }
+            
+            studentsByGroup[groupKey].push({
+                ref: doc.ref,
+                completedCount,
+                avgScore
+            });
+        });
+        
+        let updateCount = 0;
+        
+        // Process each group and assign ranks
+        for (const groupKey in studentsByGroup) {
+            const students = studentsByGroup[groupKey];
+            
+            // Sort by completedCount (DESC), then avgScore (DESC)
+            students.sort((a, b) => {
+                if (b.completedCount !== a.completedCount) {
+                    return b.completedCount - a.completedCount;
+                }
+                return b.avgScore - a.avgScore;
+            });
+            
+            // Use batch writes
+            let batch = admin.firestore().batch();
+            let operationsInBatch = 0;
+            
+            for (let i = 0; i < students.length; i++) {
+                const rank = i + 1;
+                batch.update(students[i].ref, { rank });
+                updateCount++;
+                operationsInBatch++;
+                
+                // Firestore batch limit is 500
+                if (operationsInBatch === 400) {
+                    await batch.commit();
+                    batch = admin.firestore().batch();
+                    operationsInBatch = 0;
+                }
+            }
+            
+            if (operationsInBatch > 0) {
+                await batch.commit();
+            }
+        }
+        
+        console.log(`[Cron] Successfully updated ranks for ${updateCount} students.`);
+    } catch (e) {
+        console.error("[Cron] Failed to update student ranks:", e.message);
     }
 });

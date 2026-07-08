@@ -15,7 +15,7 @@ import {
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Video, ResizeMode, AVPlaybackStatus, AVPlaybackStatusSuccess } from 'expo-av';
-import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
+import { doc, getDoc, collection, query, where, getDocs, setDoc, increment } from 'firebase/firestore';
 import { db, auth } from '../services/firebaseConfig';
 import { Ionicons } from '@expo/vector-icons';
 import YoutubePlayer from 'react-native-youtube-iframe';
@@ -262,10 +262,25 @@ export default function LectureModule() {
         }
     };
 
-    const handleQuizAnswer = (index: number) => {
+    const handleQuizAnswer = async (index: number) => {
         setShowOverlay(false);
         setActiveQuiz(null);
         setPlaying(true); // Resume
+        
+        try {
+            let uid = auth.currentUser?.uid;
+            if (!uid) {
+                const storedUid = await AsyncStorage.getItem('user_uid');
+                if (storedUid) uid = storedUid;
+            }
+            if (uid) {
+                await setDoc(doc(db, 'users', uid), {
+                    rank: increment(10)
+                }, { merge: true });
+            }
+        } catch (e) {
+            console.error("Failed to add quiz points", e);
+        }
     };
 
     if (loading) {
@@ -278,7 +293,7 @@ export default function LectureModule() {
                 <View style={styles.center}>
                     <Ionicons name="videocam-off-outline" size={48} color={colors.textSecondary} />
                     <Text style={[styles.videoTitle, { marginTop: 16 }]}>No Content Available</Text>
-                    <Text style={styles.videoMeta}>We haven&apos;t uploaded lectures for this topic yet.</Text>
+                    <Text style={styles.videoMeta}>We haven&apos;t uploaded study material for this topic yet.</Text>
                     <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
                         <Text style={{ color: 'white', fontWeight: 'bold' }}>Go Back</Text>
                     </TouchableOpacity>
@@ -329,15 +344,7 @@ export default function LectureModule() {
                         
                         {/* Security Overlay */}
                         <View style={styles.securityOverlay} pointerEvents="box-none">
-                            {/* Blockers to intercept corner touches (Share, YouTube Logo, Watch on YouTube) */}
-                            
-                            {/* Top Bar Blocker - Captures Volume, CC, Settings (Top Right) and Channel/Title (Top Left) */}
-                            <View style={[styles.blocker, { top: 0, right: 0, width: width * 0.5, height: 120 }]} />
-                            <View style={[styles.blocker, { top: 0, left: 0, width: width * 0.35, height: 120 }]} />
-                            
-                            {/* Bottom Bar Blocker - Captures Share Arrow (Bottom Left), YouTube Logo (Bottom Right) */}
-                            <View style={[styles.blocker, { bottom: 0, right: 0, width: width * 0.5, height: 100 }]} />
-                            <View style={[styles.blocker, { bottom: 0, left: 0, width: width * 0.4, height: 100 }]} />
+                            {/* UI Click Restrictions (blockers) removed as per user request */}
 
                             {/* Floating Watermark */}
                             <Animated.View 
@@ -474,14 +481,14 @@ export default function LectureModule() {
                 {selectedTab === "Overview" && (
                     <View style={styles.tabContentContainer}>
                         <Text style={styles.description}>
-                            {selectedLecture?.overview || "No overview available for this specific lecture."}
+                            {selectedLecture?.overview || "No overview available for this specific study material."}
                         </Text>
                         <View style={{ marginTop: 24 }}>
                             <Text style={styles.sectionTitle}>Resources</Text>
                             <TouchableOpacity style={styles.resourceButton}>
                                 <Ionicons name="document-text-outline" size={24} color={colors.primary} />
                                 <View style={{ marginLeft: 12 }}>
-                                    <Text style={styles.resourceTitle}>Lecture Slides</Text>
+                                    <Text style={styles.resourceTitle}>Study Material Slides</Text>
                                     <Text style={styles.resourceSub}>PDF Document • 2.4 MB</Text>
                                 </View>
                                 <Ionicons name="download-outline" size={20} color={colors.primary} style={{ marginLeft: 'auto' }} />
@@ -529,7 +536,7 @@ export default function LectureModule() {
                             <Text style={styles.sectionTitle}>Frequently Asked</Text>
                             <View style={styles.faqCard}>
                                 <Text style={styles.faqQ}>Q: What is the main takeaway from this section?</Text>
-                                <Text style={styles.faqA}>A: Identify the core fundamental building blocks introduced by the lecturer.</Text>
+                                <Text style={styles.faqA}>A: Identify the core fundamental building blocks introduced by the teacher.</Text>
                             </View>
                             <View style={styles.faqCard}>
                                 <Text style={styles.faqQ}>Q: Will this be on the final assessment?</Text>

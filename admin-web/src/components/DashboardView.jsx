@@ -64,7 +64,7 @@ const DashboardView = ({
             <div className="stat-label">Today's Attendance</div>
             <div className="stat-value">{todayAttendance}%</div>
             <div style={{ fontSize: '0.85rem', color: todayAttendance > 80 ? 'var(--success)' : 'var(--warning)', fontWeight: 600 }}>
-              {todayAttendance > 0 ? 'Checked across all grades' : 'No records yet'}
+              {todayAttendance > 0 ? 'Checked across all classes' : 'No records yet'}
             </div>
             <div style={{ position: 'absolute', right: '20px', top: '32px', fontSize: '2rem', opacity: 0.1 }}>📅</div>
           </div>
@@ -154,7 +154,7 @@ const DashboardView = ({
           {isLecturesEnabled && (
             <button onClick={() => { setActiveTab?.('lectures'); if (setIsLectureFormExpanded) setIsLectureFormExpanded(true); }} className="card" style={{ padding: '24px', textAlign: 'left', cursor: 'pointer', border: '1px solid var(--border)', background: 'rgba(255,255,255,0.02)', transition: 'all 0.2s' }}>
               <div style={{ fontSize: '1.5rem', marginBottom: '12px' }}>📽️</div>
-              <div style={{ fontWeight: 700, marginBottom: '4px' }}>New Lecture</div>
+              <div style={{ fontWeight: 700, marginBottom: '4px' }}>New Study Material</div>
               <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Upload study material or video lessons.</div>
             </button>
           )}

@@ -31,6 +31,7 @@ const LiveInstructorPanel = ({ adminTenantId, grades, subjects, batches, topics 
     const [selectedBatch, setSelectedBatch] = useState('');
     const [selectedSubject, setSelectedSubject] = useState('');
     const [selectedTopic, setSelectedTopic] = useState('');
+    const [youtubeUrl, setYoutubeUrl] = useState('');
     
     // Interaction State
     const [raisedHands, setRaisedHands] = useState([]);
@@ -74,7 +75,7 @@ const LiveInstructorPanel = ({ adminTenantId, grades, subjects, batches, topics 
             if (selectedBatch && selectedGrade) {
                 const normalizedGrade = selectedGrade.trim().replace(/\s+/g, '_');
                 const normalizedBatch = selectedBatch.trim().replace(/\s+/g, '_');
-                const batchChannel = `${normalizedGrade}_${normalizedBatch}`;
+                const batchChannel = `${adminTenantId}_${normalizedGrade}_${normalizedBatch}`;
                 
                 try {
                     const sessionDoc = await getDoc(doc(db, "liveSessions_private", batchChannel));
@@ -98,36 +99,50 @@ const LiveInstructorPanel = ({ adminTenantId, grades, subjects, batches, topics 
         if (!isLive) {
             checkActiveSession();
         }
-    }, [selectedBatch, selectedGrade, isLive]);
+    }, [selectedBatch, selectedGrade, isLive, adminTenantId]);
+
+    const extractYouTubeId = (url) => {
+        if (!url) return null;
+        const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
+        const match = url.match(regExp);
+        return (match && match[2].length === 11) ? match[2] : null;
+    };
 
     const startLive = async () => {
         if (!selectedBatch || !selectedGrade || !selectedSubject || !selectedTopic) {
-            alert("Please select Grade, Batch, Subject and Topic first.");
+            alert("Please select Class, Batch, Subject and Topic first.");
+            return;
+        }
+
+        const videoId = extractYouTubeId(youtubeUrl) || youtubeUrl.trim();
+        if (!videoId || videoId.length !== 11) {
+            alert("Please provide a valid YouTube Live Stream URL or 11-character Video ID.");
             return;
         }
 
         const normalizedGrade = selectedGrade.trim().replace(/\s+/g, '_');
         const normalizedBatch = selectedBatch.trim().replace(/\s+/g, '_');
-        const batchChannel = `${normalizedGrade}_${normalizedBatch}`;
+        const batchChannel = `${adminTenantId}_${normalizedGrade}_${normalizedBatch}`;
         setChannelName(batchChannel);
         setLoading(true);
 
         try {
-            // 1. Create YouTube Broadcast
-            const createBroadcast = httpsCallable(functions, 'createYouTubeBroadcast');
-            const { data: ytData } = await createBroadcast({ 
+            // 1. Create Manual Broadcast
+            const startManualLive = httpsCallable(functions, 'startManualLiveSession');
+            const { data: ytData } = await startManualLive({ 
                 title: `${selectedSubject}: ${selectedTopic}`,
                 subject: selectedSubject,
                 topic: selectedTopic,
                 grade: selectedGrade,
                 batch: selectedBatch,
+                youtubeVideoId: videoId,
                 tenantId: adminTenantId
             });
 
             setYoutubeInfo(ytData);
             setIsLive(true);
         } catch (error) {
-            console.error("Failed to start YouTube broadcast:", error);
+            console.error("Failed to start manual live session:", error);
             alert("Error starting stream: " + error.message);
         } finally {
             setLoading(false);
@@ -135,13 +150,13 @@ const LiveInstructorPanel = ({ adminTenantId, grades, subjects, batches, topics 
     };
 
     const endLive = async () => {
-        if (!window.confirm("Are you sure you want to end the lecture? This will archive the session on YouTube.")) return;
+        if (!window.confirm("Are you sure you want to end the lecture? This will archive the session on the platform.")) return;
         setLoading(true);
 
         try {
-            // End YT Broadcast
-            const endBroadcast = httpsCallable(functions, 'endYouTubeBroadcast');
-            await endBroadcast({ 
+            // End Manual Broadcast
+            const endManualLive = httpsCallable(functions, 'endManualLiveSession');
+            await endManualLive({ 
                 grade: selectedGrade,
                 batch: selectedBatch,
                 tenantId: adminTenantId
@@ -150,7 +165,7 @@ const LiveInstructorPanel = ({ adminTenantId, grades, subjects, batches, topics 
             setIsLive(false);
             setYoutubeInfo(null);
             setChannelName('');
-            alert("Session ended and archiving started on YouTube.");
+            alert("Session ended and archived.");
         } catch (error) {
             console.error("Failed to end live session:", error);
             alert("Error ending session: " + error.message);
@@ -217,9 +232,9 @@ const LiveInstructorPanel = ({ adminTenantId, grades, subjects, batches, topics 
 
                             <div className="setup-grid">
                                 <div className="form-group">
-                                    <label>Target Grade</label>
+                                    <label>Target Class</label>
                                     <select value={selectedGrade} onChange={(e) => setSelectedGrade(e.target.value)}>
-                                        <option value="">Select Grade</option>
+                                        <option value="">Select Class</option>
                                         {grades.map(g => <option key={g} value={g}>{g}</option>)}
                                     </select>
                                 </div>
@@ -245,17 +260,27 @@ const LiveInstructorPanel = ({ adminTenantId, grades, subjects, batches, topics 
                                         {topics.map(t => <option key={t} value={t}>{t}</option>)}
                                     </select>
                                 </div>
+                                <div className="form-group" style={{ gridColumn: '1 / -1' }}>
+                                    <label>YouTube Live Stream URL</label>
+                                    <input 
+                                        type="text" 
+                                        placeholder="https://www.youtube.com/watch?v=..." 
+                                        value={youtubeUrl} 
+                                        onChange={(e) => setYoutubeUrl(e.target.value)} 
+                                        style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--bg-input)', color: '#fff' }}
+                                    />
+                                </div>
                             </div>
 
                             <button 
                                 onClick={startLive} 
                                 className="btn-primary-large"
-                                disabled={!selectedTopic || loading}
+                                disabled={!selectedTopic || !youtubeUrl || loading}
                             >
-                                {loading ? 'Initializing YouTube Broadcast...' : (
+                                {loading ? 'Initializing Session...' : (
                                     <>
                                         <Cast size={20} />
-                                        Initialize YouTube Live Stream
+                                        Initialize Live Session
                                     </>
                                 )}
                             </button>
@@ -280,30 +305,7 @@ const LiveInstructorPanel = ({ adminTenantId, grades, subjects, batches, topics 
                                 </button>
                             </div>
 
-                            <div className="obs-keys-panel">
-                                <h5><Globe size={16} /> OBS Configuration</h5>
-                                <div className="key-row">
-                                    <div className="key-info">
-                                        <label>Stream URL</label>
-                                        <input readOnly value={youtubeInfo?.rtmpUrl} />
-                                    </div>
-                                    <button onClick={() => handleCopy(youtubeInfo?.rtmpUrl, 'rtmp')} className="copy-btn">
-                                        {copySuccess.rtmp ? <CheckCircle size={18} /> : <Copy size={18} />}
-                                    </button>
-                                </div>
-                                <div className="key-row">
-                                    <div className="key-info">
-                                        <label>Stream Key</label>
-                                        <input type="password" readOnly value={youtubeInfo?.streamKey} />
-                                    </div>
-                                    <button onClick={() => handleCopy(youtubeInfo?.streamKey, 'key')} className="copy-btn">
-                                        {copySuccess.key ? <CheckCircle size={18} /> : <Copy size={18} />}
-                                    </button>
-                                </div>
-                                <p className="help-text">Paste these into your streaming software (OBS) settings under "Stream".</p>
-                            </div>
-
-                            <div className="external-links">
+                            <div className="external-links" style={{ marginTop: '20px' }}>
                                 <a href={`https://youtu.be/${youtubeInfo?.videoId}`} target="_blank" rel="noreferrer" className="yt-watch-btn">
                                     <Video size={16} /> View on YouTube
                                 </a>

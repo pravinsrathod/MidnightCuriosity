@@ -9,6 +9,9 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTenant, useFeature } from '../../context/TenantContext';
 import { ParentHeader } from '../../components/ParentHeader';
 import { useAuth } from '../../context/AuthContext';
+import CampaignCarousel from '../../components/CampaignCarousel';
+import { onAuthStateChanged } from 'firebase/auth';
+import { linkGoogleAccount } from '../../services/googleAuthService';
 
 // --- Premium UI Components (Overview versions) ---
 
@@ -16,18 +19,18 @@ const AttendanceMini = ({ total, present, colors, styles, onPress }: { total: nu
     const percentage = total > 0 ? Math.round((present / total) * 100) : 0;
     
     return (
-        <TouchableOpacity style={styles.card} onPress={onPress}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                <View>
-                    <Text style={styles.cardTitle}>Attendance</Text>
-                    <Text style={[styles.cardValue, { color: colors.primary }]}>{percentage}%</Text>
-                    <Text style={styles.cardSubtitle}>{present} / {total} Days Present</Text>
+        <TouchableOpacity style={styles.gridCard} onPress={onPress}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                <View style={[styles.iconCircleSmall, { backgroundColor: colors.primary + '15' }]}>
+                    <Ionicons name="calendar" size={20} color={colors.primary} />
                 </View>
-                <View style={[styles.iconCircle, { backgroundColor: colors.primary + '15' }]}>
-                    <Ionicons name="calendar" size={28} color={colors.primary} />
-                </View>
+                <Text style={[styles.gridCardValue, { color: colors.primary }]}>{percentage}%</Text>
             </View>
-            <View style={styles.progressBarBg}>
+            <View>
+                <Text style={styles.cardTitle}>Attendance</Text>
+                <Text style={styles.cardSubtitle}>{present}/{total} Days</Text>
+            </View>
+            <View style={[styles.progressBarBg, { marginTop: 12 }]}>
                 <View style={[styles.progressBarFill, { width: `${percentage}%`, backgroundColor: colors.primary }]} />
             </View>
         </TouchableOpacity>
@@ -36,16 +39,33 @@ const AttendanceMini = ({ total, present, colors, styles, onPress }: { total: nu
 
 const HomeworkMini = ({ count, colors, styles, onPress }: { count: number, colors: any, styles: any, onPress: () => void }) => {
     return (
-        <TouchableOpacity style={styles.card} onPress={onPress}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                <View>
-                    <Text style={styles.cardTitle}>Homework</Text>
-                    <Text style={[styles.cardValue, { color: colors.warning }]}>{count}</Text>
-                    <Text style={styles.cardSubtitle}>Pending Tasks</Text>
+        <TouchableOpacity style={styles.gridCard} onPress={onPress}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                <View style={[styles.iconCircleSmall, { backgroundColor: colors.warning + '15' }]}>
+                    <Ionicons name="book" size={20} color={colors.warning} />
                 </View>
-                <View style={[styles.iconCircle, { backgroundColor: colors.warning + '15' }]}>
-                    <Ionicons name="book" size={28} color={colors.warning} />
+                <Text style={[styles.gridCardValue, { color: colors.warning }]}>{count}</Text>
+            </View>
+            <View>
+                <Text style={styles.cardTitle}>Homework</Text>
+                <Text style={styles.cardSubtitle}>Pending Tasks</Text>
+            </View>
+        </TouchableOpacity>
+    );
+};
+
+const TimetableMini = ({ colors, styles, onPress }: { colors: any, styles: any, onPress: () => void }) => {
+    return (
+        <TouchableOpacity style={styles.gridCard} onPress={onPress}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                <View style={[styles.iconCircleSmall, { backgroundColor: colors.info + '15' }]}>
+                    <Ionicons name="time" size={20} color={colors.info} />
                 </View>
+                <Ionicons name="arrow-forward" size={16} color={colors.info} />
+            </View>
+            <View>
+                <Text style={styles.cardTitle}>Timetable</Text>
+                <Text style={styles.cardSubtitle}>Class Schedule</Text>
             </View>
         </TouchableOpacity>
     );
@@ -59,6 +79,8 @@ export default function HomeDashboard() {
     const showAttendance = useFeature('enableAttendance');
     const showHomework = useFeature('enableHomework');
     const showFees = useFeature('enableFees');
+    const showTimetable = useFeature('enableTimetable');
+    const showCampaigns = useFeature('enableCampaigns');
     const styles = useMemo(() => makeStyles(colors, insets), [colors, insets]);
 
     const { profile, selectedChildId, setSelectedChildId, user: authUser } = useAuth();
@@ -75,6 +97,43 @@ export default function HomeDashboard() {
     const [stats, setStats] = useState({ present: 0, total: 0 });
     const [pendingHomeworkCount, setPendingHomeworkCount] = useState(0);
     const [feesTotalDue, setFeesTotalDue] = useState(0);
+
+    const [isGoogleLinked, setIsGoogleLinked] = useState(false);
+
+    useEffect(() => {
+        const unsubscribe = onAuthStateChanged(auth, (user) => {
+            if (user) {
+                const linked = user.providerData.some(p => p.providerId === 'google.com');
+                setIsGoogleLinked(linked);
+            }
+        });
+        return unsubscribe;
+    }, []);
+
+    const handleLinkGoogle = async () => {
+        try {
+            const user = await linkGoogleAccount();
+            setIsGoogleLinked(true);
+            
+            if (parentUid) {
+                await updateDoc(doc(db, "users", parentUid), {
+                    authProvider: 'google.com',
+                    email: user.email
+                });
+            }
+            Alert.alert("Success", "Your Google account has been linked successfully! You can now log in using Google.");
+        } catch (e: any) {
+            console.error("Linking error:", e);
+            if (e.code === 'auth/credential-already-in-use') {
+                Alert.alert("Account Already Linked", "This Google account is already linked to another user. Please contact your Institute Administrator to resolve this, or use a different Google account.");
+                return;
+            }
+            const isCancel = e.message?.includes('developer') || e.code === 'SIGN_IN_CANCELLED' || e.code === '12501';
+            if (!isCancel) {
+                Alert.alert("Linking Failed", e.message || "Failed to link Google account.");
+            }
+        }
+    };
 
     const fetchIdentity = async () => {
         try {
@@ -262,29 +321,37 @@ export default function HomeDashboard() {
             ) : (
                 <View style={{ padding: 20 }}>
                     <Text style={styles.sectionTitle}>Dashboard Overview</Text>
+
+                    {!isGoogleLinked && (
+                        <TouchableOpacity 
+                            style={[
+                                styles.card, 
+                                { 
+                                    borderColor: colors.primary + '30', 
+                                    backgroundColor: colors.primary + '08', 
+                                    marginBottom: 16,
+                                    flexDirection: 'row',
+                                    alignItems: 'center',
+                                    padding: 16,
+                                    borderRadius: 16
+                                }
+                            ]}
+                            onPress={handleLinkGoogle}
+                        >
+                            <View style={[styles.iconCircleSmall, { backgroundColor: colors.primary + '15', marginRight: 12, borderRadius: 20 }]}>
+                                <Ionicons name="logo-google" size={20} color={colors.primary} />
+                            </View>
+                            <View style={{ flex: 1 }}>
+                                <Text style={{ fontWeight: '700', color: colors.text, fontSize: 14 }}>Secure your Account</Text>
+                                <Text style={{ color: colors.textSecondary, fontSize: 12, marginTop: 2 }}>Link your Google account for one-click secure login</Text>
+                            </View>
+                            <Ionicons name="chevron-forward" size={16} color={colors.textSecondary} style={{ marginLeft: 8 }} />
+                        </TouchableOpacity>
+                    )}
                     
-                    {showAttendance && (
-                        <AttendanceMini 
-                            total={stats.total} 
-                            present={stats.present} 
-                            colors={colors} 
-                            styles={styles}
-                            onPress={() => router.push('/(tabs)/parent-attendance')} 
-                        />
-                    )}
-
-                    {showHomework && (
-                        <HomeworkMini 
-                            count={pendingHomeworkCount} 
-                            colors={colors} 
-                            styles={styles}
-                            onPress={() => router.push('/(tabs)/parent-homework')} 
-                        />
-                    )}
-
                     {showFees && feesTotalDue > 0 && (
                         <TouchableOpacity 
-                            style={[styles.card, { borderColor: colors.danger + '30' }]}
+                            style={[styles.card, { borderColor: colors.danger + '30', marginBottom: 16 }]}
                             onPress={() => router.push('/(tabs)/parent-fees')}
                         >
                             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -300,10 +367,42 @@ export default function HomeDashboard() {
                         </TouchableOpacity>
                     )}
 
+                    <View style={styles.gridContainer}>
+                        {showAttendance && (
+                            <AttendanceMini 
+                                total={stats.total} 
+                                present={stats.present} 
+                                colors={colors} 
+                                styles={styles}
+                                onPress={() => router.push('/(tabs)/parent-attendance')} 
+                            />
+                        )}
+
+                        {showHomework && (
+                            <HomeworkMini 
+                                count={pendingHomeworkCount} 
+                                colors={colors} 
+                                styles={styles}
+                                onPress={() => router.push('/(tabs)/parent-homework')} 
+                            />
+                        )}
+
+                        {showTimetable && (
+                            <TimetableMini 
+                                colors={colors} 
+                                styles={styles}
+                                onPress={() => router.push('/timetable')} 
+                            />
+                        )}
+                    </View>
+
+
+
 
                 </View>
             )}
 
+                {showCampaigns && <CampaignCarousel audience="PARENT" />}
             </ScrollView>
         </View>
     );
@@ -329,6 +428,20 @@ const makeStyles = (colors: any, insets: any) => StyleSheet.create({
         borderWidth: 1,
         borderColor: colors.border,
     },
+    gridContainer: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        justifyContent: 'space-between',
+    },
+    gridCard: {
+        width: '48%',
+        backgroundColor: colors.card,
+        borderRadius: 20,
+        padding: 16,
+        marginBottom: 16,
+        borderWidth: 1,
+        borderColor: colors.border,
+    },
     cardTitle: {
         fontSize: 14,
         color: colors.textSecondary,
@@ -340,6 +453,10 @@ const makeStyles = (colors: any, insets: any) => StyleSheet.create({
         fontWeight: '800',
         marginBottom: 2,
     },
+    gridCardValue: {
+        fontSize: 24,
+        fontWeight: '800',
+    },
     cardSubtitle: {
         fontSize: 12,
         color: colors.textSecondary,
@@ -348,6 +465,13 @@ const makeStyles = (colors: any, insets: any) => StyleSheet.create({
         width: 56,
         height: 56,
         borderRadius: 20,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    iconCircleSmall: {
+        width: 40,
+        height: 40,
+        borderRadius: 12,
         alignItems: 'center',
         justifyContent: 'center',
     },

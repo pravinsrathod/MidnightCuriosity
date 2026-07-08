@@ -197,7 +197,7 @@ const StudentsView = ({
       const missing = [];
       if (!newStudentForm.name) missing.push("Name");
       if (!newStudentForm.phoneNumber) missing.push("Phone");
-      if (!newStudentForm.grade) missing.push("Grade");
+      if (!newStudentForm.grade) missing.push("Class");
       if (!newStudentForm.password) missing.push("Password");
       customAlert(`Please fill the following fields: ${missing.join(', ')} `);
       return;
@@ -273,7 +273,7 @@ const StudentsView = ({
   const handleUpdateStudent = async (e) => {
     e.preventDefault();
     if (!studentFormData.name || !studentFormData.grade) {
-      customAlert("Please fill in Name and Grade.");
+      customAlert("Please fill in Name and Class.");
       return;
     }
 
@@ -403,7 +403,7 @@ const StudentsView = ({
                       </div>
                       <div style={{ flex: 1 }}>
                         <div style={{ fontWeight: 600, fontSize: '0.95rem' }}>{s.name || 'Unnamed'}</div>
-                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{s.phoneNumber} · Grade {s.grade || '–'} · {s.batch || 'General Batch'}</div>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{s.phoneNumber} · Class {s.grade || '–'} · {s.batch || 'General Batch'}</div>
                       </div>
                       {isSelected && <span style={{ color: '#ec4899', fontSize: '1.2rem' }}>✓</span>}
                     </div>
@@ -468,7 +468,7 @@ const StudentsView = ({
               </div>
 
               <div className="form-group">
-                <label className="label">Assigned Grade</label>
+                <label className="label">Assigned Class</label>
                 <select value={newStudentForm.grade} onChange={e => setNewStudentForm({ ...newStudentForm, grade: e.target.value, batch: 'General Batch' })} style={{ width: '100%', padding: '12px', borderRadius: '10px', border: '1px solid var(--border)', background: 'var(--bg-input)', color: 'white' }}>
                   <option value="">Select Category</option>
                   {grades.map(g => <option key={g} value={g}>{g}</option>)}
@@ -516,7 +516,7 @@ const StudentsView = ({
               />
             </div>
             <div style={{ flex: 1, minWidth: '150px' }}>
-              <label className="label">Grade</label>
+              <label className="label">Class</label>
               <select
                 className="form-control"
                 value={studentFormData.grade}
@@ -607,7 +607,7 @@ const StudentsView = ({
                         )}
                       </div>
                       <div style={{ height: '12px', width: '1px', background: 'rgba(255,255,255,0.1)' }}></div>
-                      <div style={{ fontSize: '0.85rem', color: 'var(--text-primary)' }}>Grade: <span style={{ fontWeight: 600 }}>{s.grade}</span></div>
+                      <div style={{ fontSize: '0.85rem', color: 'var(--text-primary)' }}>Class: <span style={{ fontWeight: 600 }}>{s.grade}</span></div>
                       {s.batch && s.batch !== "General Batch" && (
                         <>
                           <div style={{ height: '12px', width: '1px', background: 'rgba(255,255,255,0.1)' }}></div>
@@ -706,7 +706,7 @@ const StudentsView = ({
                           </td>
                           <td style={{ padding: '16px 24px' }}>
                             <span className="badge" style={{ background: 'rgba(255,255,255,0.05)', color: 'var(--text-secondary)', border: '1px solid var(--border)' }}>
-                              {s.grade || "No Grade"}
+                              {s.grade || "No Class"}
                             </span>
                           </td>
                           <td style={{ padding: '16px 24px' }}>

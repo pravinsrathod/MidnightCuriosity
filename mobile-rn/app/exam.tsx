@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, StyleSheet, SafeAreaView, ActivityIndicator, Alert, Platform } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, StyleSheet, SafeAreaView, ActivityIndicator, Alert, Platform, Image } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { db, auth } from '../services/firebaseConfig'; // Ensure auth is imported
@@ -22,6 +22,7 @@ export default function ExamScreen() {
     }, [isEnabled]);
 
     const [exams, setExams] = useState<any[]>([]);
+    const [completedExams, setCompletedExams] = useState<any>({});
     const [loading, setLoading] = useState(true);
     const [activeExam, setActiveExam] = useState<any>(null); // The exam currently being taken
     const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
@@ -56,6 +57,7 @@ export default function ExamScreen() {
                     setLoading(false);
                     return;
                 }
+                setCompletedExams(userData.examResults || {});
 
                 // 2. Query Exams for Grade
                 const q = query(
@@ -173,9 +175,15 @@ export default function ExamScreen() {
 
         if (auto) {
             finalize();
-            // REMOVED: Alert.alert("Time's Up!", "Your exam has been automatically submitted.");
         } else {
-            // REMOVED: Confirmation popup. Executing directly.
+            Alert.alert(
+                "Submit Exam?",
+                "Are you sure you want to submit your answers?",
+                [
+                    { text: "Cancel", style: "cancel" },
+                    { text: "Submit", style: "default", onPress: () => finalize() }
+                ]
+            );
         }
     };
 
@@ -235,21 +243,32 @@ export default function ExamScreen() {
 
                 <ScrollView contentContainerStyle={styles.questionContainer}>
                     <Text style={styles.questionText}>{question.question}</Text>
+                    {question.questionImage && (
+                        <Image source={{ uri: question.questionImage }} style={styles.questionImage} resizeMode="contain" />
+                    )}
 
-                    {question.options.map((opt: string, idx: number) => (
-                        <TouchableOpacity
-                            key={idx}
-                            style={[
-                                styles.optionBtn,
-                                answers[currentQuestionIndex] === idx && styles.optionSelected
-                            ]}
-                            onPress={() => handleAnswer(idx)}
-                        >
-                            <Text style={[styles.optionText, answers[currentQuestionIndex] === idx && styles.optionTextSelected]}>
-                                {String.fromCharCode(65 + idx)}. {opt}
-                            </Text>
-                        </TouchableOpacity>
-                    ))}
+                    {question.options.map((optRaw: any, idx: number) => {
+                        const optText = typeof optRaw === 'string' ? optRaw : optRaw.text;
+                        const optImage = typeof optRaw === 'string' ? null : optRaw.image;
+
+                        return (
+                            <TouchableOpacity
+                                key={idx}
+                                style={[
+                                    styles.optionBtn,
+                                    answers[currentQuestionIndex] === idx && styles.optionSelected
+                                ]}
+                                onPress={() => handleAnswer(idx)}
+                            >
+                                <Text style={[styles.optionText, answers[currentQuestionIndex] === idx && styles.optionTextSelected, { marginBottom: optImage ? 10 : 0 }]}>
+                                    {String.fromCharCode(65 + idx)}. {optText}
+                                </Text>
+                                {optImage && (
+                                    <Image source={{ uri: optImage }} style={styles.optionImage} resizeMode="contain" />
+                                )}
+                            </TouchableOpacity>
+                        );
+                    })}
                 </ScrollView>
 
                 <View style={styles.footer}>
@@ -288,18 +307,61 @@ export default function ExamScreen() {
             </View>
 
             <ScrollView contentContainerStyle={styles.listContent}>
-                {exams.map(exam => (
-                    <View key={exam.id} style={styles.examCard}>
-                        <View style={styles.examInfo}>
-                            <Text style={styles.examTitle}>{exam.title}</Text>
-                            <Text style={styles.examDate}>📅 {new Date(exam.date).toLocaleString()}</Text>
-                            <Text style={styles.examMeta}>⏱ {exam.duration} mins • ❓ {exam.questions?.length || 0} Questions</Text>
+                {exams.map(exam => {
+                    const examDate = new Date(exam.date);
+                    const now = new Date();
+                    const isUpcoming = now < examDate;
+                    const isCompleted = !!completedExams[exam.id];
+                    const completedScore = isCompleted ? completedExams[exam.id].score : 0;
+                    const totalScore = isCompleted ? completedExams[exam.id].total : 0;
+                    
+                    // Expiration: 2 hours after exam duration ends
+                    const examEndTime = new Date(examDate.getTime() + (exam.duration + 120) * 60000);
+                    const isExpired = now > examEndTime && !isCompleted;
+
+                    return (
+                        <View key={exam.id} style={styles.examCard}>
+                            <View style={styles.examInfo}>
+                                <Text style={styles.examTitle}>{exam.title}</Text>
+                                <Text style={styles.examDate}>📅 {examDate.toLocaleString()}</Text>
+                                <Text style={styles.examMeta}>⏱ {exam.duration} mins • ❓ {exam.questions?.length || 0} Questions</Text>
+                                {isCompleted && (
+                                    <Text style={{ color: colors.success, fontSize: 13, fontWeight: 'bold', marginTop: 4 }}>
+                                        ✓ Completed: {completedScore} / {totalScore}
+                                    </Text>
+                                )}
+                                {isExpired && (
+                                    <Text style={{ color: colors.danger, fontSize: 13, fontWeight: 'bold', marginTop: 4 }}>
+                                        ⚠ Missed
+                                    </Text>
+                                )}
+                            </View>
+                            <TouchableOpacity 
+                                style={[
+                                    styles.startBtn, 
+                                    (isUpcoming || isCompleted || isExpired) && styles.disabledBtn,
+                                    isCompleted && { backgroundColor: colors.success }
+                                ]} 
+                                onPress={() => {
+                                    if (isCompleted) {
+                                        Alert.alert("Exam Completed", `You scored ${completedScore} out of ${totalScore}.`);
+                                    } else if (isExpired) {
+                                        Alert.alert("Exam Missed", "The time window for this exam has closed.");
+                                    } else if (isUpcoming) {
+                                        Alert.alert("Not Yet Started", `This exam will start at ${examDate.toLocaleTimeString()}`);
+                                    } else {
+                                        startExam(exam);
+                                    }
+                                }}
+                                activeOpacity={(isUpcoming || isCompleted || isExpired) ? 1 : 0.7}
+                            >
+                                <Text style={styles.startBtnText}>
+                                    {isCompleted ? 'Done' : isExpired ? 'Missed' : isUpcoming ? 'Upcoming' : 'Start'}
+                                </Text>
+                            </TouchableOpacity>
                         </View>
-                        <TouchableOpacity style={styles.startBtn} onPress={() => startExam(exam)}>
-                            <Text style={styles.startBtnText}>Start</Text>
-                        </TouchableOpacity>
-                    </View>
-                ))}
+                    );
+                })}
                 {exams.length === 0 && (
                     <Text style={styles.emptyText}>No upcoming exams scheduled.</Text>
                 )}
@@ -330,10 +392,12 @@ const makeStyles = (colors: any) => StyleSheet.create({
     progress: { color: colors.textSecondary, fontWeight: '600' },
     questionContainer: { padding: 20 },
     questionText: { fontSize: 18, color: colors.text, marginBottom: 20, lineHeight: 26 },
+    questionImage: { width: '100%', height: 200, marginBottom: 20, borderRadius: 12, backgroundColor: colors.card },
     optionBtn: { backgroundColor: colors.card, padding: 16, borderRadius: 12, marginBottom: 12, borderWidth: 1, borderColor: colors.border },
     optionSelected: { borderColor: colors.primary, backgroundColor: colors.primaryLight },
     optionText: { color: colors.textSecondary, fontSize: 16 },
     optionTextSelected: { color: colors.primary, fontWeight: 'bold' },
+    optionImage: { width: '100%', height: 150, borderRadius: 8, backgroundColor: 'rgba(0,0,0,0.05)' },
 
     footer: { padding: 20, borderTopWidth: 1, borderColor: colors.border },
     navBtn: { backgroundColor: colors.card, paddingVertical: 12, paddingHorizontal: 24, borderRadius: 8, borderWidth: 1, borderColor: colors.border },

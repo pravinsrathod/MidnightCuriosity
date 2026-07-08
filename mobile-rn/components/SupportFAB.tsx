@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { TouchableOpacity, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import SupportModal from './SupportModal';
+import { Image } from 'react-native';
 
 const SupportFAB: React.FC = () => {
     const [modalVisible, setModalVisible] = useState(false);
@@ -14,7 +15,7 @@ const SupportFAB: React.FC = () => {
                 activeOpacity={0.8}
             >
                 <View style={styles.badge} />
-                <Ionicons name="chatbubble-ellipses" size={24} color="#FFF" />
+                <Image source={require('../assets/images/bot-avatar-new.jpg')} style={styles.fabImage} />
             </TouchableOpacity>
 
             <SupportModal 
@@ -30,7 +31,7 @@ const styles = StyleSheet.create({
         position: 'absolute',
         bottom: 90, // Above tab bar if present
         right: 20,
-        backgroundColor: '#28A745',
+        backgroundColor: '#FFF',
         width: 50,
         height: 50,
         borderRadius: 25,
@@ -42,6 +43,11 @@ const styles = StyleSheet.create({
         shadowOpacity: 0.3,
         shadowRadius: 3,
         zIndex: 999, // Ensure it's on top
+    },
+    fabImage: {
+        width: 50,
+        height: 50,
+        borderRadius: 25,
     },
     badge: {
         position: 'absolute',

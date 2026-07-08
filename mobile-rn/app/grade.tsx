@@ -11,7 +11,9 @@ import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
 import { useTenant } from '../context/TenantContext';
+import { linkGoogleAccount } from '../services/googleAuthService';
 import LiveClassroomView from '../components/LiveClassroomView';
+import CampaignCarousel from '../components/CampaignCarousel';
 
 export default function GradeSelectionScreen() {
     const router = useRouter();
@@ -31,6 +33,33 @@ export default function GradeSelectionScreen() {
     const [avgScore, setAvgScore] = useState(0);
     const [streak, setStreak] = useState(0);
     const [rank, setRank] = useState(0);
+    
+    const [isGoogleLinked, setIsGoogleLinked] = useState(false);
+
+    const handleLinkGoogle = async () => {
+        try {
+            const user = await linkGoogleAccount();
+            setIsGoogleLinked(true);
+            
+            const uid = user.uid;
+            await updateDoc(doc(db, "users", uid), {
+                authProvider: 'google.com',
+                email: user.email
+            });
+            
+            Alert.alert("Success", "Your Google account has been linked successfully! You can now log in using Google.");
+        } catch (e: any) {
+            console.error("Linking error:", e);
+            if (e.code === 'auth/credential-already-in-use') {
+                Alert.alert("Account Already Linked", "This Google account is already linked to another user. Please contact your Institute Administrator to resolve this, or use a different Google account.");
+                return;
+            }
+            const isCancel = e.message?.includes('developer') || e.code === 'SIGN_IN_CANCELLED' || e.code === '12501';
+            if (!isCancel) {
+                Alert.alert("Linking Failed", e.message || "Failed to link Google account.");
+            }
+        }
+    };
 
     // Poll State
     const [activePoll, setActivePoll] = useState<any>(null);
@@ -157,6 +186,11 @@ export default function GradeSelectionScreen() {
 
             let uid = user?.uid;
 
+            if (user) {
+                const linked = user.providerData.some(p => p.providerId === 'google.com');
+                setIsGoogleLinked(linked);
+            }
+
             // Fallback to stored ID for demo/mock users (only if not really authenticated)
             if (!uid) {
                 try {
@@ -176,7 +210,7 @@ export default function GradeSelectionScreen() {
                 if (docSnap.exists()) {
                     const data = docSnap.data();
                     setUserName(data.name || "Student");
-                    setUserGrade(data.grade || "Grade 10");
+                    setUserGrade(data.grade || "Class 10");
                     setUserBatch(data.batch || "General Batch");
                     if (data.photoURL) setAvatarUrl(data.photoURL);
 
@@ -200,7 +234,7 @@ export default function GradeSelectionScreen() {
                     const calculateGradeRank = async () => {
                         try {
                             const tenant = data.tenantId || tenantId || 'default';
-                            const grade = data.grade || 'Grade 10';
+                            const grade = data.grade || 'Class 10';
                             
                             const qRank = query(
                                 collection(db, 'users'),
@@ -389,14 +423,56 @@ export default function GradeSelectionScreen() {
             >
                 {/* Header */}
                 <View style={styles.header}>
-                    <View style={styles.headerBrand}>
-                        {tenantLogo ? (
-                            <Image source={{ uri: tenantLogo }} style={styles.tenantLogo} />
-                        ) : (
-                            <Text style={styles.brandEmoji}>🚀</Text>
-                        )}
-                        <Text style={styles.brand}>{tenantName || "EduPro"}</Text>
+                    <View style={styles.headerProfileContainer}>
+                        <TouchableOpacity onPress={pickImage} style={styles.avatarContainer}>
+                            {uploading ? (
+                                <ActivityIndicator color={colors.primary} />
+                            ) : avatarUrl ? (
+                                <Image source={{ uri: avatarUrl }} style={styles.headerAvatar} />
+                            ) : (
+                                <View style={styles.headerPlaceholderAvatar}>
+                                    <Ionicons name="person" size={24} color={colors.icon} />
+                                </View>
+                            )}
+                            <View style={styles.headerEditIcon}>
+                                <Ionicons name="camera" size={12} color={colors.background} />
+                            </View>
+                        </TouchableOpacity>
+
+                        <View style={styles.headerProfileText}>
+                            <Text style={styles.headerHeroText}>
+                                Hi, {userName} 👋
+                            </Text>
+                            <Text style={styles.headerSubHeroText}>
+                                {userGrade} • {tenantName || "EduPro"}
+                            </Text>
+                            {isGoogleLinked ? (
+                                <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4, gap: 4 }}>
+                                    <Ionicons name="checkmark-circle" size={14} color={colors.success} />
+                                    <Text style={{ fontSize: 11, color: colors.success, fontWeight: '600' }}>Google Secured</Text>
+                                </View>
+                            ) : (
+                                <TouchableOpacity 
+                                    onPress={handleLinkGoogle} 
+                                    style={{ 
+                                        flexDirection: 'row', 
+                                        alignItems: 'center', 
+                                        marginTop: 6, 
+                                        gap: 6, 
+                                        backgroundColor: colors.primary + '15',
+                                        paddingVertical: 4,
+                                        paddingHorizontal: 8,
+                                        borderRadius: 8,
+                                        alignSelf: 'flex-start'
+                                    }}
+                                >
+                                    <Ionicons name="logo-google" size={12} color={colors.primary} />
+                                    <Text style={{ fontSize: 11, color: colors.primary, fontWeight: '700' }}>Link Google</Text>
+                                </TouchableOpacity>
+                            )}
+                        </View>
                     </View>
+                    
                     <View style={styles.headerActions}>
                         <TouchableOpacity onPress={toggleTheme}>
                             <Ionicons name={isDark ? "sunny-outline" : "moon-outline"} size={24} color={colors.text} />
@@ -404,32 +480,6 @@ export default function GradeSelectionScreen() {
                         <TouchableOpacity onPress={handleLogout}>
                             <Ionicons name="log-out-outline" size={24} color={colors.danger} />
                         </TouchableOpacity>
-                    </View>
-                </View>
-
-                <View style={styles.profileSection}>
-                    <TouchableOpacity onPress={pickImage} style={styles.avatarContainer}>
-                        {uploading ? (
-                            <ActivityIndicator color={colors.primary} />
-                        ) : avatarUrl ? (
-                            <Image source={{ uri: avatarUrl }} style={styles.avatar} />
-                        ) : (
-                            <View style={styles.placeholderAvatar}>
-                                <Ionicons name="person" size={32} color={colors.icon} />
-                            </View>
-                        )}
-                        <View style={styles.editIcon}>
-                            <Ionicons name="camera" size={14} color={colors.background} />
-                        </View>
-                    </TouchableOpacity>
-
-                    <View style={styles.profileText}>
-                        <Text style={styles.heroText}>
-                            Hi, {userName} 👋
-                        </Text>
-                        <Text style={styles.subHeroText}>
-                            {userGrade} • Ready to learn?
-                        </Text>
                     </View>
                 </View>
 
@@ -444,13 +494,13 @@ export default function GradeSelectionScreen() {
                         <Text style={styles.statLabel}>Streak</Text>
                     </View>
 
-                    <View style={styles.statCard}>
+                    <TouchableOpacity style={styles.statCard} onPress={() => router.push('/leaderboard')} activeOpacity={0.7}>
                         <View style={[styles.iconBox, { backgroundColor: colors.successLight }]}>
                             <Ionicons name="trophy" size={20} color={colors.success} />
                         </View>
                         <Text style={styles.statValue}>#{rank > 0 ? rank : '-'}</Text>
                         <Text style={styles.statLabel}>Rank</Text>
-                    </View>
+                    </TouchableOpacity>
 
                     <View style={styles.statCard}>
                         <View style={[styles.iconBox, { backgroundColor: colors.warningLight }]}>
@@ -524,21 +574,32 @@ export default function GradeSelectionScreen() {
                 <View style={styles.quickActionsContainer}>
                     <Text style={styles.sectionTitle}>Quick Actions</Text>
                     <View style={styles.quickActionRow}>
+                        {hasFeature('enableTimetable') && (
+                            <TouchableOpacity style={styles.quickActionCard} onPress={() => router.push('/timetable')}>
+                                <View style={[styles.actionIcon, { backgroundColor: colors.primaryLight }]}>
+                                    <Ionicons name="time-outline" size={24} color={colors.primary} />
+                                </View>
+                                <Text style={styles.quickActionText}>Timetable</Text>
+                            </TouchableOpacity>
+                        )}
+
                         {hasFeature('enableLectures') && (
                             <TouchableOpacity style={styles.quickActionCard} onPress={handleStartLearning}>
                                 <View style={[styles.actionIcon, { backgroundColor: colors.primaryLight }]}>
                                     <Ionicons name="book" size={24} color={colors.primary} />
                                 </View>
-                                <Text style={styles.quickActionText}>Lectures</Text>
+                                <Text style={styles.quickActionText}>Study Material</Text>
                             </TouchableOpacity>
                         )}
 
-                        <TouchableOpacity style={styles.quickActionCard} onPress={() => router.push('/leaderboard')}>
-                            <View style={[styles.actionIcon, { backgroundColor: colors.warningLight }]}>
-                                <Ionicons name="podium" size={24} color={colors.warning} />
-                            </View>
-                            <Text style={styles.quickActionText}>Leaderboard</Text>
-                        </TouchableOpacity>
+                        {hasFeature('enableAttendance') && (
+                            <TouchableOpacity style={styles.quickActionCard} onPress={() => router.push('/attendance')}>
+                                <View style={[styles.actionIcon, { backgroundColor: colors.infoLight }]}>
+                                    <Ionicons name="calendar-outline" size={24} color={colors.info} />
+                                </View>
+                                <Text style={styles.quickActionText}>Attendance</Text>
+                            </TouchableOpacity>
+                        )}
 
                         {hasFeature('enableHomework') && (
                             <TouchableOpacity style={styles.quickActionCard} onPress={() => router.push('/homework')}>
@@ -576,7 +637,6 @@ export default function GradeSelectionScreen() {
                             </TouchableOpacity>
                         )}
 
-
                         {hasFeature('enableLivePolls') && (
                             <TouchableOpacity style={styles.quickActionCard} onPress={() => router.push('/poll-history')}>
                                 <View style={[styles.actionIcon, { backgroundColor: colors.successLight }]}>
@@ -595,19 +655,10 @@ export default function GradeSelectionScreen() {
                                 <Text style={styles.quickActionText}>Fees</Text>
                             </TouchableOpacity>
                         )}
-
-                        {hasFeature('enableAttendance') && (
-                            <TouchableOpacity style={styles.quickActionCard} onPress={() => router.push('/attendance')}>
-                                <View style={[styles.actionIcon, { backgroundColor: colors.infoLight }]}>
-                                    <Ionicons name="calendar-outline" size={24} color={colors.info} />
-                                </View>
-                                <Text style={styles.quickActionText}>Attendance</Text>
-                            </TouchableOpacity>
-                        )}
                     </View>
                 </View>
 
-
+                {hasFeature('enableCampaigns') && <CampaignCarousel audience="STUDENT" />}
 
                 {/* Account Deletion (Apple Compliance) */}
                 <TouchableOpacity
@@ -676,58 +727,57 @@ const makeStyles = (colors: any, insets: any) => StyleSheet.create({
         backgroundColor: colors.modalOverlay,
         overflow: 'hidden'
     },
-    heroText: {
-        fontSize: 24,
-        fontWeight: 'bold',
-        color: colors.text,
-        marginBottom: 4,
-    },
-    subHeroText: {
-        fontSize: 14,
-        color: colors.textSecondary,
-    },
-    profileSection: {
+    headerProfileContainer: {
         flexDirection: 'row',
         alignItems: 'center',
-        marginBottom: 32,
-        backgroundColor: colors.card,
-        padding: 16,
-        borderRadius: 20,
-        borderWidth: 1,
-        borderColor: colors.border,
+        flex: 1,
+        marginRight: 16,
     },
     avatarContainer: {
         position: 'relative',
-        marginRight: 16,
+        marginRight: 12,
     },
-    avatar: {
-        width: 60,
-        height: 60,
-        borderRadius: 30,
+    headerAvatar: {
+        width: 44,
+        height: 44,
+        borderRadius: 22,
+        marginRight: 12,
     },
-    placeholderAvatar: {
-        width: 60,
-        height: 60,
-        borderRadius: 30,
+    headerPlaceholderAvatar: {
+        width: 44,
+        height: 44,
+        borderRadius: 22,
         backgroundColor: colors.border,
         justifyContent: 'center',
         alignItems: 'center',
+        marginRight: 12,
     },
-    editIcon: {
+    headerEditIcon: {
         position: 'absolute',
         bottom: -2,
-        right: -2,
+        right: 8,
         backgroundColor: colors.primary,
-        width: 24,
-        height: 24,
-        borderRadius: 12,
+        width: 20,
+        height: 20,
+        borderRadius: 10,
         justifyContent: 'center',
         alignItems: 'center',
         borderWidth: 2,
-        borderColor: colors.card,
+        borderColor: colors.background,
     },
-    profileText: {
+    headerProfileText: {
         flex: 1,
+        justifyContent: 'center',
+    },
+    headerHeroText: {
+        fontSize: 20,
+        fontWeight: 'bold',
+        color: colors.text,
+        marginBottom: 2,
+    },
+    headerSubHeroText: {
+        fontSize: 13,
+        color: colors.textSecondary,
     },
     statsGrid: {
         flexDirection: 'row',

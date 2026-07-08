@@ -224,5 +224,18 @@ service cloud.firestore {
       allow read, delete: if isAdmin() || isSuperAdmin();
       allow update: if false;
     }
+
+    // --- TIMETABLES ---
+    match /timetables/{id} {
+      allow read: if request.auth != null && (resource == null || isTenantUser(resource.data.get('tenantId', 'default')));
+      allow write: if isAdmin() && request.resource.data.tenantId == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.tenantId;
+    }
+
+    // --- CAMPAIGNS ---
+    match /campaigns/{id} {
+      allow read: if request.auth != null && (resource == null || isTenantUser(resource.data.get('tenantId', 'default')));
+      allow create, update: if isAdmin() && request.resource.data.tenantId == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.tenantId;
+      allow delete: if isAdmin() && resource.data.tenantId == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.tenantId;
+    }
   }
 }

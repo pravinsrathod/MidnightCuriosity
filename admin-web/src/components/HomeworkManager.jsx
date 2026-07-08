@@ -503,13 +503,13 @@ const HomeworkManager = ({ students = [], tenantId, onAlert = () => {}, grades: 
 
                             <div className="grid-2">
                                 <div className="form-group">
-                                    <label className="label">Class/Grade</label>
+                                    <label className="label">Class</label>
                                     <select
                                         value={newHomework.grade}
                                         onChange={e => setNewHomework({ ...newHomework, grade: e.target.value })}
                                         style={{ width: '100%', padding: '12px', background: 'var(--bg-input)', border: '1px solid var(--border)', color: '#fff', borderRadius: '10px' }}
                                     >
-                                        <option value="">Select Grade</option>
+                                        <option value="">Select Class</option>
                                         {grades.map(g => <option key={g} value={g}>{g}</option>)}
                                     </select>
                                 </div>

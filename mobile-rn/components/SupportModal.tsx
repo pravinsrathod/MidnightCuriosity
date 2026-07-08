@@ -12,7 +12,7 @@ import {
     ScrollView,
     Image
 } from 'react-native';
-const botAvatar = require('../assets/images/bot-avatar.png');
+const botAvatar = require('../assets/images/bot-avatar-new.jpg');
 import { sendSignal } from '../services/signalService';
 import { usePathname } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -147,13 +147,18 @@ const SupportModal: React.FC<SupportModalProps> = ({ visible, onClose }) => {
     const handleReportBug = async (isManualTicket = false) => {
         setLoading(true);
         try {
-            const lastUserMsg = isManualTicket 
-                ? messages[messages.length - 1]?.text || "Manual Support Ticket"
-                : [...messages].reverse().find(m => m.sender === 'user')?.text || "Bug reported from chat";
+            // Build the full chat transcript to help the back office understand the full context
+            const chatTranscript = messages
+                .map(m => `[${m.sender.toUpperCase()}]: ${m.text}`)
+                .join('\n\n');
+                
+            const fullComment = isManualTicket
+                ? `MANUAL TICKET\n\nCHAT HISTORY:\n${chatTranscript}`
+                : `AUTOMATED ESCALATION\n\nCHAT HISTORY:\n${chatTranscript}`;
             
             await sendSignal(
                 pathname, 
-                lastUserMsg, 
+                fullComment, 
                 isManualTicket ? 'ticket' : 'signal',
                 tenantId,
                 tenantName

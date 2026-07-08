@@ -11,7 +11,9 @@ const FEATURES_LIST = [
   { id: 'enableLiveLectures', label: 'Live Lectures', icon: '🔴' },
   { id: 'enableLectures', label: 'Recorded Lectures', icon: '🎬' },
   { id: 'enableHomework', label: 'Homework & Assignments', icon: '📝' },
-  { id: 'enableExams', label: 'Exams & Quizzes', icon: '🏆' }
+  { id: 'enableExams', label: 'Exams & Quizzes', icon: '🏆' },
+  { id: 'enableTimetable', label: 'Timetable', icon: '⏰' },
+  { id: 'enableCampaigns', label: 'Campaigns', icon: '📢' }
 ];
 
 const FeaturesModal = ({ tenant, onClose, db, customAlert }) => {

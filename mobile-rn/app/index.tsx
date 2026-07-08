@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo } from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
 import { auth, db } from '../services/firebaseConfig';
 import { onAuthStateChanged } from 'firebase/auth';
@@ -66,6 +66,19 @@ export default function SplashScreen() {
                                 // ----------------------------------
 
                                 const role = userData.role?.toUpperCase();
+                                const status = userData.status?.toUpperCase();
+
+                                if (status === 'BLOCKED' || status === 'REJECTED') {
+                                    Alert.alert("Access Denied", "Your account is disabled.");
+                                    await auth.signOut();
+                                    router.replace('/auth');
+                                    return;
+                                }
+
+                                if (status === 'PENDING') {
+                                    router.replace('/approval-pending');
+                                    return;
+                                }
 
                                 if (role === 'PARENT') {
                                     router.replace('/(tabs)/parent-home');
@@ -75,7 +88,11 @@ export default function SplashScreen() {
                                     router.replace('/grade');
                                 }
                             } else {
-                                router.replace('/auth');
+                                if (user.isAnonymous) {
+                                    router.replace('/auth');
+                                } else {
+                                    router.replace('/complete-profile');
+                                }
                             }
                         }
                     } else {

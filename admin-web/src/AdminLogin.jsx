@@ -4,7 +4,7 @@ import { signInWithEmailAndPassword, createUserWithEmailAndPassword, sendPasswor
 import { db } from './firebase';
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 
-export default function AdminLogin() {
+export default function AdminLogin({ onBack }) {
     const [identifier, setIdentifier] = useState(''); // Email or Phone
     const [password, setPassword] = useState('');
     const [error, setError] = useState('');
@@ -119,7 +119,16 @@ export default function AdminLogin() {
 
     return (
         <div className="app-layout" style={{ justifyContent: 'center', alignItems: 'center', background: 'var(--bg-primary)' }}>
-            <div className="card animate-fade-in" style={{ width: '100%', maxWidth: '400px', padding: '40px' }}>
+            <div className="card animate-fade-in" style={{ width: '100%', maxWidth: '400px', padding: '40px', position: 'relative' }}>
+                {onBack && (
+                    <button 
+                        onClick={onBack} 
+                        style={{ position: 'absolute', top: '20px', left: '20px', background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '1.2rem' }}
+                        title="Back to Home"
+                    >
+                        ←
+                    </button>
+                )}
                 <div className="logo" style={{ justifyContent: 'center', marginBottom: '1.5rem' }}>
                     🚀 <span>EduPro Admin</span>
                 </div>

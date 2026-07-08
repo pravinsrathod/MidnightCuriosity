@@ -18,7 +18,8 @@ import {
   X,
   Key,
   Bot,
-  Lock
+  Lock,
+  Megaphone
 } from "lucide-react";
 
 /**
@@ -60,9 +61,10 @@ const Sidebar = ({
     {
       label: "Learning Content",
       items: [
-        { id: 'lectures', label: "Lectures", icon: BookOpen, badge: "AI", featureKey: 'enableLectures' },
+        { id: 'lectures', label: "Study Material", icon: BookOpen, badge: "AI", featureKey: 'enableLectures' },
         { id: 'homework', label: "Homework", icon: Home, featureKey: 'enableHomework' },
         { id: 'exams', label: "Exams", icon: FileText, badge: "AI", featureKey: 'enableExams' },
+        { id: 'timetable', label: "Timetable", icon: Calendar, featureKey: 'enableTimetable' },
       ]
     },
     {
@@ -70,7 +72,7 @@ const Sidebar = ({
       items: [
         { id: 'doubts', label: "Doubts", icon: MessageSquare, badge: (stats?.pendingDoubts > 0) ? stats.pendingDoubts : "AI", badgeType: (stats?.pendingDoubts > 0) ? 'danger' : 'info', featureKey: 'enableDoubts' },
         { id: 'polls', label: "Live Polls", icon: BarChart3, featureKey: 'enableLivePolls' },
-        { id: 'live', label: "Live Lecture", icon: Video, featureKey: 'enableLiveLectures' },
+        { id: 'live', label: "Live Class", icon: Video, featureKey: 'enableLiveLectures' },
         { id: 'attendance', label: "Attendance", icon: Calendar, featureKey: 'enableAttendance' },
       ]
     },
@@ -80,8 +82,9 @@ const Sidebar = ({
         { id: 'students', label: "Students", icon: Users, badge: (stats?.pendingStudents > 0) ? stats.pendingStudents : null, badgeType: 'primary' },
         { id: 'password_resets', label: "Password Resets", icon: Key, badge: (stats?.passwordResets > 0) ? stats.passwordResets : null, badgeType: 'warning' },
         { id: 'fees', label: "Fees", icon: DollarSign, featureKey: 'enableFees' },
+        { id: 'campaigns', label: "Announcements", icon: Megaphone, featureKey: 'enableCampaigns' },
         { id: 'deletion', label: "Security", icon: AlertTriangle, badge: (stats?.deletionRequests > 0) ? stats.deletionRequests : null, badgeType: 'danger' },
-        { id: 'signals', label: "Support Signals", icon: Bot, featureKey: 'enableSupportBot' },
+        { id: 'signals', label: "Helpdesk", icon: Bot, featureKey: 'enableSupportBot' },
         { id: 'settings', label: "Institute Settings", icon: Settings },
       ]
     }
@@ -109,7 +112,7 @@ const Sidebar = ({
         },
         { 
           id: 'integrity', 
-          label: "Data Integrity", 
+          label: "System Health", 
           icon: ShieldAlert, 
         }
       ]

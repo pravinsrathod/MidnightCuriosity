@@ -9,7 +9,7 @@ export default ({ config }) => {
             name: process.env.APP_NAME || "EduPro",
             slug: "mobile-rn",
             scheme: "com.prowin.edupro",
-            version: "4.1.1",
+            version: "4.1.4",
             orientation: "portrait",
             icon: process.env.APP_ICON || `${brandingPath}/icon.png`,
             userInterfaceStyle: "light",
@@ -22,7 +22,7 @@ export default ({ config }) => {
             ios: {
                 supportsTablet: true,
                 bundleIdentifier: "com.prowin.edupro",
-                buildNumber: "401",
+                buildNumber: "403",
                 googleServicesFile: process.env.EXPO_PUBLIC_APP_ENV === 'production'
                     ? './GoogleService-Info.production.plist'
                     : './GoogleService-Info.development.plist',
@@ -35,7 +35,7 @@ export default ({ config }) => {
                 }
             },
             android: {
-                versionCode: 401,
+                versionCode: 403,
                 targetSdkVersion: 36,
                 compileSdkVersion: 36,
                 adaptiveIcon: {
@@ -90,7 +90,15 @@ export default ({ config }) => {
                     }
                 ],
                 "expo-av",
-                "expo-updates"
+                "expo-updates",
+                [
+                    "@react-native-google-signin/google-signin",
+                    {
+                        "iosUrlScheme": process.env.EXPO_PUBLIC_APP_ENV === 'production' 
+                            ? "com.googleusercontent.apps.259510471140-01npk2n6l17k00i3i6dulcef6lcuqjfv" 
+                            : "com.googleusercontent.apps.191248941616-9tlqa2stjeo3k5f7mtka5htp7d9qg418"
+                    }
+                ]
             ],
             experiments: {
                 typedRoutes: true

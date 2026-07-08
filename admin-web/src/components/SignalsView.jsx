@@ -234,8 +234,8 @@ const SignalsView = ({ adminTenantId, customAlert, customConfirm }) => {
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', marginBottom: '32px' }}>
               <Section title="Source & Type" icon={<Activity size={16} />}>
                 <DataRow label="Type" value={selectedSignal.type?.toUpperCase() || 'SIGNAL'} highlight />
-                <DataRow label="Tenant Name" value={selectedSignal.tenantName} highlight />
-                <DataRow label="Tenant ID" value={selectedSignal.tenantId} mono />
+                <DataRow label="School Name" value={selectedSignal.tenantName} highlight />
+                <DataRow label="School ID" value={selectedSignal.tenantId} mono />
               </Section>
               <Section title="User Info" icon={<User size={16} />}>
                 <DataRow label="Email" value={selectedSignal.userEmail} />

@@ -144,16 +144,4 @@ export const generateDoubtAnswer = async (doubtText) => {
     return "The AI Doubt Assistant is currently undergoing maintenance. Please reach out to your teacher or check the lesson notes for help!";
 };
 
-// --- Local Gemini Nano (Chrome Prompt API) Support ---
 
-// Generate Exam from PDF
-export const generateExamFromPdf = async (pdfFile, apiKey) => {
-    console.warn("PDF Exam generation is currently disabled.");
-    return new Promise(resolve => {
-        setTimeout(() => {
-            resolve([
-                { question: "AI Exam Generation is currently under maintenance. Please check back later.", options: ["OK", "-", "-", "-"], correctAnswer: 0 }
-            ]);
-        }, 1000);
-    });
-};

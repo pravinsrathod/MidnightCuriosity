@@ -3,7 +3,7 @@ import { View, Text, TouchableOpacity, StyleSheet, Platform, SafeAreaView } from
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { auth, db } from '../services/firebaseConfig';
-import { doc, setDoc, arrayUnion } from 'firebase/firestore';
+import { doc, setDoc, arrayUnion, increment } from 'firebase/firestore';
 import { onAuthStateChanged } from 'firebase/auth';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '../context/ThemeContext';
@@ -32,7 +32,8 @@ export default function RewardScreen() {
                     const userRef = doc(db, 'users', uid);
                     // Use setDoc with merge: true to create document if it doesn't exist (e.g. mock users)
                     await setDoc(userRef, {
-                        completedTopics: arrayUnion(topic)
+                        completedTopics: arrayUnion(topic),
+                        rank: increment(50)
                     }, { merge: true });
                     console.log("Progress saved for:", topic);
                 } catch (e) {

@@ -1,29 +1,55 @@
 {
-    "project_info": {
-        "project_number": "191248941616",
-        "project_id": "midnightcuriosity",
-        "storage_bucket": "midnightcuriosity.firebasestorage.app"
-    },
-    "client": [
-        {
-            "client_info": {
-                "mobilesdk_app_id": "1:191248941616:android:37872900101f3ee5d8a3f5",
-                "android_client_info": {
-                    "package_name": "com.prowin.eduproapp"
-                }
-            },
-            "oauth_client": [],
-            "api_key": [
-                {
-                    "current_key": "AIzaSyDNj2bw0iJCifqatHqb4qrrafl-wxrmjuA"
-                }
-            ],
-            "services": {
-                "appinvite_service": {
-                    "other_platform_oauth_client": []
-                }
-            }
+  "project_info": {
+    "project_number": "191248941616",
+    "firebase_url": "https://midnightcuriosity-default-rtdb.firebaseio.com",
+    "project_id": "midnightcuriosity",
+    "storage_bucket": "midnightcuriosity.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:191248941616:android:9606f82e2125d45fd8a3f5",
+        "android_client_info": {
+          "package_name": "com.prowin.eduproapp"
         }
-    ],
-    "configuration_version": "1"
+      },
+      "oauth_client": [
+        {
+          "client_id": "191248941616-nmgbfmrh101kcojvm4v987ao8jqshe9a.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.prowin.eduproapp",
+            "certificate_hash": "5e8f16062ea3cd2c4a0d547876baa6f38cabf625"
+          }
+        },
+        {
+          "client_id": "191248941616-bc0m4skruhe8s650v70qaa299ah63ep5.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCz-zO5dL-UcdJ4q_4F-CIkMJ0ts-DARe4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "191248941616-bc0m4skruhe8s650v70qaa299ah63ep5.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "191248941616-9tlqa2stjeo3k5f7mtka5htp7d9qg418.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.prowin.edupro"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
 }

@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Image, Platform, Modal, FlatList, TextInput } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Image, Platform, Modal, FlatList, TextInput, KeyboardAvoidingView, TouchableWithoutFeedback, Keyboard, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -82,8 +82,8 @@ export const ParentHeader = ({
     );
 
     return (
-        <View style={[styles.headerContainer, !showWelcome && { paddingBottom: 15 }]}>
-            <View style={[styles.headerTop, !showWelcome && { marginBottom: 0 }]}>
+        <View style={[styles.headerContainer, { paddingBottom: 15 }]}>
+            <View style={[styles.headerTop, { marginBottom: 0 }]}>
                 <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                     {onBack && (
                         <TouchableOpacity onPress={onBack} style={styles.backButton}>
@@ -102,11 +102,11 @@ export const ParentHeader = ({
                                 <Ionicons name="person-circle" size={32} color={colors.primary} />
                             )}
                         </View>
-                        <View style={{ marginLeft: 8 }}>
-                            <Text style={styles.studentLabel}>Viewing for</Text>
-                            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                                <Text style={styles.studentNameHeader}>{studentName || 'Select Student'}</Text>
-                                <Ionicons name="chevron-down" size={14} color={colors.primary} style={{ marginLeft: 2 }} />
+                        <View style={{ marginLeft: 10 }}>
+                            <Text style={styles.studentNameHeader}>Hi, {parentName?.split(' ')[0] || 'Parent'}!</Text>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 2 }}>
+                                <Text style={styles.studentLabel}>Viewing: {studentName || 'Select Student'}</Text>
+                                <Ionicons name="chevron-down" size={12} color={colors.primary} style={{ marginLeft: 4 }} />
                             </View>
                         </View>
                     </TouchableOpacity>
@@ -114,28 +114,21 @@ export const ParentHeader = ({
 
                 {showActions && onAddChild && (
                     <View style={styles.headerActions}>
-                        <TouchableOpacity onPress={() => {}} style={styles.actionIcon}>
-                            <Ionicons name="notifications-outline" size={22} color={colors.text} />
+                        <TouchableOpacity onPress={() => Alert.alert('Notifications', 'No new notifications right now.')} style={styles.actionIcon}>
+                            <Ionicons name="notifications-outline" size={20} color={colors.text} />
                             {hasNotifications && <View style={styles.notificationBadge} />}
                         </TouchableOpacity>
                         <TouchableOpacity onPress={() => setIsAddChildModalVisible(true)} style={styles.actionIcon}>
-                            <Ionicons name="person-add-outline" size={22} color={colors.text} />
+                            <Ionicons name="person-add-outline" size={20} color={colors.text} />
                         </TouchableOpacity>
                         {onLogout && (
                             <TouchableOpacity onPress={onLogout} style={styles.actionIcon}>
-                                <Ionicons name="log-out-outline" size={22} color={colors.danger} />
+                                <Ionicons name="log-out-outline" size={20} color={colors.danger} />
                             </TouchableOpacity>
                         )}
                     </View>
                 )}
             </View>
-
-            {showWelcome && (
-                <View style={styles.headerBottom}>
-                    <Text style={styles.welcomeBack}>Welcome back,</Text>
-                    <Text style={styles.parentGreeting}>{parentName || 'Parent'}</Text>
-                </View>
-            )}
 
             {/* Selection Modal */}
             <Modal
@@ -179,33 +172,38 @@ export const ParentHeader = ({
                 animationType="slide"
                 onRequestClose={() => setIsAddChildModalVisible(false)}
             >
-                <View style={styles.modalOverlay}>
-                    <View style={[styles.modalContent, { marginTop: 'auto' }]}>
-                        <View style={styles.modalHeader}>
-                            <Text style={styles.modalTitle}>Add Your Child</Text>
-                            <TouchableOpacity onPress={() => setIsAddChildModalVisible(false)}>
-                                <Ionicons name="close" size={24} color={colors.text} />
+                <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+                    <KeyboardAvoidingView 
+                        style={styles.modalOverlay} 
+                        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+                    >
+                        <View style={[styles.modalContent, { marginTop: 'auto' }]}>
+                            <View style={styles.modalHeader}>
+                                <Text style={styles.modalTitle}>Add Your Child</Text>
+                                <TouchableOpacity onPress={() => setIsAddChildModalVisible(false)}>
+                                    <Ionicons name="close" size={24} color={colors.text} />
+                                </TouchableOpacity>
+                            </View>
+                            <Text style={styles.modalSubtitle}>
+                                Enter your child&apos;s registered mobile number to link them to your account.
+                            </Text>
+                            <View style={styles.inputContainer}>
+                                <Ionicons name="phone-portrait-outline" size={20} color={colors.textSecondary} style={{ marginRight: 10 }} />
+                                <TextInput
+                                    style={styles.textInput}
+                                    placeholder="Child's Phone Number"
+                                    placeholderTextColor={colors.textSecondary}
+                                    keyboardType="phone-pad"
+                                    value={newChildPhone}
+                                    onChangeText={setNewChildPhone}
+                                />
+                            </View>
+                            <TouchableOpacity style={styles.submitBtn} onPress={handleAddChildClick}>
+                                <Text style={styles.submitBtnText}>Send Linking Request</Text>
                             </TouchableOpacity>
                         </View>
-                        <Text style={styles.modalSubtitle}>
-                            Enter your child&apos;s registered mobile number to link them to your account.
-                        </Text>
-                        <View style={styles.inputContainer}>
-                            <Ionicons name="phone-portrait-outline" size={20} color={colors.textSecondary} style={{ marginRight: 10 }} />
-                            <TextInput
-                                style={styles.textInput}
-                                placeholder="Child's Phone Number"
-                                placeholderTextColor={colors.textSecondary}
-                                keyboardType="phone-pad"
-                                value={newChildPhone}
-                                onChangeText={setNewChildPhone}
-                            />
-                        </View>
-                        <TouchableOpacity style={styles.submitBtn} onPress={handleAddChildClick}>
-                            <Text style={styles.submitBtnText}>Send Linking Request</Text>
-                        </TouchableOpacity>
-                    </View>
-                </View>
+                    </KeyboardAvoidingView>
+                </TouchableWithoutFeedback>
             </Modal>
         </View>
     );
