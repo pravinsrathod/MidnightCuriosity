@@ -337,6 +337,20 @@ export default function TimetableScreen() {
                                         <>
                                             <Text style={styles.subjectText}>{slot.subject}</Text>
                                             <Text style={styles.typeText}>{slot.type.charAt(0).toUpperCase() + slot.type.slice(1)}</Text>
+                                            {(slot.instructor || slot.room) && (
+                                                <View style={styles.extraDetails}>
+                                                    {slot.instructor && (
+                                                        <Text style={styles.extraText}>
+                                                            <Ionicons name="person-outline" size={12} color={colors.textSecondary} /> {slot.instructor}
+                                                        </Text>
+                                                    )}
+                                                    {slot.room && (
+                                                        <Text style={styles.extraText}>
+                                                            <Ionicons name="location-outline" size={12} color={colors.textSecondary} /> {slot.room}
+                                                        </Text>
+                                                    )}
+                                                </View>
+                                            )}
                                         </>
                                     )}
                                 </View>
@@ -458,5 +472,16 @@ const makeStyles = (colors: any) => StyleSheet.create({
         fontSize: 16,
         color: colors.textSecondary,
         textAlign: 'center',
+    },
+    extraDetails: {
+        flexDirection: 'row',
+        gap: 12,
+        marginTop: 6,
+    },
+    extraText: {
+        fontSize: 12,
+        color: colors.textSecondary,
+        display: 'flex',
+        alignItems: 'center',
     }
 });
