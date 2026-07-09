@@ -281,7 +281,7 @@ export default function TimetableScreen() {
                 </TouchableOpacity>
             </View>
 
-            {overrideData && (
+            {(generalOverrideData || batchOverrideData) && (
                 <View style={{ backgroundColor: colors.warning + '20', padding: 8, alignItems: 'center' }}>
                     <Text style={{ color: colors.warning, fontWeight: 'bold', fontSize: 12 }}>Showing modified schedule for this week</Text>
                 </View>
